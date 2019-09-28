@@ -6,13 +6,15 @@
 // use std::io::{self, Write};
 // use std::collections::HashMap;
 
-use std::io::Read;
-extern crate reqwest;
 extern crate json;
-extern crate rusqlite;
+extern crate reqwest;
 
-fn main() -> Result<(), Box<std::error::Error>> {
-    let mut res = reqwest::get("https://api.magicthegathering.io/v1/cards?name=Griselbrand")?;
+
+use std::io::Read;
+
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut res = reqwest::get("https://api.magicthegathering.io/v1/cards?name=Avacyn")?;
     let mut body = String::new();
     res.read_to_string(&mut body)?;
     let parsed = json::parse(&body).unwrap();
@@ -20,10 +22,24 @@ fn main() -> Result<(), Box<std::error::Error>> {
     // println!("Status: {}", res.status());
     // println!("Headers:\n{:#?}", res.headers());
     // println!("Body:\n{}", parsed["cards"]);
+
+    let mut seen: Vec<&json::JsonValue> = Vec::new();
     
 
     for card in parsed["cards"].members() {
+        if seen.contains(&&card["name"]) {
+            continue;
+        }
+        seen.push(&card["name"]);
         println!("Name: {}", card["name"]);
+        println!("Supertypes: {}", card["supertypes"]);
+        println!("Types: {}", card["types"]);
+        println!("Subtypes: {}", card["subtypes"]);
+        println!("Text: {}", card["text"]);
+        println!("Cmc: {}", card["cmc"]);
+        println!("ColorIdentity: {}", card["colorIdentity"]);
+        println!("Names: {}", card["names"]);
+        println!("Mana Cost: {}\n", card["manaCost"]);
     }
     Ok(())
 }
