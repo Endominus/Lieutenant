@@ -14,7 +14,7 @@ pub struct Card {
     pub text: String,
     pub cmc: i8,
     pub mana_cost: String,
-    pub color_identity: Vec<char>,
+    pub color_identity: Vec<String>,
     pub related_cards: Vec<String>,
     pub layout : String,
 }
@@ -28,7 +28,7 @@ impl Card {
         text: String,
         cmc: i8,
         mana_cost: String,
-        color_identity: Vec<char>,
+        color_identity: Vec<String>,
         related_cards: Vec<String>,
         layout: String) -> Card {
             Card {
