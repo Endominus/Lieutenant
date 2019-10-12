@@ -2,10 +2,6 @@ extern crate reqwest;
 extern crate rusqlite;
 extern crate json;
 extern crate cursive;
-#[macro_use]
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
 // use cursive::Cursive;
 // use cursive::views::{Dialog, TextView};
 
