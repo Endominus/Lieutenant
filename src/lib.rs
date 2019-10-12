@@ -1,15 +1,7 @@
-extern crate rusqlite;
 extern crate reqwest;
+mod network;
 
-use rusqlite::types::ToSql;
-use rusqlite::{params, Connection, Result};
-
-use std::error::Error;
-
-use reqwest::Client;
-use reqwest::Response;
-
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Card {
     pub name: String,
     pub types: Vec<String>,
@@ -22,7 +14,7 @@ pub struct Card {
 }
 
 impl Card {
-    fn new(
+    pub fn new(
         name: String, 
         types: Vec<String>, 
         subtypes: Vec<String>,
@@ -44,40 +36,27 @@ impl Card {
         }
 }
 
-fn run() {
-    
+pub enum Command {
+    RetrieveCard(String),
+    FullPull,
+    UpdateDB
 }
 
-mod Online {
-    fn retrieve_card_by_name(name: String) -> Result<super::Card, &'static str> {
-        let mut res = reqwest::get("https://api.magicthegathering.io/v1/cards?name=Avacyn").unwrap();
-        let mut body = String::new();
-        res.text().unwrap();
-        let parsed = json::parse(&body).unwrap();
-
-        // println!("Status: {}", res.status());
-        // println!("Headers:\n{:#?}", res.headers());
-        // println!("Body:\n{}", parsed["cards"]);
-
-        let mut seen: Vec<&json::JsonValue> = Vec::new();
-        
-
-        for card in parsed["cards"].members() {
-            if seen.contains(&&card["name"]) {
-                continue;
+pub fn run(command: Command) -> Result<(), &'static str> {
+    match command {
+        Command::RetrieveCard(card) => {
+            let a = network::retrieve_card_by_name(card)?;
+            for card in a {
+                println!("{:?}", card);
             }
-            seen.push(&card["name"]);
-            println!("Name: {}", card["name"]);
-            println!("Supertypes: {}", card["supertypes"]);
-            println!("Types: {}", card["types"]);
-            println!("Subtypes: {}", card["subtypes"]);
-            println!("Text: {}", card["text"]);
-            println!("Cmc: {}", card["cmc"]);
-            println!("ColorIdentity: {}", card["colorIdentity"]);
-            println!("Names: {}", card["names"]);
-            println!("Mana Cost: {}\n", card["manaCost"]);
-        }
-        // Ok(())
-        panic!()
+
+            Ok(())
+        },
+        Command::FullPull => {
+            network::full_pull();
+            Ok(())
+        },
+        Command::UpdateDB => {unimplemented!()},
     }
 }
+
