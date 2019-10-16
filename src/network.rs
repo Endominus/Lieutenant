@@ -88,13 +88,15 @@ fn rc(url: String, page: i8) -> std::result::Result<Vec<crate::Card>, Error> {
     
     if cards.cards.len() == 100 {
         // println!("Found {}, going to next page", cards.len());
-        thread::sleep(time::Duration::from_secs(10));
+        thread::sleep(time::Duration::from_secs(2));
         cards.cards.append(&mut rc(url, page+1).unwrap());
     }
     Ok(cards.cards)
 }
 
-pub fn rcs(s: crate::db::Set) -> Vec<crate::Card> {
+pub fn rcs(s: &crate::db::Set) -> Vec<crate::Card> {
     let url = format!("https://api.magicthegathering.io/v1/cards?set={}", s.code);
-    rc(url, 1).unwrap()
+    let c = rc(url, 1).unwrap();
+
+    c
 }

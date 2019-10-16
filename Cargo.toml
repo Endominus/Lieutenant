@@ -13,6 +13,7 @@ reqwest = "*"
 serde_derive = "*"
 serde_json = "*"
 serde = "*"
+failure = "*"
 
 [dependencies.rusqlite]
 version = "0.20.0"

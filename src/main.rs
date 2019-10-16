@@ -23,9 +23,11 @@ extern crate cursive;
 // use lieutenant::Command;
 
 fn main() {
-    let a = lieutenant::run(lieutenant::Command::RetrieveCard("Chalice of Death".to_string()));
-    println!("{:?}", a);
-    // lieutenant::run(lieutenant::Command::FullPull);
+    // let a = lieutenant::run(lieutenant::Command::RetrieveCard("Avacyn, Guardian Angel".to_string()));
+    // println!("{:?}", a);
+    if let Err(e) = lieutenant::run(lieutenant::Command::FullPull) {
+        println!("Error: {}", e);
+    }
     
 }
 

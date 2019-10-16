@@ -14,6 +14,7 @@ pub struct Card {
     pub supertypes: Vec<String>,
     pub types: Vec<String>,
     pub subtypes: Vec<String>,
+    #[serde(default)]
     pub text: String,
     pub cmc: f64,
     #[serde(default = "zero")]
@@ -22,6 +23,10 @@ pub struct Card {
     #[serde(rename = "names")]
     #[serde(default)]
     pub related_cards: Vec<String>,
+    #[serde(default)]
+    pub power: String,
+    #[serde(default)]
+    pub toughness: String,
     pub layout : String,
 }
 
@@ -61,7 +66,7 @@ pub enum Command {
     UpdateDB
 }
 
-pub fn run(command: Command) -> Result<(), reqwest::Error> {
+pub fn run(command: Command) -> Result<(), failure::Error> {
     match command {
         Command::RetrieveCard(card) => {
             let a = network::retrieve_card_by_name(card)?;
@@ -72,9 +77,9 @@ pub fn run(command: Command) -> Result<(), reqwest::Error> {
             Ok(())
         },
         Command::FullPull => {
-            // db::create_db();
-            // db::full_pull();
-            network::rs();
+            db::create_db()?;
+            db::full_pull()?;
+            // network::rs();
             // println!("{:?}", a);
             Ok(())
         },

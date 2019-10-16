@@ -8,6 +8,10 @@ pub struct Set {
     name: String,
 }
 
+const BANNED: [&'static str; 6] = [
+    "UGL", "UNH", "UST", "H17", "HHO", "HTR"
+];
+
 // impl Set {
 //     pub fn new(code: String, name: String) -> Set {
 //         Set {code, name}
@@ -18,8 +22,11 @@ fn ic(vc: Vec<crate::Card>) -> Result<()> {
     let conn = Connection::open("cards.db")?;
 
     let mut stmt = conn.prepare("insert into cards (
-        name, card_text, mana_cost, layout, types, supertypes, subtypes, color_identity, related_cards, cmc)
-        values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)")?;
+        name, card_text, mana_cost, 
+        layout, types, supertypes, 
+        subtypes, color_identity, related_cards, 
+        cmc, power, toughness)
+        values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)")?;
 
     for c in vc {
         let mut rc = Vec::new();
@@ -29,12 +36,31 @@ fn ic(vc: Vec<crate::Card>) -> Result<()> {
             }
         }
 
-        stmt.insert(&[c.name, c.text, c.mana_cost, 
+        match stmt.insert(&[c.name, c.text, c.mana_cost, 
             c.layout, c.types.join("|"), c.supertypes.join("|"), 
             c.subtypes.join("|"), c.color_identity.join("|"), 
-            rc.join("|"), (c.cmc as i8).to_string()])?;
+            rc.join("|"), (c.cmc as i8).to_string(),
+            c.power, c.toughness]) {
+                Ok(_) => {},
+                Err(_) => continue,
+            };
+            
+            // .unwrap_or_else(|error| {
+                    // panic!("Error: {:?}", error);
+        // });
     }
     
+    Ok(())
+}
+
+fn is (s: Set) -> Result<()> {
+    let conn = Connection::open("cards.db")?;
+
+    let mut stmt = conn.prepare("insert into sets (code, name)
+        values (?1, ?2)")?;
+    
+    stmt.insert(&[s.code, s.name])?;
+
     Ok(())
 }
 
@@ -49,7 +75,7 @@ pub fn create_db() -> Result<()> {
         "create table if not exists sets (
             id integer primary key,
             code text not null unique, 
-            name text not null unique,)"
+            name text not null unique)"
             , NO_PARAMS,
     )?;
 
@@ -65,6 +91,8 @@ pub fn create_db() -> Result<()> {
             subtypes text not null,
             color_identity text not null,
             related_cards text not null,
+            power text,
+            toughness text,
             cmc integer not null)"
             , NO_PARAMS)?;
 
@@ -106,15 +134,18 @@ pub fn full_pull() -> Result<()> {
 
     let si: Vec<Set> = si.filter_map(Result::ok).collect();
 
-    for s in si {
-        if !so.contains(&s) {
+    for s in so {
+        if !si.contains(&s) 
+            && !BANNED.contains(&&(*s.code)) {
             sd.push(s.clone());
         }
     }
 
     for s in sd {
-        let c = crate::network::rcs(s);
+        let c = crate::network::rcs(&s);
         ic(c)?;
+        println!("Inserted all cards in {}", s.name);
+        is(s)?;
     }
     Ok(())
 }
