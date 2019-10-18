@@ -64,8 +64,62 @@ fn is (s: Set) -> Result<()> {
     Ok(())
 }
 
-pub fn rc_name(name: String) -> Vec<crate::Card> {
-    unimplemented!()
+fn stovs(ss: String) -> Vec<String> {
+    let mut vs = Vec::new();
+
+    for s in ss.split('|') {
+        vs.push(String::from(s));
+    }
+    vs
+}
+
+pub fn rcn(mut name: String) -> Result<Vec<crate::Card>> {
+    let conn = Connection::open("cards.db")?;
+
+    name.insert(0, '%');
+    name.push('%');
+
+    let mut stmt = conn.prepare("
+        SELECT 
+            name, 
+			card_text, 
+			mana_cost,
+            layout, 
+			types, 
+			supertypes, 
+            subtypes, 
+			color_identity, 
+			related_cards, 
+            power, 
+			toughness, 
+			cmc
+        FROM `cards`
+        WHERE name LIKE ?;")?;
+    
+    let cards = stmt.query_map(params![name], |row| {
+        Ok(crate::Card {
+            name: row.get(0)?,
+            text: row.get(1)?,
+            mana_cost: row.get(2)?,
+            layout: row.get(3)?,
+            types: stovs(row.get(4)?),
+            supertypes: stovs(row.get(5)?),
+            subtypes: stovs(row.get(6)?),
+            color_identity: stovs(row.get(7)?),
+            related_cards: stovs(row.get(8)?),
+            power: row.get(9)?,
+            toughness: row.get(10)?,
+            cmc: row.get(11)?,
+        })
+    })?.collect();
+
+    // let mut cs = Vec::new();
+
+    // for c in card_iter {
+    //     cs.push(c);
+    // }
+    
+    cards
 }
 
 pub fn create_db() -> Result<()> {
@@ -83,14 +137,14 @@ pub fn create_db() -> Result<()> {
         "create table if not exists cards (
             id integer primary key,
             name text not null unique,
-            card_text text not null,
+            card_text text,
             mana_cost text not null,
             layout text not null,
             types text not null,
-            supertypes text not null,
-            subtypes text not null,
-            color_identity text not null,
-            related_cards text not null,
+            supertypes text,
+            subtypes text,
+            color_identity text,
+            related_cards text,
             power text,
             toughness text,
             cmc integer not null)"

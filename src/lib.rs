@@ -61,6 +61,7 @@ fn zero() -> String { String::from("0") }
 // }
 
 pub enum Command {
+    RetrieveCardOnline(String),
     RetrieveCard(String),
     FullPull,
     UpdateDB
@@ -68,8 +69,16 @@ pub enum Command {
 
 pub fn run(command: Command) -> Result<(), failure::Error> {
     match command {
-        Command::RetrieveCard(card) => {
+        Command::RetrieveCardOnline(card) => {
             let a = network::retrieve_card_by_name(card)?;
+            for card in a {
+                println!("{:?}", card);
+            }
+
+            Ok(())
+        },
+        Command::RetrieveCard(card) => {
+            let a = db::rcn(card)?;
             for card in a {
                 println!("{:?}", card);
             }
