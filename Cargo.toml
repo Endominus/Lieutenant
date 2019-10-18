@@ -14,7 +14,7 @@ serde_derive = "*"
 serde_json = "*"
 serde = "*"
 failure = "*"
-clap = "~2.33.*"
+clap = "2.31.2"
 
 [dependencies.rusqlite]
 version = "0.20.0"

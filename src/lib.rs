@@ -32,6 +32,11 @@ pub struct Card {
 
 fn zero() -> String { String::from("0") }
 
+pub struct Deck {
+    pub name: String,
+    pub commander: Card,
+    pub id: usize,
+}
 
 // impl Card {
 //     pub fn new(

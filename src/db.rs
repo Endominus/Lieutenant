@@ -1,6 +1,7 @@
 extern crate rusqlite;
 
 use self::rusqlite::{params, Connection, Result, NO_PARAMS};
+use crate::Card;
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Set {
@@ -18,7 +19,7 @@ const BANNED: [&'static str; 6] = [
 //     }
 // }
 
-fn ic(vc: Vec<crate::Card>) -> Result<()> {
+fn ivctoc(vc: Vec<Card>) -> Result<()> {
     let conn = Connection::open("cards.db")?;
 
     let mut stmt = conn.prepare("insert into cards (
@@ -64,6 +65,28 @@ fn is (s: Set) -> Result<()> {
     Ok(())
 }
 
+fn ictodc(c: Card, did: usize) -> Result<()> {
+    let conn = Connection::open("cards.db")?;
+
+    let mut stmt = conn.prepare("insert into deck_contents (card_name, deck)
+        values (?1, ?2)")?;
+    
+    stmt.insert(&[c.name, did.to_string()])?;
+
+    Ok(())
+}
+
+fn ideck(n: String, c: Card) -> Result<()> {
+    let conn = Connection::open("cards.db")?;
+
+    let mut stmt = conn.prepare("insert into decks (name, commander, deck_type)
+        values (?1, ?2, ?3)")?;
+    
+    stmt.insert(&[n, c.name, String::from("Commander")])?;
+
+    Ok(())
+}
+
 fn stovs(ss: String) -> Vec<String> {
     let mut vs = Vec::new();
 
@@ -73,7 +96,7 @@ fn stovs(ss: String) -> Vec<String> {
     vs
 }
 
-pub fn rcn(mut name: String) -> Result<Vec<crate::Card>> {
+pub fn rcn(mut name: String) -> Result<Vec<Card>> {
     let conn = Connection::open("cards.db")?;
 
     name.insert(0, '%');
@@ -97,7 +120,7 @@ pub fn rcn(mut name: String) -> Result<Vec<crate::Card>> {
         WHERE name LIKE ?;")?;
     
     let cards = stmt.query_map(params![name], |row| {
-        Ok(crate::Card {
+        Ok(Card {
             name: row.get(0)?,
             text: row.get(1)?,
             mana_cost: row.get(2)?,
@@ -196,8 +219,8 @@ pub fn full_pull() -> Result<()> {
     }
 
     for s in sd {
-        let c = crate::network::rcs(&s);
-        ic(c)?;
+        let vc = crate::network::rcs(&s);
+        ivctoc(vc)?;
         println!("Inserted all cards in {}", s.name);
         is(s)?;
     }
