@@ -17,6 +17,16 @@ fn main() {
                 .short("u")
                 .long("update")
         )
+        .subcommand(
+            App::new("get") 
+                .about("Gets a card from the database")
+                .arg(
+                    Arg::with_name("input")
+                        .help("card to get")
+                        .index(1)
+                        .required(true),
+                ),
+        )
         .get_matches();
 
     if matches.is_present("update"){
@@ -25,7 +35,13 @@ fn main() {
         }
     }
 
-    let a = lieutenant::run(lieutenant::Command::RetrieveCard("Avacyn, Guardian Angel".to_string()));
-    println!("{:?}", a);
+    if let Some(ref matches) = matches.subcommand_matches("get") {
+        // Safe to use unwrap() because of the required() option
+        println!("Getting cards with name: {}", matches.value_of("input").unwrap());
+        lieutenant::run(lieutenant::Command::RetrieveCard(matches.value_of("input").unwrap().to_string()));
+    }
+
+    // let a = lieutenant::run(lieutenant::Command::RetrieveCard("Avacyn, Guardian Angel".to_string()));
+    // println!("{:?}", a);
     
 }
