@@ -1,8 +1,8 @@
 extern crate reqwest;
 extern crate rusqlite;
 extern crate json;
-extern crate cursive;
 extern crate clap;
+
 
 use clap::{App, Arg};
 fn main() {
@@ -43,5 +43,5 @@ fn main() {
 
     // let a = lieutenant::run(lieutenant::Command::RetrieveCard("Avacyn, Guardian Angel".to_string()));
     // println!("{:?}", a);
-    
+    lieutenant::run(lieutenant::Command::Draw);
 }

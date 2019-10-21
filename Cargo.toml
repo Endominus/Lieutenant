@@ -1,6 +1,6 @@
 [package]
 name = "lieutenant"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["Endominus <endominus@gmail.com>"]
 
 [lib]
@@ -15,13 +15,19 @@ serde_json = "*"
 serde = "*"
 failure = "*"
 clap = "2.31.2"
+crossterm = "0.10.2"
+structopt = "*"
 
 [dependencies.rusqlite]
 version = "0.20.0"
 features = ["bundled"]
-# ureq = { version = "*", features = ["json", "charset"] }
 
-[dependencies.cursive]
-version = "0.13"
+[dependencies.tui]
+version = "*"
 default-features = false
-features = ["crossterm-backend"]
+features = ['crossterm']
+
+# [dependencies.cursive]
+# version = "0.13"
+# default-features = false
+# features = ["crossterm-backend"]

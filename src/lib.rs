@@ -3,9 +3,13 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate serde;
 extern crate reqwest;
+extern crate crossterm;
+extern crate tui;
+extern crate structopt;
 
 mod network;
 mod db;
+mod ui;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +73,8 @@ pub enum Command {
     RetrieveCardOnline(String),
     RetrieveCard(String),
     FullPull,
-    UpdateDB
+    UpdateDB,
+    Draw
 }
 
 pub fn run(command: Command) -> Result<(), failure::Error> {
@@ -98,6 +103,10 @@ pub fn run(command: Command) -> Result<(), failure::Error> {
             Ok(())
         },
         Command::UpdateDB => {unimplemented!()},
+        Command::Draw => { 
+            ui::draw();
+            Ok(()) 
+        },
     }
 }
 
