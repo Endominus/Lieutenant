@@ -2,6 +2,7 @@ extern crate rusqlite;
 
 use self::rusqlite::{params, Connection, Result, NO_PARAMS};
 use crate::Card;
+use std::fs;
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Set {
@@ -65,13 +66,13 @@ fn is (s: Set) -> Result<()> {
     Ok(())
 }
 
-fn ictodc(c: Card, did: usize) -> Result<()> {
+fn icntodc(c: String, did: usize) -> Result<()> {
     let conn = Connection::open("cards.db")?;
 
     let mut stmt = conn.prepare("insert into deck_contents (card_name, deck)
         values (?1, ?2)")?;
     
-    stmt.insert(&[c.name, did.to_string()])?;
+    stmt.insert(&[c, did.to_string()])?;
 
     Ok(())
 }
@@ -143,6 +144,16 @@ pub fn rcn(mut name: String) -> Result<Vec<Card>> {
     // }
     
     cards
+}
+
+pub fn import_deck(filename: String, deck_id: usize) -> Result<()> {
+    let contents = fs::read_to_string(filename)
+        .expect("Could not read file");
+
+    for line in contents.lines() {
+        icntodc(String::from(line), deck_id)?;
+    }
+    Ok(())
 }
 
 pub fn create_db() -> Result<()> {
