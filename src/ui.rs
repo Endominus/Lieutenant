@@ -1,3 +1,4 @@
+use Card;
 use std::io;
 use tui::Terminal;
 use tui::widgets::{Widget, Block, Borders};
@@ -9,37 +10,63 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use crate::db;
+
+#[derive(Clone)]
+enum Content {
+    SearchString(String),
+    Results(Vec<Card>),
+    Selected(Card),
+    Tags(Vec<String>),
+    None
+}
+
 #[derive(Clone)]
 struct State {
     title: String,
+    content: Content
 }
 
 impl State {
     fn new(title: String, ) -> State {
-        State { title, }
+        State { title, content: Content::None}
     }
 }
 
 struct App<'a> {
-    search_block: &'a State,
+    search_block: Vec<State>,
     search_position: usize,
-    result_block: State,
+    result_block: Vec<State>,
     card_block: State,
-    other_block: State,
+    other_block: Vec<State>,
+    focus: &'a State,
+    deck_id: usize,
 }
 
-impl App<'_> {
-    fn new(
-        search_block: &State, 
-        result_block: State, 
-        card_block: State, 
-        other_block: State) -> App {
+impl<'a> App<'a> {
+    fn new(deck_id: usize, sv: &'a mut Vec<State>) -> App<'a> {
+            let s3 = State::new(String::from("Advanced Search"));
+            let s2 = State::new(String::from("Search by text"));
+            let s1 = State::new(String::from("Search by name"));
+            sv.push(s1);
+            sv.push(s2);
+            sv.push(s3);
+
+            let r1 = State::new(String::from("Results"));
+            let rv = vec![r1];
+
+            let c1 = State::new(String::from("Card Info"));
+            
+            let o1 = State::new(String::from("Tags"));
+            let ov = vec![o1];
         App {
-            search_block,
+            search_block: sv.to_vec(),
             search_position: 0,
-            result_block,
-            card_block,
-            other_block
+            result_block: rv,
+            card_block: c1,
+            other_block: ov,
+            focus: &sv[0],
+            deck_id
         }
     }
 }
@@ -76,11 +103,11 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
             )
             .split(chunks[1]);
         Block::default()
-             .title(&app.search_block.title)
+             .title(&app.search_block[app.search_position].title)
              .borders(Borders::ALL)
              .render(&mut f, area1[0]);
         Block::default()
-             .title(&app.result_block.title)
+             .title(&app.result_block[0].title)
              .borders(Borders::ALL)
              .render(&mut f, area1[1]);
         Block::default()
@@ -88,7 +115,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
              .borders(Borders::ALL)
              .render(&mut f, area2[0]);
         Block::default()
-             .title(&app.other_block.title)
+             .title(&app.other_block[0].title)
              .borders(Borders::ALL)
              .render(&mut f, area2[1]);
     })?;
@@ -97,7 +124,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
 
 }
 
-pub fn run() -> Result<(), failure::Error> {
+pub fn run(deck_id: usize) -> Result<(), failure::Error> {
         let _screen = RawScreen::into_raw_mode();
     let (tx, rx) = mpsc::channel();
     {
@@ -109,7 +136,7 @@ pub fn run() -> Result<(), failure::Error> {
                 let event = reader.next();
 
                 if let Some(key_event) = event {
-                    tx.send(key_event);
+                    let _a = tx.send(key_event);
                 }
             }
         });
@@ -120,17 +147,9 @@ pub fn run() -> Result<(), failure::Error> {
     terminal.hide_cursor()?;
     terminal.clear()?;
 
-    let s3 = State::new(String::from("Advanced Search"));
-    let s2 = State::new(String::from("Search by text"));
-    let s1 = State::new(String::from("Search by name"));
 
-    let sv = vec![s1, s2, s3];
-    // s3.next = Some(Box::new(s1));
-    let r1 = State::new(String::from("Results"));
-    let c1 = State::new(String::from("Card Info"));
-    let o1 = State::new(String::from("Tags"));
-
-    let mut app = App::new(& sv[0], r1, c1, o1);
+    let mut sv = vec![];
+    let mut app = App::new(deck_id, &mut sv);
 
     loop {
         draw(&mut terminal, &app)?;
@@ -140,13 +159,11 @@ pub fn run() -> Result<(), failure::Error> {
                 match k {
                     KeyEvent::Esc => {
                         should_quit = true;
-                        println!("Program Exiting");
+                        // println!("Program Exiting");
                     },
                     KeyEvent::Char(c) => match c {
                         '\t' =>  {
-                                app.search_position = (app.search_position + 1) % sv.len();
-                                app.search_block = & sv[app.search_position.clone()];
-                                // .unwrap_or(Box::new(State::clone(s1)));
+                                app.search_position = (app.search_position + 1) % 3;
                             }
                         _ => {}
                     }

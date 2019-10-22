@@ -20,6 +20,8 @@ const BANNED: [&'static str; 6] = [
 //     }
 // }
 
+//TODO: Write public function to retrieve all cards. Remove layouts scheme, planar, and vanguard
+
 fn ivctoc(vc: Vec<Card>) -> Result<()> {
     let conn = Connection::open("cards.db")?;
 

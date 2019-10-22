@@ -6,6 +6,7 @@ extern crate json;
 extern crate clap;
 
 use clap::{App, Arg, SubCommand};
+
 fn main() {
     // println!("{:?}", args);
     let matches = App::new("Lieutenant")
@@ -70,5 +71,5 @@ fn main() {
 
     // let a = lieutenant::run(lieutenant::Command::RetrieveCard("Avacyn, Guardian Angel".to_string()));
     // println!("{:?}", a);
-    // let _a = lieutenant::run(lieutenant::Command::Draw);
+    let _a = lieutenant::run(lieutenant::Command::Draw);
 }

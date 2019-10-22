@@ -13,7 +13,7 @@ mod network;
 mod db;
 mod ui;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Card {
     pub name: String,
@@ -107,7 +107,8 @@ pub fn run(command: Command) -> Result<(), failure::Error> {
         },
         Command::UpdateDB => {unimplemented!()},
         Command::Draw => { 
-            ui::run()?;
+            //TODO Make general
+            ui::run(1)?;
             Ok(()) 
         },
         Command::ImportCards(did, filename) => {
