@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
@@ -74,7 +76,8 @@ pub enum Command {
     RetrieveCard(String),
     FullPull,
     UpdateDB,
-    Draw
+    Draw,
+    ImportCards(usize, String),
 }
 
 pub fn run(command: Command) -> Result<(), failure::Error> {
@@ -104,9 +107,13 @@ pub fn run(command: Command) -> Result<(), failure::Error> {
         },
         Command::UpdateDB => {unimplemented!()},
         Command::Draw => { 
-            ui::run();
+            ui::run()?;
             Ok(()) 
         },
+        Command::ImportCards(did, filename) => {
+            db::import_deck(filename, did);
+            Ok(())
+        }
     }
 }
 

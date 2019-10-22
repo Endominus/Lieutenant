@@ -1,10 +1,11 @@
+#![allow(dead_code)]
+
 extern crate reqwest;
 extern crate rusqlite;
 extern crate json;
 extern crate clap;
 
-
-use clap::{App, Arg};
+use clap::{App, Arg, SubCommand};
 fn main() {
     // println!("{:?}", args);
     let matches = App::new("Lieutenant")
@@ -17,8 +18,8 @@ fn main() {
                 .short("u")
                 .long("update")
         )
-        .subcommand(
-            App::new("get") 
+        .subcommands( vec![
+            SubCommand::with_name("get") 
                 .about("Gets a card from the database")
                 .arg(
                     Arg::with_name("input")
@@ -26,8 +27,24 @@ fn main() {
                         .index(1)
                         .required(true),
                 ),
-        )
+            SubCommand::with_name("import")
+                .about("Imports cards from a file into a deck")
+                .arg(
+                    Arg::with_name("deck_id")
+                        .help("Deck ID number")
+                        .index(1)
+                        .required(true),
+                )
+                .arg(
+                    Arg::with_name("filename")
+                       .help("Name of the file to import from")
+                       .index(2)
+                       .required(true),
+                )
+        ])
         //TODO: Add deck import command.
+        // .subcommand(
+        // )
         .get_matches();
 
     if matches.is_present("update"){
@@ -39,10 +56,19 @@ fn main() {
     if let Some(ref matches) = matches.subcommand_matches("get") {
         // Safe to use unwrap() because of the required() option
         println!("Getting cards with name: {}", matches.value_of("input").unwrap());
-        lieutenant::run(lieutenant::Command::RetrieveCard(matches.value_of("input").unwrap().to_string()));
+        let _a = lieutenant::run(lieutenant::Command::RetrieveCard(matches.value_of("input").unwrap().to_string()));
+    }
+
+    if let Some(ref matches) = matches.subcommand_matches("import") {
+        println!("Inserting all cards from {} into deck with ID {}", 
+            matches.value_of("filename").unwrap(), 
+            matches.value_of("deck_id").unwrap());
+            let _a = lieutenant::run(lieutenant::Command::ImportCards(
+                matches.value_of("deck_id").unwrap().parse().unwrap(),
+                matches.value_of("filename").unwrap().to_string()));
     }
 
     // let a = lieutenant::run(lieutenant::Command::RetrieveCard("Avacyn, Guardian Angel".to_string()));
     // println!("{:?}", a);
-    lieutenant::run(lieutenant::Command::Draw);
+    // let _a = lieutenant::run(lieutenant::Command::Draw);
 }

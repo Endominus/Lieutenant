@@ -1,12 +1,9 @@
 use std::io;
-use std::io::stdout;
 use tui::Terminal;
 use tui::widgets::{Widget, Block, Borders};
 use tui::layout::{Layout, Constraint, Direction};
 use tui::backend::CrosstermBackend;
-use crossterm::{input, AlternateScreen, InputEvent, KeyEvent, RawScreen};
-use crossterm::IntoRawMode;
-use structopt::StructOpt;
+use crossterm::{input, InputEvent, KeyEvent, RawScreen};
 
 use std::sync::mpsc;
 use std::thread;
@@ -83,15 +80,15 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
              .borders(Borders::ALL)
              .render(&mut f, area1[0]);
         Block::default()
-             .title("Block 2")
+             .title(&app.result_block.title)
              .borders(Borders::ALL)
              .render(&mut f, area1[1]);
         Block::default()
-             .title("Block 3")
+             .title(&app.card_block.title)
              .borders(Borders::ALL)
              .render(&mut f, area2[0]);
         Block::default()
-             .title("Block 4")
+             .title(&app.other_block.title)
              .borders(Borders::ALL)
              .render(&mut f, area2[1]);
     })?;
@@ -108,19 +105,6 @@ pub fn run() -> Result<(), failure::Error> {
         thread::spawn(move || {
             let input = input();
             let mut reader = input.read_sync();
-            // for event in reader {
-            //     match event {
-            //         InputEvent::Keyboard(key) => {
-            //             if let Err(_) = tx.send(Event::Input(key.clone())) {
-            //                 return;
-            //             }
-            //             if key == KeyEvent::Char('q') {
-            //                 return;
-            //             }
-            //         },
-            //         _ => {}
-            //     }
-            // }
             loop {
                 let event = reader.next();
 
@@ -140,8 +124,7 @@ pub fn run() -> Result<(), failure::Error> {
     let s2 = State::new(String::from("Search by text"));
     let s1 = State::new(String::from("Search by name"));
 
-    let mut sv = vec![s1, s2, s3];
-    let a = sv.iter();
+    let sv = vec![s1, s2, s3];
     // s3.next = Some(Box::new(s1));
     let r1 = State::new(String::from("Results"));
     let c1 = State::new(String::from("Card Info"));
