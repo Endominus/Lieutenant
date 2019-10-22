@@ -104,7 +104,7 @@ pub fn run(command: Command) -> Result<(), failure::Error> {
         },
         Command::UpdateDB => {unimplemented!()},
         Command::Draw => { 
-            ui::draw();
+            ui::run();
             Ok(()) 
         },
     }
