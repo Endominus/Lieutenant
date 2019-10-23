@@ -41,6 +41,49 @@ impl State {
     fn unfocus(&mut self) {
         self.focus = false;
     }
+
+    fn handle_input(&mut self, k: KeyEvent) {
+        match &self.content {
+            Content::SearchString(s) => {
+                match k {
+                    KeyEvent::Char(c) => match c {
+                        '\t' => {},
+                        _ => {},
+                    },
+                    _ => {}
+                }
+            },
+            Content::Results(vc) => {
+                match k {
+                    KeyEvent::Char(c) => match c {
+                        '\t' => {},
+                        _ => {},
+                    },
+                    _ => {}
+                }
+            },
+            Content::Selected(c) => {
+                match k {
+                    KeyEvent::Char(c) => match c {
+                        '\t' => {},
+                        _ => {},
+                    },
+                    _ => {}
+                }
+            },
+            Content::Tags(vs) => {
+                match k {
+                    KeyEvent::Char(c) => match c {
+                        '\t' => {},
+                        _ => {},
+                    },
+                    _ => {}
+                }
+            },
+            Content::None => {},
+        }
+
+    }
 }
 
 struct App {
@@ -50,6 +93,7 @@ struct App {
     card_block: State,
     other_block: Vec<State>,
     deck_id: usize,
+    quit: bool,
 }
 
 impl App {
@@ -76,7 +120,8 @@ impl App {
             result_block: rv,
             card_block: c1,
             other_block: ov,
-            deck_id
+            deck_id,
+            quit: false,
         }
     }
 
@@ -90,6 +135,26 @@ impl App {
         } else {
             self.other_block[0].focus();
             self.search_block[self.search_position].focus();
+        }
+    }
+
+    fn handle_input(&mut self, k: KeyEvent) {
+        match k {
+            KeyEvent::Esc => {
+                self.quit = true;
+            },
+            KeyEvent::CtrlDown => {
+                self.focus_next();
+            },
+            KeyEvent::Char(c) => match c {
+                '\t' =>  {
+                        self.search_block[self.search_position].unfocus();
+                        self.search_position = (self.search_position + 1) % 3;
+                        self.search_block[self.search_position].focus();
+                    }
+                _ => {}
+            }
+            _ => { self.handle_input(k); }
         }
     }
 }
@@ -111,8 +176,8 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
             .direction(Direction::Vertical)
             .constraints(
                 [
-                    Constraint::Min(1),
-                    Constraint::Percentage(90)
+                    Constraint::Max(3),
+                    Constraint::Percentage(50)
                 ].as_ref()
             )
             .split(chunks[0]);
@@ -194,31 +259,39 @@ pub fn run(deck_id: usize) -> Result<(), failure::Error> {
 
     loop {
         draw(&mut terminal, &app)?;
-        let mut should_quit = false;
         match rx.recv()? {
             InputEvent::Keyboard(k) => {
-                match k {
-                    KeyEvent::Esc => {
-                        should_quit = true;
-                        // println!("Program Exiting");
-                    },
-                    KeyEvent::CtrlDown => {
-                        app.focus_next();
-                    },
-                    KeyEvent::Char(c) => match c {
-                        '\t' =>  {
-                                app.search_position = (app.search_position + 1) % 3;
-                            }
-                        _ => {}
-                    }
-                    _ => {}
-                }
+                app.handle_input(k);
             },
             _ => {}
         }
-
-        if should_quit { break; }
+        if app.quit { break; }
     }
 
     Ok(())
 }
+
+// fn key_handler(app:&mut App, rx:& std::sync::mpsc::Receiver<crossterm::InputEvent>) -> bool {
+//     let mut should_quit = false;
+//     match rx.recv().unwrap() {
+//         InputEvent::Keyboard(k) => {
+//             match k {
+//                 KeyEvent::Esc => {
+//                     should_quit = true;
+//                 },
+//                 KeyEvent::CtrlDown => {
+//                     app.focus_next();
+//                 },
+//                 KeyEvent::Char(c) => match c {
+//                     '\t' =>  {
+//                             app.search_position = (app.search_position + 1) % 3;
+//                         }
+//                     _ => {}
+//                 }
+//                 _ => { app.handle_input(k); }
+//             }
+//         },
+//         _ => {}
+//     }
+//     should_quit
+// }
