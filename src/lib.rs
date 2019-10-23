@@ -13,7 +13,7 @@ mod network;
 mod db;
 mod ui;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Card {
     pub name: String,
@@ -112,7 +112,7 @@ pub fn run(command: Command) -> Result<(), failure::Error> {
             Ok(()) 
         },
         Command::ImportCards(did, filename) => {
-            db::import_deck(filename, did);
+            db::import_deck(filename, did)?;
             Ok(())
         }
     }

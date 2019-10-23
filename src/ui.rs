@@ -4,15 +4,16 @@ use tui::Terminal;
 use tui::widgets::{Widget, Block, Borders};
 use tui::layout::{Layout, Constraint, Direction};
 use tui::backend::CrosstermBackend;
+use tui::style::{Color, Modifier, Style};
 use crossterm::{input, InputEvent, KeyEvent, RawScreen};
 
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+// use std::time::Duration;
 
-use crate::db;
+// use crate::db;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum Content {
     SearchString(String),
     Results(Vec<Card>),
@@ -21,36 +22,46 @@ enum Content {
     None
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct State {
     title: String,
-    content: Content
+    content: Content,
+    focus: bool,
 }
 
 impl State {
     fn new(title: String, ) -> State {
-        State { title, content: Content::None}
+        State { title, content: Content::None, focus: false}
+    }
+
+    fn focus(&mut self) {
+        self.focus = true;
+    }
+
+    fn unfocus(&mut self) {
+        self.focus = false;
     }
 }
 
-struct App<'a> {
+struct App {
     search_block: Vec<State>,
     search_position: usize,
     result_block: Vec<State>,
     card_block: State,
     other_block: Vec<State>,
-    focus: &'a State,
     deck_id: usize,
 }
 
-impl<'a> App<'a> {
-    fn new(deck_id: usize, sv: &'a mut Vec<State>) -> App<'a> {
+impl App {
+    fn new(deck_id: usize, sv: & mut Vec<State>) -> App {
             let s3 = State::new(String::from("Advanced Search"));
             let s2 = State::new(String::from("Search by text"));
-            let s1 = State::new(String::from("Search by name"));
+            let mut s1 = State::new(String::from("Search by name"));
+            s1.focus();
             sv.push(s1);
             sv.push(s2);
             sv.push(s3);
+
 
             let r1 = State::new(String::from("Results"));
             let rv = vec![r1];
@@ -65,8 +76,20 @@ impl<'a> App<'a> {
             result_block: rv,
             card_block: c1,
             other_block: ov,
-            focus: &sv[0],
             deck_id
+        }
+    }
+
+    fn focus_next(&mut self) {
+        if self.search_block[self.search_position].focus {
+            self.search_block[self.search_position].unfocus();
+            self.result_block[0].focus();
+        } else if self.result_block[0].focus {
+            self.result_block[0].unfocus();
+            self.other_block[0].focus();
+        } else {
+            self.other_block[0].focus();
+            self.search_block[self.search_position].focus();
         }
     }
 }
@@ -102,13 +125,30 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
                 ].as_ref()
             )
             .split(chunks[1]);
+        
+
+
+        let mut style1 = Style::default();
+        let mut style2 = Style::default();
+        let mut style3 = Style::default();
+
+        if app.search_block[app.search_position].focus {
+            style1 = Style::default().fg(Color::Yellow);
+        } else if app.result_block[0].focus {
+            style2 = Style::default().fg(Color::Yellow);
+        } else {
+            style3 = Style::default().fg(Color::Yellow);
+        }
+
         Block::default()
              .title(&app.search_block[app.search_position].title)
              .borders(Borders::ALL)
+             .border_style(style1)
              .render(&mut f, area1[0]);
         Block::default()
              .title(&app.result_block[0].title)
              .borders(Borders::ALL)
+             .border_style(style2)
              .render(&mut f, area1[1]);
         Block::default()
              .title(&app.card_block.title)
@@ -117,6 +157,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
         Block::default()
              .title(&app.other_block[0].title)
              .borders(Borders::ALL)
+             .border_style(style3)
              .render(&mut f, area2[1]);
     })?;
 
@@ -160,6 +201,9 @@ pub fn run(deck_id: usize) -> Result<(), failure::Error> {
                     KeyEvent::Esc => {
                         should_quit = true;
                         // println!("Program Exiting");
+                    },
+                    KeyEvent::CtrlDown => {
+                        app.focus_next();
                     },
                     KeyEvent::Char(c) => match c {
                         '\t' =>  {
