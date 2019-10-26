@@ -44,7 +44,7 @@ pub struct Deck {
     pub id: usize,
 }
 
-// impl Card {
+impl Card {
 //     pub fn new(
 //         name: String, 
 //         types: Vec<String>, 
@@ -69,7 +69,30 @@ pub struct Deck {
 //                 layout
 //             }
 //         }
-// }
+
+    pub fn ri(&self) -> Vec<String> {
+        let t = self.text.split("\n");
+        let types = format!("{} {} - {}", 
+            self.supertypes.join(" "),
+            self.types.join(" "),
+            self.subtypes.join(" "));
+
+        let mut v = vec![
+            self.name.clone(),
+            self.mana_cost.clone(),
+            types
+        ];
+
+        for l in t {
+            v.push(l.to_string());
+        }
+
+        if self.power.len() > 0 {
+            v.push(format!("{}/{}", self.power, self.toughness));
+        }
+        v
+    }
+}
 
 pub enum Command {
     RetrieveCardOnline(String),
