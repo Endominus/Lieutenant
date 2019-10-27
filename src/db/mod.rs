@@ -99,13 +99,51 @@ fn stovs(ss: String) -> Vec<String> {
     vs
 }
 
-pub fn rcn(mut name: String) -> Result<Vec<Card>> {
+pub fn rvct(mut text: String, did: i32) -> Result<Vec<Card>> {
     let conn = Connection::open("cards.db")?;
 
-    name.insert(0, '%');
-    name.push('%');
+    text.insert(0, '%');
+    text.push('%');
+    // let mut stmt = conn.prepare("")?;
 
-    let mut stmt = conn.prepare("
+    if did < 0 {
+        let mut stmt = conn.prepare("
+            SELECT 
+                name, 
+                card_text, 
+                mana_cost,
+                layout, 
+                types, 
+                supertypes, 
+                subtypes, 
+                color_identity, 
+                related_cards, 
+                power, 
+                toughness, 
+                cmc
+            FROM `cards`
+            WHERE card_text LIKE ?
+            ORDER BY name;")?;
+        let cards = stmt.query_map(params![text], |row| {
+            Ok(Card {
+                name: row.get(0)?,
+                text: row.get(1)?,
+                mana_cost: row.get(2)?,
+                layout: row.get(3)?,
+                types: stovs(row.get(4)?),
+                supertypes: stovs(row.get(5)?),
+                subtypes: stovs(row.get(6)?),
+                color_identity: stovs(row.get(7)?),
+                related_cards: stovs(row.get(8)?),
+                power: row.get(9)?,
+                toughness: row.get(10)?,
+                cmc: row.get(11)?,
+            })
+        })?.collect();
+
+        cards
+    } else {
+        let mut stmt = conn.prepare("
         SELECT 
             name, 
 			card_text, 
@@ -119,25 +157,116 @@ pub fn rcn(mut name: String) -> Result<Vec<Card>> {
             power, 
 			toughness, 
 			cmc
-        FROM `cards`
-        WHERE name LIKE ?;")?;
-    
-    let cards = stmt.query_map(params![name], |row| {
-        Ok(Card {
-            name: row.get(0)?,
-            text: row.get(1)?,
-            mana_cost: row.get(2)?,
-            layout: row.get(3)?,
-            types: stovs(row.get(4)?),
-            supertypes: stovs(row.get(5)?),
-            subtypes: stovs(row.get(6)?),
-            color_identity: stovs(row.get(7)?),
-            related_cards: stovs(row.get(8)?),
-            power: row.get(9)?,
-            toughness: row.get(10)?,
-            cmc: row.get(11)?,
-        })
-    })?.collect();
+        FROM 'cards'
+        INNER JOIN 'deck_contents'
+        ON cards.name = deck_contents.card_name
+        WHERE deck_contents.deck = ?
+        AND cards.card_text LIKE ?
+        ORDER BY cards.name;")?;
+        let cards = stmt.query_map(params![did, text], |row| {
+            Ok(Card {
+                name: row.get(0)?,
+                text: row.get(1)?,
+                mana_cost: row.get(2)?,
+                layout: row.get(3)?,
+                types: stovs(row.get(4)?),
+                supertypes: stovs(row.get(5)?),
+                subtypes: stovs(row.get(6)?),
+                color_identity: stovs(row.get(7)?),
+                related_cards: stovs(row.get(8)?),
+                power: row.get(9)?,
+                toughness: row.get(10)?,
+                cmc: row.get(11)?,
+            })
+        })?.collect();
+
+        cards
+    }
+}
+
+pub fn rvcn(mut name: String, did: i32) -> Result<Vec<Card>> {
+    let conn = Connection::open("cards.db")?;
+
+    name.insert(0, '%');
+    name.push('%');
+    // let mut stmt = conn.prepare("")?;
+
+    if did < 0 {
+        let mut stmt = conn.prepare("
+            SELECT 
+                name, 
+                card_text, 
+                mana_cost,
+                layout, 
+                types, 
+                supertypes, 
+                subtypes, 
+                color_identity, 
+                related_cards, 
+                power, 
+                toughness, 
+                cmc
+            FROM `cards`
+            WHERE name LIKE ?
+            ORDER BY name;")?;
+        let cards = stmt.query_map(params![name], |row| {
+            Ok(Card {
+                name: row.get(0)?,
+                text: row.get(1)?,
+                mana_cost: row.get(2)?,
+                layout: row.get(3)?,
+                types: stovs(row.get(4)?),
+                supertypes: stovs(row.get(5)?),
+                subtypes: stovs(row.get(6)?),
+                color_identity: stovs(row.get(7)?),
+                related_cards: stovs(row.get(8)?),
+                power: row.get(9)?,
+                toughness: row.get(10)?,
+                cmc: row.get(11)?,
+            })
+        })?.collect();
+
+        cards
+    } else {
+        let mut stmt = conn.prepare("
+        SELECT 
+            name, 
+			card_text, 
+			mana_cost,
+            layout, 
+			types, 
+			supertypes, 
+            subtypes, 
+			color_identity, 
+			related_cards, 
+            power, 
+			toughness, 
+			cmc
+        FROM 'cards'
+        INNER JOIN 'deck_contents'
+        ON cards.name = deck_contents.card_name
+        WHERE deck_contents.deck = ?
+        AND cards.name LIKE ?
+        ORDER BY cards.name;")?;
+        let cards = stmt.query_map(params![did, name], |row| {
+            Ok(Card {
+                name: row.get(0)?,
+                text: row.get(1)?,
+                mana_cost: row.get(2)?,
+                layout: row.get(3)?,
+                types: stovs(row.get(4)?),
+                supertypes: stovs(row.get(5)?),
+                subtypes: stovs(row.get(6)?),
+                color_identity: stovs(row.get(7)?),
+                related_cards: stovs(row.get(8)?),
+                power: row.get(9)?,
+                toughness: row.get(10)?,
+                cmc: row.get(11)?,
+            })
+        })?.collect();
+
+        cards
+    }
 
     // let mut cs = Vec::new();
 
@@ -145,7 +274,7 @@ pub fn rcn(mut name: String) -> Result<Vec<Card>> {
     //     cs.push(c);
     // }
     
-    cards
+    // cards
 }
 
 pub fn import_deck(filename: String, deck_id: usize) -> Result<()> {

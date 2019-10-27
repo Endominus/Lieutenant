@@ -114,7 +114,7 @@ pub fn run(command: Command) -> Result<(), failure::Error> {
             Ok(())
         },
         Command::RetrieveCard(card) => {
-            let a = db::rcn(card)?;
+            let a = db::rvcn(card, -1)?;
             for card in a {
                 println!("{:?}", card);
             }
