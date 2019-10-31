@@ -5,11 +5,12 @@ use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
 use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::Terminal;
-
+use std::rc::Rc;
+use std::cell::RefCell;
 use Card;
 
-use std::sync::mpsc;
-use std::thread;
+// use std::sync::mpsc;
+// use std::thread;
 // use std::time::Duration;
 
 // use crate::db;
@@ -95,22 +96,24 @@ impl<'a> State<'a> {
 }
 
 struct App<'a> {
-    sb: Vec<State<'static>>,
+    sb: Rc<RefCell<Vec<State<'static>>>>,
     sp: usize,
-    rb: Vec<State<'static>>,
+    rb: Rc<RefCell<Vec<State<'static>>>>,
     rp: usize,
-    card_block: &'a mut State<'a>,
-    other_block: Vec<State<'static>>,
+    card_block: Rc<RefCell<State<'a>>>,
+    other_block: Rc<RefCell<Vec<State<'static>>>>,
     deck_id: i32,
     quit: bool,
+    focus: Rc<RefCell<&'a State<'a>>>
 }
 
 impl<'a> App<'a> {
     fn new(
         deck_id: i32,
-        sv: &mut Vec<State<'static>>,
+        sv: &'a mut Vec<State<'static>>,
         rv: &'a mut Vec<State<'static>>,
-        cs: &'a mut State<'a>,
+        // cs: &'a mut Rc<&'a mut State<'a>>,
+        cs: &mut State<'a>,
         ov: &mut Vec<State<'static>>,
     ) -> App<'a> {
         use db;
@@ -125,6 +128,7 @@ impl<'a> App<'a> {
 
         s1.focus();
 
+        // let mut sv = vec![s1, s2, s3];
         sv.push(s1);
         sv.push(s2);
         sv.push(s3);
@@ -135,39 +139,70 @@ impl<'a> App<'a> {
         // let all_cards = db
         r1.content = Content::Results(results, 0);
         r2.content = Content::Results(Vec::new(), 0);
-        // let rv = vec![r1];
+        // let rv = vec![r1, r2];
         rv.push(r1);
         rv.push(r2);
 
-        // let mut c1 = State::new(String::from("Card Info"));
+        // let mut cs = State::new(String::from("Card Info"));
         cs.content = Content::Selected(rv[0].selected().unwrap());
 
         let o1 = State::new(String::from("Tags"));
         // let ov = vec![o1];
         ov.push(o1);
         App {
-            sb: sv.to_vec(),
+            sb: Rc::new(RefCell::new(sv.to_vec())),
             sp: 0,
-            rb: rv.to_vec(),
+            rb: Rc::new(RefCell::new(rv.to_vec())),
             rp: 0,
-            card_block: &mut *cs,
-            other_block: ov.to_vec(),
+            card_block: Rc::new(RefCell::new(*cs)),
+            other_block: Rc::new(RefCell::new(ov.to_vec())),
             deck_id,
             quit: false,
+            focus: Rc::new(RefCell::new(&sv[0]))
         }
     }
 
     fn focus_next(&mut self) {
-        if self.sb[self.sp].focus {
-            self.sb[self.sp].unfocus();
-            self.rb[self.rp].focus();
-        } else if self.rb[self.rp].focus {
-            self.rb[self.rp].unfocus();
-            self.other_block[0].focus();
-        } else {
-            self.other_block[0].focus();
-            self.sb[self.sp].focus();
-        }
+        // if self.sb. [self.sp].focus {
+        //     self.sb[self.sp].unfocus();
+        //     self.rb[self.rp].focus();
+        // } else if self.rb[self.rp].focus {
+        //     self.rb[self.rp].unfocus();
+        //     self.other_block[0].focus();
+        // } else {
+        //     self.other_block[0].focus();
+        //     self.sb[self.sp].focus();
+        // }
+
+        let sb = self.sb.borrow()[self.sp];
+        let rb = self.rb.borrow()[self.rp];
+        let mut f = self.focus.borrow_mut();
+
+        let f = match f {
+            sb => { 
+                self.sp = (self.sp + 1) % 3; 
+                RefCell::new(self.sb.borrow()[self.sp]) 
+            },
+            rb => { 
+                self.rp = (self.rp + 1) % 2; 
+                RefCell::new(self.rb.borrow()[self.rp])
+            }
+        };
+    }
+
+    fn focus_down(&mut self) {
+
+        let rb = &self.rb.borrow()[0];
+        self.focus = Rc::new(RefCell::new(&rb));
+
+        // let sb = &self.rb.borrow();
+        // let rb = &self.rb.borrow()[self.rp];
+        // let mut f = self.focus.borrow_mut();
+
+        // self.focus = match f {
+        //     sb => Rc::new(RefCell::new(rb)),
+        //     rb => Rc::new(RefCell::new(&sb[self.rp]))
+        // };
     }
 
     fn handle_input(&mut self, k: KeyEvent) {
@@ -176,54 +211,56 @@ impl<'a> App<'a> {
                 self.quit = true;
             }
             KeyEvent::CtrlDown => {
-                self.focus_next();
+                self.focus_down();
             }
             KeyEvent::Char(c) => match c {
                 '\t' => {
-                    if self.sb[self.sp].focus {
-                        self.sb[self.sp].unfocus();
-                        self.sp = (self.sp + 1) % 3;
-                        self.sb[self.sp].focus();
-                    } else {
-                        self.rb[self.rp].unfocus();
-                        self.rp = (self.rp + 1) % 2;
-                        self.rb[self.rp].focus();
-                    }
+                    // if self.sb[self.sp].focus {
+                    //     self.sb[self.sp].unfocus();
+                    //     self.sp = (self.sp + 1) % 3;
+                    //     self.sb[self.sp].focus();
+                    // } else {
+                    //     self.rb[self.rp].unfocus();
+                    //     self.rp = (self.rp + 1) % 2;
+                    //     self.rb[self.rp].focus();
+                    // }
+                    self.focus_next();
                 }
                 _ => {
-                    if self.sb[self.sp].focus {
-                        self.sb[self.sp].handle_input(k);
-                        if let Content::SearchString(s, vs, i) = &self.sb[self.sp].content {
-                            let results = rvcq(
-                                s, 
-                                &self.sb[self.sp].title, 
-                                &self.rb[self.rp].title, 
-                                self.deck_id);
-                            if let Some(vc) = results {
-                                self.rb[self.rp].content = Content::Results(vc, 0);
-                            }
-                        }
-                    } else {
-                        self.rb[self.rp].handle_input(k);
-                    }
+                    // if self.sb[self.sp].focus {
+                    //     self.sb[self.sp].handle_input(k);
+                    //     if let Content::SearchString(s, vs, i) = &self.sb[self.sp].content {
+                    //         let results = rvcq(
+                    //             s, 
+                    //             &self.sb[self.sp].title, 
+                    //             &self.rb[self.rp].title, 
+                    //             self.deck_id);
+                    //         if let Some(vc) = results {
+                    //             self.rb[self.rp].content = Content::Results(vc, 0);
+                    //         }
+                    //     }
+                    // } else {
+                    //     self.rb[self.rp].handle_input(k);
+                    // }
+                    self.focus.borrow().handle_input(k);
                 }
             },
             _ => {
-                if self.sb[self.sp].focus {
-                    self.sb[self.sp].handle_input(k);
-                    if let Content::SearchString(s, _vs, _i) = &self.sb[self.sp].content {
-                        let results = rvcq(
-                            s, 
-                            &self.sb[self.sp].title, 
-                            &self.rb[self.rp].title, 
-                            self.deck_id);
-                        if let Some(vc) = results {
-                            self.rb[self.rp].content = Content::Results(vc, 0);
-                        }
-                    }
-                } else {
-                    self.rb[self.rp].handle_input(k);
-                }
+                // if self.sb[self.sp].focus {
+                //     self.sb[self.sp].handle_input(k);
+                //     if let Content::SearchString(s, _vs, _i) = &self.sb[self.sp].content {
+                //         let results = rvcq(
+                //             s, 
+                //             &self.sb[self.sp].title, 
+                //             &self.rb[self.rp].title, 
+                //             self.deck_id);
+                //         if let Some(vc) = results {
+                //             self.rb[self.rp].content = Content::Results(vc, 0);
+                //         }
+                //     }
+                // } else {
+                //     self.rb[self.rp].handle_input(k);
+                // }
             }
         }
     }
@@ -267,16 +304,16 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
         let mut style2 = Style::default();
         let mut style3 = Style::default();
 
-        if app.sb[app.sp].focus {
-            style1 = Style::default().fg(Color::Yellow);
-        } else if app.rb[app.rp].focus {
-            style2 = Style::default().fg(Color::Yellow);
-        } else {
-            style3 = Style::default().fg(Color::Yellow);
-        }
+        // if app.sb[app.sp].focus {
+        //     style1 = Style::default().fg(Color::Yellow);
+        // } else if app.rb[app.rp].focus {
+        //     style2 = Style::default().fg(Color::Yellow);
+        // } else {
+        //     style3 = Style::default().fg(Color::Yellow);
+        // }
 
         if let Content::SearchString(s, vs, i) = 
-            &app.sb[app.sp].content {
+            &app.sb.borrow()[app.sp].content {
             
             let mut text = "".to_string();
             if *i > 0 {
@@ -291,14 +328,14 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
             Paragraph::new(v.iter())
                 .block(
                     Block::default()
-                        .title(&app.sb[app.sp].title)
+                        .title(&app.sb.borrow()[app.sp].title)
                         .borders(Borders::ALL)
                         .border_style(style1))
                 .scroll(0)
                 .render(&mut f, area1[0]);
         }
 
-        if let Content::Results(vc, s) = &app.rb[app.rp].content {
+        if let Content::Results(vc, s) = &app.rb.borrow()[app.rp].content {
             let mut vn: Vec<String> = vec![];
 
             for c in vc {
@@ -308,7 +345,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
             SelectableList::default()
                 .block(
                     Block::default()
-                        .title(&app.rb[app.rp].title)
+                        .title(&app.rb.borrow()[app.rp].title)
                         .border_style(style2)
                         .borders(Borders::ALL),
                 )
@@ -331,7 +368,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
             Paragraph::new(text.iter())
                 .block(
                     Block::default()
-                        .title(&app.card_block.title)
+                        .title(&app.card_block.borrow().title)
                         .borders(Borders::ALL)
                         .border_style(Style::default()),
                 )
@@ -339,7 +376,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend>, app: &App) -> Result<(), io::
                 .render(&mut f, area2[0]);
         }
         Block::default()
-            .title(&app.other_block[0].title)
+            .title(&app.other_block.borrow()[0].title)
             .borders(Borders::ALL)
             .border_style(style3)
             .render(&mut f, area2[1]);
@@ -358,11 +395,23 @@ pub fn run(deck_id: i32) -> Result<(), failure::Error> {
     cursor.hide()?;
     terminal.clear()?;
 
-    let mut sv = vec![];
-    let mut rv = vec![];
-    let mut ov = vec![];
-    let mut cs = State::new(String::from("Card Info"));
-    let mut app = App::new(deck_id, &mut sv, &mut rv, &mut cs, &mut ov);
+    let mut svs = vec![];
+    let mut rvs = vec![];
+    let mut ovs = vec![];
+    let mut css = State::new(String::from("Card Info"));
+ 
+    // let sv = Rc::new(&mut svs);
+    // let rv = Rc::new(&mut rvs);
+    // let ov = Rc::new(&mut ovs);
+    // let cs = Rc::new(css);
+
+    // let mut svc = Rc::clone(&sv);
+    // let mut rvc = Rc::clone(&rv);
+    // let mut ovc = Rc::clone(&ov);
+    // let mut csc = Rc::clone(&cs);
+    
+    let mut app = App::new(deck_id, &mut svs, &mut rvs, &mut css, &mut ovs);
+    // let mut app = App::new(deck_id);
 
     loop {
         terminal.hide_cursor()?;
@@ -382,3 +431,7 @@ pub fn run(deck_id: i32) -> Result<(), failure::Error> {
 
     Ok(())
 }
+
+
+// note: expected type `&mut Rc<&mut std::vec::Vec<ui::State<'static>>>`
+//          found type `&mut Rc<std::vec::Vec<_>>`
