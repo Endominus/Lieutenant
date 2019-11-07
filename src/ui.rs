@@ -15,6 +15,26 @@ use Card;
 
 // use crate::db;
 
+// enum SearchMode {
+//     Name,
+//     Text,
+//     Advanced
+// }
+
+// trait Content {
+//     fn handle_input(&self);
+//     fn next_mode(&self);
+// }
+
+// struct SearchBar {
+//     title: String,
+//     text: String,
+//     history: Vec<String>,
+//     // mode: SearchMode,
+// }
+
+// impl
+
 #[derive(Clone, PartialEq)]
 enum Content<'a> {
     SearchString(String, Vec<String>, usize),
@@ -95,27 +115,27 @@ impl<'a> State<'a> {
     }
 }
 
-struct App<'a> {
-    sb: Rc<RefCell<Vec<State<'static>>>>,
+struct App {
+    sb: Rc<RefCell<State>>,
     sp: usize,
-    rb: Rc<RefCell<Vec<State<'static>>>>,
+    rb: Rc<RefCell<State>>,
     rp: usize,
-    card_block: Rc<RefCell<State<'a>>>,
-    other_block: Rc<RefCell<Vec<State<'static>>>>,
+    card_block: Rc<RefCell<State>>,
+    other_block: Rc<RefCell<State>>,
     deck_id: i32,
     quit: bool,
-    focus: Rc<RefCell<&'a State<'a>>>
+    focus: Rc<RefCell<State>>
 }
 
-impl<'a> App<'a> {
+impl App {
     fn new(
         deck_id: i32,
-        sv: &'a mut Vec<State<'static>>,
-        rv: &'a mut Vec<State<'static>>,
+        // sv: &'a mut Vec<State<'static>>,
+        // rv: &'a mut Vec<State<'static>>,
         // cs: &'a mut Rc<&'a mut State<'a>>,
-        cs: &mut State<'a>,
-        ov: &mut Vec<State<'static>>,
-    ) -> App<'a> {
+        // cs: &mut State<'a>,
+        // ov: &mut Vec<State<'static>>,
+    ) -> App {
         use db;
 
         let mut s1 = State::new(String::from("Search by name"));
@@ -126,12 +146,12 @@ impl<'a> App<'a> {
         s2.content = Content::SearchString("".to_string(), Vec::new(), 0);
         s3.content = Content::SearchString("".to_string(), Vec::new(), 0);
 
-        s1.focus();
+        // s1.focus();
 
-        // let mut sv = vec![s1, s2, s3];
-        sv.push(s1);
-        sv.push(s2);
-        sv.push(s3);
+        let mut sv = Rc::new(RefCell::new(vec![s1, s2, s3]));
+        // sv.push(s1);
+        // sv.push(s2);
+        // sv.push(s3);
 
         let mut r1 = State::new(String::from("Results"));
         let mut r2 = State::new(String::from("All Cards"));
@@ -410,8 +430,8 @@ pub fn run(deck_id: i32) -> Result<(), failure::Error> {
     // let mut ovc = Rc::clone(&ov);
     // let mut csc = Rc::clone(&cs);
     
-    let mut app = App::new(deck_id, &mut svs, &mut rvs, &mut css, &mut ovs);
-    // let mut app = App::new(deck_id);
+    // let mut app = App::new(deck_id, &mut svs, &mut rvs, &mut css, &mut ovs);
+    let mut app = App::new(deck_id);
 
     loop {
         terminal.hide_cursor()?;
