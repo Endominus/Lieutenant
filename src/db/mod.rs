@@ -1,8 +1,9 @@
 extern crate rusqlite;
 
 use self::rusqlite::{params, Connection, Result, NO_PARAMS};
-use crate::Card;
+use crate::{Card, Deck};
 use std::fs;
+use serde::Deserialize;
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Set {
@@ -411,4 +412,55 @@ pub fn rvcd(did: i32) -> Result<Vec<Card>> {
     })?.collect();
 
     cards
+}
+
+pub fn rc(name: String) -> Result<Card> {
+    let conn = Connection::open("cards.db")?;
+    let mut stmt = conn.prepare("
+    SELECT 
+        name, 
+        card_text, 
+        mana_cost,
+        layout, 
+        types, 
+        supertypes, 
+        subtypes, 
+        color_identity, 
+        related_cards, 
+        power, 
+        toughness, 
+        cmc
+    FROM cards WHERE name = ?;")?;
+    stmt.query_row(params![name], |row| {
+        Ok( Card {
+            name: row.get(0)?,
+            text: row.get(1)?,
+            mana_cost: row.get(2)?,
+            layout: row.get(3)?,
+            types: stovs(row.get(4)?),
+            supertypes: stovs(row.get(5)?),
+            subtypes: stovs(row.get(6)?),
+            color_identity: stovs(row.get(7)?),
+            related_cards: stovs(row.get(8)?),
+            power: row.get(9)?,
+            toughness: row.get(10)?,
+            cmc: row.get(11)?,
+        })
+    })
+}
+
+pub fn rvd () -> Result<Vec<Deck>> {
+    let conn = Connection::open("cards.db")?;
+    let mut stmt = conn.prepare("SELECT * FROM decks;")?;
+
+    let decks = stmt.query_map(NO_PARAMS, |row| {
+        
+        Ok(Deck {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            commander: rc(row.get(2)?)?,
+        })
+    })?.collect();
+
+    decks
 }

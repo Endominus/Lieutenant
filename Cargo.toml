@@ -2,6 +2,7 @@
 name = "lieutenant"
 version = "0.3.0"
 authors = ["Endominus <endominus@gmail.com>"]
+edition = "2018"
 
 [lib]
 name = "lieutenant"
@@ -9,17 +10,18 @@ path = "src/lib.rs"
 
 [dependencies]
 json = "*"
-reqwest = "*"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_derive = "*"
 serde_json = "*"
-serde = "*"
 failure = "*"
 clap = "2.31.2"
-crossterm = "0.10.2"
+crossterm = "*"
 structopt = "*"
+anyhow = "*"
 
 [dependencies.rusqlite]
-version = "0.20.0"
+version = "*"
 features = ["bundled"]
 
 [dependencies.tui]
