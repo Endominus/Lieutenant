@@ -337,31 +337,41 @@ pub fn create_db() -> Result<()> {
 }
 
 pub fn full_pull() -> Result<()> {
+    println!("Beginning full update of card database.");
     let conn = Connection::open("cards.db")?;
+    
     let mut stmt = conn.prepare("select s.code, s.name from sets s;")?;
-    let si = stmt
-        .query_map(NO_PARAMS, |row|
-        {
-            Ok(
-                Set {
-                    code: row.get(0)?,
-                    name: row.get(1)?,
-                }
-            )
-        })?;
-    let so = crate::network::rs().unwrap();
-    let mut sd = Vec::new();
+    let si: Vec<Set> = stmt.query_map(NO_PARAMS, |row| {
+        Ok(
+            Set {
+                code: row.get(0)?,
+                name: row.get(1)?,
+            }
+        )
+    })?.filter_map(Result::ok).collect();
+    println!("Retrived {} existing sets from the database.", si.len());
 
-    let si: Vec<Set> = si.filter_map(Result::ok).collect();
-
-    for s in so {
-        if !si.contains(&s) 
-            && !BANNED.contains(&&(*s.code)) {
-            sd.push(s.clone());
-        }
-    }
+    let so = crate::network::rvs().unwrap();
+    
+    let sd = so
+        .iter()
+        .filter(|s| !si.contains(s) && !BANNED.contains(& s.code.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    println!("There are {} sets missing from the database.", sd.len());
+    
+    // let si: Vec<Set> = si.filter_map(Result::ok).collect();
+    // let mut sd = Vec::new();
+    // for s in so {
+    //     if !si.contains(&s) 
+    //         && !BANNED.contains(& s.code.as_str()) {
+    //         println!("Set '{}' not found in database! Preparing to download...", s.name);
+    //         sd.push(s.clone());
+    //     }
+    // }
 
     for s in sd {
+        println!("Found set '{}' missing. Retrieving cards now.", s.name);
         let vc = crate::network::rcs(&s);
         ivctoc(vc)?;
         println!("Inserted all cards in {}", s.name);

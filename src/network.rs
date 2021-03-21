@@ -2,8 +2,8 @@
 
 // use reqwest::Client;
 // use reqwest::Error;
-// use reqwest::blocking::get;
-// use std::{thread, time};
+use reqwest::blocking::get;
+use std::{thread, time};
 use serde::Deserialize;
 // use serde::de::{self, Deserialize};
 // use reqwest::Response;
@@ -11,6 +11,8 @@ use serde::Deserialize;
 
 // use self::serde_json::Value;
 use anyhow::Result;
+use crate::db::Set;
+use crate::Card;
 
 
 fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
@@ -21,55 +23,58 @@ fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
     
     results
 }
-#[derive(Deserialize, Debug)]
-pub struct Sets {
-    pub sets: Vec<crate::db::Set>,
+// #[derive(Deserialize, Debug)]
+// pub struct Sets {
+//     pub sets: Vec<crate::db::Set>,
+// }
+
+// #[derive(Deserialize)]
+// pub struct Cards {
+//     cards: Vec<crate::Card>,
+//     // meta: i8
+// }
+
+pub fn retrieve_card_by_name(name: String) -> Result<Vec<Card>> {
+    let url = format!("https://api.magicthegathering.io/v1/cards?name=\"{}\"", name);
+    rvc(url, 1)
+    // todo!()
 }
 
-#[derive(Deserialize)]
-pub struct Cards {
-    cards: Vec<crate::Card>,
-    // meta: i8
-}
+pub fn rvs() -> Result<Vec<Set>> {
+    println!("Retrieving all sets now...");
 
-pub fn retrieve_card_by_name(name: String) -> Result<Vec<crate::Card>> {
-    // let url = format!("https://api.magicthegathering.io/v1/cards?name=\"{}\"", name);
-    // rc(url, 1)
-    todo!()
-}
-
-pub fn rs() -> Result<Vec<crate::db::Set>> {
-    // let url = "https://api.magicthegathering.io/v1/sets";
-    // let mut response = reqwest::get(url)?;
+    let url = "https://api.magicthegathering.io/v1/sets";
+    let response = get(url)?;
 
     // let sets = response.json::<Sets>()?;
+    let sets = response.json::<Vec<Set>>()?;
 
-    // println!("{:?}", sets.sets);
+    println!("Retrieved a total of {} sets.", sets.len());
 
-    // Ok(sets.sets)
-    todo!()
+    Ok(sets)
 }
 
-pub fn rcs(s: &crate::db::Set) -> Vec<crate::Card> {
-    // let url = format!("https://api.magicthegathering.io/v1/cards?set={}", s.code);
-    // let c = rc(url, 1).unwrap();
+pub fn rcs(s: &crate::db::Set) -> Vec<Card> {
+    let url = format!("https://api.magicthegathering.io/v1/cards?set={}", s.code);
+    let c = rvc(url, 1).unwrap();
 
-    // c
-    todo!()
+    c
+    // todo!()
 }
 
-async fn rc(url: String, page: i8) -> Result<Vec<crate::Card>> {
-    // let url = format!("{url}&page={page}", url = url, page = page);
-    // let mut res = reqwest::get(&url).await?;
+fn rvc(url: String, page: i8) -> Result<Vec<Card>> {
+    let url = format!("{url}&page={page}", url = url, page = page);
+    let res = get(&url)?;
 
-    // let mut cards = res.json::<Cards>().await?;
+    // let mut cards = res.json::<Cards>()?;
+    let mut cards = res.json::<Vec<Card>>()?;
 
     
-    // if cards.cards.len() == 100 {
-    //     // println!("Found {}, going to next page", cards.len());
-    //     thread::sleep(time::Duration::from_secs(2));
-    //     cards.cards.append(&mut rc(url, page+1).unwrap());
-    // }
-    // Ok(cards.cards)
-    todo!()
+    if cards.len() == 100 {
+        // println!("Found {}, going to next page", cards.len());
+        thread::sleep(time::Duration::from_secs(1));
+        cards.append(&mut rvc(url, page+1).unwrap());
+    }
+    Ok(cards)
+    // todo!()
 }

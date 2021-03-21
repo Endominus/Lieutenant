@@ -133,7 +133,7 @@ pub fn run(command: Command) -> Result<()> {
 fn main() {
     // println!("{:?}", args);
     let matches = App::new("Lieutenant")
-        .version("0.2")
+        .version("0.3")
         .about("Helps you manage your commander decks")
         .author("Endominus")
         .arg(
@@ -172,7 +172,7 @@ fn main() {
         .get_matches();
 
     if matches.is_present("update"){
-        run(Command::FullPull);
+        let _a = run(Command::FullPull);
         if let Err(e) = run(Command::FullPull) {
             println!("Error: {}", e);
         }
