@@ -4,7 +4,7 @@
 // use reqwest::Error;
 use reqwest::blocking::get;
 use std::{thread, time};
-use serde::Deserialize;
+// use serde::Deserialize;
 // use serde::de::{self, Deserialize};
 // use reqwest::Response;
 // use std::io::Read;

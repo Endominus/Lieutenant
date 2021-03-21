@@ -9,12 +9,17 @@ extern crate serde;
 extern crate crossterm;
 extern crate tui;
 extern crate serde_json;
-// extern crate json;
+#[macro_use]
+extern crate lazy_static;
 
 // mod res;
 // use res::{Command, run};
 
 // use serde::{Deserialize};
+
+use std::collections::HashMap;
+use std::sync::RwLock;
+use config::Config;
 use clap::{App, Arg, SubCommand};
 use anyhow::Result;
 use serde::Deserialize;
@@ -24,6 +29,14 @@ mod network;
 mod db;
 mod ui;
 
+lazy_static! {
+    static ref SETTINGS: RwLock<Config> = RwLock::new({
+        let mut settings = Config::default();
+        settings.merge(config::File::with_name("settings.toml")).unwrap();
+
+        settings
+    });
+}
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Card {
@@ -47,6 +60,8 @@ pub struct Card {
     pub layout : String,
 }
 
+impl ToString for Card { fn to_string(& self) -> String { self.name.clone() } }
+
 fn zero() -> String { String::from("0") }
 
 pub struct Deck {
@@ -54,6 +69,8 @@ pub struct Deck {
     pub commander: Card,
     pub id: i32,
 }
+
+impl ToString for Deck { fn to_string(& self) -> String { self.name.clone() } }
 
 impl Card {
     pub fn ri(&self) -> Vec<String> {
@@ -131,17 +148,10 @@ pub fn run(command: Command) -> Result<()> {
 
 
 fn main() {
-    // println!("{:?}", args);
     let matches = App::new("Lieutenant")
         .version("0.3")
         .about("Helps you manage your commander decks")
         .author("Endominus")
-        .arg(
-            Arg::with_name("update")
-                .help("Updates the database")
-                .short("u")
-                .long("update")
-        )
         .subcommands( vec![
             SubCommand::with_name("get") 
                 .about("Gets a card from the database")
@@ -164,36 +174,38 @@ fn main() {
                        .help("Name of the file to import from")
                        .index(2)
                        .required(true),
-                )
+                ),
+            SubCommand::with_name("update")
+                .about("Updates the card database with any new cards added"),
         ])
-        //TODO: Add deck import command.
-        // .subcommand(
-        // )
         .get_matches();
 
-    if matches.is_present("update"){
-        let _a = run(Command::FullPull);
-        if let Err(e) = run(Command::FullPull) {
-            println!("Error: {}", e);
+    // TODO if settings file doesn't exist, create it with default values.
+
+    // println!("{:?}", SETTINGS.read().unwrap().clone().try_into::<HashMap<String, String>>().unwrap());
+    // SETTINGS.write().unwrap().set("recent", 1).unwrap();
+    // println!("{:?}", SETTINGS.read().unwrap().clone().try_into::<HashMap<String, String>>().unwrap());
+
+    match matches.subcommand() {
+        ("get", Some(sub_m)) => {
+            println!("Getting cards with name: {}", sub_m.value_of("input").unwrap());
+            let _a = run(Command::RetrieveCard(sub_m.value_of("input").unwrap().to_string()));
         }
+        ("import", Some(sub_m)) => {
+            println!("Inserting all cards from {} into deck with ID {}", 
+            sub_m.value_of("filename").unwrap(), 
+            sub_m.value_of("deck_id").unwrap());
+            // let _a = run(Command::ImportCards(
+                //     sub_m.value_of("deck_id").unwrap().parse().unwrap(),
+                //     sub_m.value_of("filename").unwrap().to_string()));
+            }
+        ("update", Some(_sub_m)) => {
+            println!("Updating the database");
+            // let _a = run(Command::FullPull);
+            // if let Err(e) = run(Command::FullPull) {
+            //     println!("Error: {}", e);
+            // }
+        }
+        _ => { let _a = run(Command::Draw); }
     }
-
-    if let Some(ref matches) = matches.subcommand_matches("get") {
-        // Safe to use unwrap() because of the required() option
-        println!("Getting cards with name: {}", matches.value_of("input").unwrap());
-        let _a = run(Command::RetrieveCard(matches.value_of("input").unwrap().to_string()));
-    }
-
-    if let Some(ref matches) = matches.subcommand_matches("import") {
-        println!("Inserting all cards from {} into deck with ID {}", 
-            matches.value_of("filename").unwrap(), 
-            matches.value_of("deck_id").unwrap());
-            let _a = run(Command::ImportCards(
-                matches.value_of("deck_id").unwrap().parse().unwrap(),
-                matches.value_of("filename").unwrap().to_string()));
-    }
-
-    // let a = lieutenant::run(lieutenant::Command::RetrieveCard("Avacyn, Guardian Angel".to_string()));
-    // println!("{:?}", a);
-    let _a = run(Command::Draw);
 }
