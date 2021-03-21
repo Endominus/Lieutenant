@@ -76,7 +76,7 @@ impl AppState {
                     KeyCode::Enter => { 
                         // TODO: Assign correct deck ID to config
                         self.deck = Some(db::rd(1)?);
-                        self.contents = Some(db::rvcd(self.deck.unwrap().id)?);
+                        self.contents = Some(db::rvcd(1)?);
                         self.switch_mode(Some(Screen::DeckOmni));
                     }
                     _ => {}
@@ -116,7 +116,8 @@ impl AppState {
 
     fn init_deck_view(&mut self) {
         self.mode = Screen::DeckOmni;
-        self.sldc = StatefulList::with_items(db::rvcd(self.deck.unwrap().id).unwrap());
+        let a = &self.contents.as_ref().unwrap().to_vec();
+        self.sldc = StatefulList::with_items(db::rvcd(1).unwrap());
         self.sldc.next();
     }
     
@@ -190,12 +191,10 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             Screen::DeckOmni => {
                 if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
                 let ds = DeckScreen::new(state.omnitext.clone(), state.sldc.rvli(), String::from("Card"));
-                // let block = Block::default().borders(Borders::ALL);
-                // f.render_widget(block, chunks[0]);
-                // let block = Block::default().borders(Borders::ALL);
-                // f.render_widget(block, chunks[1]);
-                // let block = Block::default().borders(Borders::ALL);
-                // f.render_widget(block, chunks[2]);
+                
+                f.render_widget(ds.omni, chunks[0]);
+                f.render_stateful_widget(ds.lc, chunks[1], &mut state.sldc.state.clone());
+                f.render_widget(ds.fc, chunks[2]);
             }
             Screen::OpenDeck => {
                 let list = List::new(state.slod.rvli())

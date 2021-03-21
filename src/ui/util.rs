@@ -104,7 +104,7 @@ impl DeckScreen<'_> {
             .style(Style::default())
             .block(Block::default().borders(Borders::ALL).title("Omnibar"));
         let list = List::new(vli)
-            .block(Block::default().title("Main Menu").borders(Borders::ALL))
+            .block(Block::default().title("Card List").borders(Borders::ALL))
             .style(Style::default().fg(Color::White))
             .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
         let card = Paragraph::new(cardtext)
