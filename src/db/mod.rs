@@ -190,7 +190,6 @@ pub fn rvcn(mut name: String, did: i32) -> Result<Vec<Card>> {
 
     name.insert(0, '%');
     name.push('%');
-    // let mut stmt = conn.prepare("")?;
 
     if did < 0 {
         let mut stmt = conn.prepare("
@@ -359,16 +358,6 @@ pub fn full_pull() -> Result<()> {
         .cloned()
         .collect::<Vec<_>>();
     println!("There are {} sets missing from the database.", sd.len());
-    
-    // let si: Vec<Set> = si.filter_map(Result::ok).collect();
-    // let mut sd = Vec::new();
-    // for s in so {
-    //     if !si.contains(&s) 
-    //         && !BANNED.contains(& s.code.as_str()) {
-    //         println!("Set '{}' not found in database! Preparing to download...", s.name);
-    //         sd.push(s.clone());
-    //     }
-    // }
 
     for s in sd {
         println!("Found set '{}' missing. Retrieving cards now.", s.name);
@@ -473,4 +462,16 @@ pub fn rvd () -> Result<Vec<Deck>> {
     })?.collect();
 
     decks
+}
+
+pub fn rd(id: i32) -> Result<Deck> {
+    let conn = Connection::open("cards.db")?;
+    let mut stmt = conn.prepare("SELECT * FROM decks WHERE id = ?;")?;
+    stmt.query_row(params![id], |row| {
+        Ok( Deck {
+            name: row.get(1)?,
+            commander: rc(row.get(2)?)?,
+            id: row.get(0)?,
+        })
+    })
 }
