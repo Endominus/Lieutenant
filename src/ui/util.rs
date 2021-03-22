@@ -1,4 +1,4 @@
-use tui::widgets::{List, ListItem, ListState, Paragraph, Block, Borders};
+use tui::widgets::{List, ListItem, ListState, Paragraph, Block, Borders, Wrap};
 use tui::style::{Color, Modifier, Style};
 use anyhow::Result;
 
@@ -109,6 +109,7 @@ impl DeckScreen<'_> {
             .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
         let card = Paragraph::new(cardtext)
             .style(Style::default())
+            .wrap(Wrap { trim: false } )
             .block(Block::default().borders(Borders::ALL).title("Card Info"));
             
         DeckScreen {
@@ -117,4 +118,28 @@ impl DeckScreen<'_> {
             fc: card,
         }
     }
+
+    pub fn focus_omni(&mut self) {
+        let nb = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow))
+            .title("Omnibar");
+        self.omni = self.omni.clone().block(nb);
+        let nb = Block::default().title("Card List").borders(Borders::ALL);
+        self.lc = self.lc.clone().block(nb);
+    }
+
+    pub fn focus_lc(&mut self) {
+        let nb = Block::default()
+            .borders(Borders::ALL)
+            .title("Omnibar");
+        self.omni = self.omni.clone().block(nb);
+        let nb = Block::default()
+            .title("Card List")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow));
+        self.lc = self.lc.clone().block(nb);
+    }
 }
+
+// fn focus_border

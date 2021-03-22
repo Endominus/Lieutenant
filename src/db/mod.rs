@@ -11,6 +11,10 @@ pub struct Set {
     name: String,
 }
 
+pub struct CardFilter {
+    name: String,
+}
+
 const BANNED: [&'static str; 6] = [
     "UGL", "UNH", "UST", "H17", "HHO", "HTR"
 ];
@@ -100,7 +104,7 @@ fn stovs(ss: String) -> Vec<String> {
     vs
 }
 
-pub fn rvct(mut text: String, did: i32) -> Result<Vec<Card>> {
+pub fn rvcftext(mut text: String, did: i32) -> Result<Vec<Card>> {
     let conn = Connection::open("cards.db")?;
 
     text.insert(0, '%');
@@ -185,7 +189,7 @@ pub fn rvct(mut text: String, did: i32) -> Result<Vec<Card>> {
     }
 }
 
-pub fn rvcn(mut name: String, did: i32) -> Result<Vec<Card>> {
+pub fn rvcfname(mut name: String, did: i32) -> Result<Vec<Card>> {
     let conn = Connection::open("cards.db")?;
 
     name.insert(0, '%');
@@ -369,7 +373,7 @@ pub fn full_pull() -> Result<()> {
     Ok(())
 }
 
-pub fn rvcd(did: i32) -> Result<Vec<Card>> {
+pub fn rvcfdid(did: i32) -> Result<Vec<Card>> {
     let conn = Connection::open("cards.db")?;
 
     let mut stmt = conn.prepare("
@@ -413,7 +417,7 @@ pub fn rvcd(did: i32) -> Result<Vec<Card>> {
     cards
 }
 
-pub fn rc(name: String) -> Result<Card> {
+pub fn rcfn(name: String) -> Result<Card> {
     let conn = Connection::open("cards.db")?;
     let mut stmt = conn.prepare("
     SELECT 
@@ -457,21 +461,25 @@ pub fn rvd () -> Result<Vec<Deck>> {
         Ok(Deck {
             id: row.get(0)?,
             name: row.get(1)?,
-            commander: rc(row.get(2)?)?,
+            commander: rcfn(row.get(2)?)?,
         })
     })?.collect();
 
     decks
 }
 
-pub fn rd(id: i32) -> Result<Deck> {
+pub fn rdfdid(id: i32) -> Result<Deck> {
     let conn = Connection::open("cards.db")?;
     let mut stmt = conn.prepare("SELECT * FROM decks WHERE id = ?;")?;
     stmt.query_row(params![id], |row| {
         Ok( Deck {
             name: row.get(1)?,
-            commander: rc(row.get(2)?)?,
+            commander: rcfn(row.get(2)?)?,
             id: row.get(0)?,
         })
     })
+}
+
+pub fn rvcfcf(did: i32, cf: CardFilter) -> Result<Vec<Card>> {
+    todo!();
 }

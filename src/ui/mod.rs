@@ -6,7 +6,6 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::stdout;
-// use std::io;
 use tui::{backend::{CrosstermBackend}, widgets::Widget};
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
@@ -22,6 +21,7 @@ use util::{StatefulList, MainMenuItem, Screen, DeckScreen};
 struct AppState {
     mode: Screen,
     title: String,
+    deck_id: i32,
     deck: Option<Deck>,
     contents: Option<Vec<Card>>,
     omnitext: String,
@@ -38,6 +38,7 @@ impl AppState {
         let mut app = AppState {
             mode: Screen::MainMenu,
             title: String::from("Main Menu"),
+            deck_id: -1,
             deck: None,
             contents: None,
             sldc: StatefulList::new(),
@@ -47,6 +48,8 @@ impl AppState {
             omnitext: String::new(),
             dbftext: String::new(),
             dirty_deck: true,
+            // dsod: DeckScreen,
+            // dsdb: DeckScreen,
         };
 
         app.init_main_menu();
@@ -75,9 +78,15 @@ impl AppState {
                     KeyCode::Down => { self.slod.next(); }
                     KeyCode::Enter => { 
                         // TODO: Assign correct deck ID to config
-                        self.deck = Some(db::rd(1)?);
-                        self.contents = Some(db::rvcd(1)?);
-                        self.switch_mode(Some(Screen::DeckOmni));
+                        self.deck_id = 1;
+                        self.omnitext = String::new();
+
+                        self.deck = Some(db::rdfdid(self.deck_id)?);
+                        self.contents = Some(db::rvcfdid(self.deck_id)?);
+
+                        self.mode = Screen::DeckOmni;
+                        self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
+                        self.sldc.next();
                     }
                     _ => {}
                 }
@@ -87,10 +96,18 @@ impl AppState {
                     KeyCode::Esc => { self.mode = Screen::MainMenu; }
                     // KeyCode::Up => { self.slod.previous(); }
                     // KeyCode::Down => { self.slod.next(); }
-                    KeyCode::Enter => { 
-                        // TODO: Assign correct deck ID to config
-                        // self.switch_mode(Some(Screen::DeckOmni));
-                    }
+                    KeyCode::Enter | KeyCode::Tab => { self.mode = Screen::DeckCard; }
+                    KeyCode::Backspace => { self.omnitext.pop(); }
+                    KeyCode::Char(c) => {self.omnitext.push(c); }
+                    _ => {}
+                }
+            }
+            Screen::DeckCard => {
+                match c {
+                    KeyCode::Esc => { self.mode = Screen::MainMenu; }
+                    KeyCode::Up => { self.sldc.previous(); }
+                    KeyCode::Down => { self.sldc.next(); }
+                    KeyCode::Tab => { self.mode = Screen::DeckOmni; }
                     _ => {}
                 }
             }
@@ -106,10 +123,10 @@ impl AppState {
             Some(Screen::OpenDeck) => { self.init_open_view(); }
             Some(Screen::DeckOmni) => { self.init_deck_view(); }
             Some(Screen::Settings) => { self.init_settings(); }
+            Some(Screen::DeckCard) => {  }
             Some(_) => {}
             None => { self.quit = true }
         }
-
     }
 
     fn init_create_view(&mut self) {}
@@ -117,7 +134,7 @@ impl AppState {
     fn init_deck_view(&mut self) {
         self.mode = Screen::DeckOmni;
         let a = &self.contents.as_ref().unwrap().to_vec();
-        self.sldc = StatefulList::with_items(db::rvcd(1).unwrap());
+        self.sldc = StatefulList::with_items(db::rvcfdid(1).unwrap());
         self.sldc.next();
     }
     
@@ -141,6 +158,11 @@ impl AppState {
         self.slmm = StatefulList::with_items(items);
         self.slmm.next();
     }
+
+    // fn usldc(&mut self) {
+    //     // state.sldc
+    //     let a = db::
+    // }
 }
 
 fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut AppState) -> Result<()> {
@@ -154,7 +176,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 let mut vrct = Vec::new();
                 let cut = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([Constraint::Min(3),Constraint::Min(5)].as_ref())
+                    .constraints([Constraint::Length(3), Constraint::Min(5)].as_ref())
                     .split(f.size());
                 vrct.push(cut[0]);
 
@@ -165,18 +187,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 vrct
             }
             Screen::Settings | Screen::MakeDeck => { Vec::new() }
-            // Screen:: => {}
-            // _ => { Vec::new() }
-        };
-        
-        // if chunks.len() == 0 { println!("something went wrong"); state.quit = true; return; }
-        
-        // let a: Vec<ListItem> = state.slmm.items.iter().map(|mm| ListItem::new(mm.text.clone())).collect();
-        // let list = List::new(a)
-        //     .block(Block::default().title("Main Menu").borders(Borders::ALL))
-        //     .style(Style::default().fg(Color::White))
-        //     .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
-        
+        };        
             
         match state.mode {
             Screen::MainMenu => {
@@ -190,8 +201,10 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             Screen::DbFilter => {}
             Screen::DeckOmni => {
                 if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let ds = DeckScreen::new(state.omnitext.clone(), state.sldc.rvli(), String::from("Card"));
+                let text = state.sldc.get().unwrap().ri().join("\n");
+                let mut ds = DeckScreen::new(state.omnitext.clone(), state.sldc.rvli(), text);
                 
+                ds.focus_omni();
                 f.render_widget(ds.omni, chunks[0]);
                 f.render_stateful_widget(ds.lc, chunks[1], &mut state.sldc.state.clone());
                 f.render_widget(ds.fc, chunks[2]);
@@ -206,7 +219,15 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             Screen::Settings => {}
             Screen::MakeDeck => {}
             Screen::DbCards => {}
-            Screen::DeckCard => {}
+            Screen::DeckCard => {
+                if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
+                let text = state.sldc.get().unwrap().ri().join("\n");
+                let mut ds = DeckScreen::new(state.omnitext.clone(), state.sldc.rvli(), text);
+                
+                ds.focus_lc();
+                f.render_widget(ds.omni, chunks[0]);
+                f.render_stateful_widget(ds.lc, chunks[1], &mut state.sldc.state.clone());
+                f.render_widget(ds.fc, chunks[2]);}
         }
     })?;
     Ok(())
