@@ -17,7 +17,7 @@ extern crate lazy_static;
 
 // use serde::{Deserialize};
 
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::sync::RwLock;
 use config::Config;
 use clap::{App, Arg, SubCommand};

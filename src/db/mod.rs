@@ -15,6 +15,22 @@ pub struct CardFilter {
     name: String,
 }
 
+impl CardFilter {
+    pub fn new() -> CardFilter {
+        CardFilter {
+            name: String::new(),
+        }
+    }
+
+    pub fn name(mut self, n: String) -> CardFilter {
+        self.name = n;
+        self.name.insert(0, '%');
+        self.name.push('%');
+
+        self
+    }
+}
+
 const BANNED: [&'static str; 6] = [
     "UGL", "UNH", "UST", "H17", "HHO", "HTR"
 ];
@@ -481,5 +497,49 @@ pub fn rdfdid(id: i32) -> Result<Deck> {
 }
 
 pub fn rvcfcf(did: i32, cf: CardFilter) -> Result<Vec<Card>> {
-    todo!();
+    let conn = Connection::open("cards.db")?;
+
+    let mut stmt = conn.prepare("
+        SELECT 
+            name, 
+			card_text, 
+			mana_cost,
+            layout, 
+			types, 
+			supertypes, 
+            subtypes, 
+			color_identity, 
+			related_cards, 
+            power, 
+			toughness, 
+			cmc
+        FROM `cards`
+        INNER JOIN deck_contents
+        ON cards.name = deck_contents.card_name
+        WHERE deck_contents.deck = ?
+        AND cards.name LIKE ?
+        ORDER BY name;")?;
+
+        let cards = stmt.query_map(params![did, cf.name], |row| {
+            Ok(Card {
+                name: row.get(0)?,
+                text: row.get(1)?,
+                mana_cost: row.get(2)?,
+                layout: row.get(3)?,
+                types: stovs(row.get(4)?),
+                supertypes: stovs(row.get(5)?),
+                subtypes: stovs(row.get(6)?),
+                color_identity: stovs(row.get(7)?),
+                related_cards: stovs(row.get(8)?),
+                power: row.get(9)?,
+                toughness: row.get(10)?,
+                cmc: row.get(11)?,
+            })
+        })?.collect();
+
+        // if cards == Error { println!("No cards found");  }
+
+        cards
+
+    // todo!();
 }

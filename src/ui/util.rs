@@ -1,8 +1,8 @@
 use tui::widgets::{List, ListItem, ListState, Paragraph, Block, Borders, Wrap};
 use tui::style::{Color, Modifier, Style};
-use anyhow::Result;
+use anyhow::{Result, Error};
 
-use crate::Card;
+// use crate::Card;
 
 #[derive(Copy, Clone)]
 pub enum Screen {
@@ -69,9 +69,13 @@ impl<T: ToString> StatefulList<T> {
         self.state.select(None);
     }
 
-    pub fn get(& self) -> Result<&T> {
-        let a = self.items.get(self.state.selected().unwrap()).unwrap();
-        Ok(a)
+    pub fn get(& self) -> Option<&T> {
+        // There should be a more elegant way of doing this.
+        if self.items.len() > 0 {
+            let a = self.items.get(self.state.selected().unwrap()).unwrap();
+            return Some(a);
+        }
+        None
     }
 
     pub fn rvli(& self) -> Vec<ListItem> {

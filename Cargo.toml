@@ -1,6 +1,6 @@
 [package]
 name = "lieutenant"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Endominus <endominus@gmail.com>"]
 edition = "2018"
 
