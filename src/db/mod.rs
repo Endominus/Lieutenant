@@ -1,9 +1,43 @@
 extern crate rusqlite;
+extern crate regex;
 
-use self::rusqlite::{params, Connection, Result, NO_PARAMS};
+use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
 use crate::{Card, Deck};
-use std::fs;
+use std::{collections::HashMap, fs};
 use serde::Deserialize;
+use regex::Regex;
+use self::rusqlite::functions::FunctionFlags;
+use std::sync::Arc;
+type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+//TODO: Prepare statements and pass around a DB connection object as in https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112
+
+//TODO: Fix
+// for later use, when regex matching is used for text
+fn add_regexp_function(db: &Connection) -> Result<()> {
+    db.create_scalar_function(
+        "regexp",
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        move |ctx| {
+            assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
+            let regexp: Arc<Regex> = ctx
+                .get_or_create_aux(0, |vr| -> Result<_, BoxError> {
+                    Ok(Regex::new(vr.as_str()?)?)
+                })?;
+            let is_match = {
+                let text = ctx
+                    .get_raw(1)
+                    .as_str()
+                    .map_err(|e| Error::UserFunctionError(e.into()))?;
+
+                regexp.is_match(text)
+            };
+
+            Ok(is_match)
+        },
+    )
+}
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Set {
@@ -12,27 +46,143 @@ pub struct Set {
 }
 
 pub struct CardFilter {
+    did: i32,
     name: String,
+    text: String,
 }
 
 impl CardFilter {
-    pub fn new() -> CardFilter {
+    pub fn new(did: i32) -> CardFilter {
         CardFilter {
+            did,
             name: String::new(),
+            text: String::new(),
+
         }
     }
 
+    pub fn parse_omni(omni: &str) -> HashMap<String, String> {
+        let mut hm = HashMap::new();
+        // hm.insert(String::from("test"), String::from("test"));
+
+        // let omni = String::from(omni);
+
+        peg::parser!{
+            grammar omni_parser() for str {
+                pub rule root(hm: &mut HashMap<String, String>)
+                = (fields(hm) / " "+)+ ![_]
+
+                rule fields(hm: &mut HashMap<String, String>)
+                = text(hm) / color(hm) / ctype(hm) / cmc(hm) / color_identity(hm) / power(hm) / toughness(hm) / name(hm)
+
+                rule cmc(hm: &mut HashMap<String, String>)
+                = "cmc:" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { hm.insert(String::from("cmc"), String::from(value)); }
+                rule name(hm: &mut HashMap<String, String>)
+                = name_alias()? value:ss_values() { hm.insert(String::from("name"), value); }
+                rule text(hm: &mut HashMap<String, String>)
+                = text_alias() ":" value:ss_values() { hm.insert(String::from("text"), value); }
+                rule color(hm: &mut HashMap<String, String>)
+                = color_alias() ":" value:$(colors()+) ** or_separator() { hm.insert(String::from("color"), value.join("|")); }
+                rule ctype(hm: &mut HashMap<String, String>)
+                = type_alias() ":" value:type_group() ** or_separator() { hm.insert(String::from("type"), value.join("|")); }
+                rule power(hm: &mut HashMap<String, String>)
+                = power_alias() ":" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { hm.insert(String::from("power"), String::from(value)); }
+                rule toughness(hm: &mut HashMap<String, String>)
+                = toughness_alias() ":" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { hm.insert(String::from("toughness"), String::from(value)); }
+                rule color_identity(hm: &mut HashMap<String, String>)
+                = color_identity_alias() ":" value:$(colors()+) ** or_separator() { hm.insert(String::from("color_identity"), value.join("|")); }
+
+                rule ss_values() -> String
+                = v:$(phrase() / word()) { String::from(v) }
+                rule type_group() -> String
+                = and_types:word() ** and_separator() { and_types.join("&") }
+
+                rule name_alias() = ("name:" / "n:")
+                rule text_alias() = ("text" / "te")
+                rule type_alias() = ("type" / "ty")
+                rule color_alias() = ("color" / "c")
+                rule power_alias() = ("power" / "p")
+                rule toughness_alias() = ("toughness" / "t")
+                rule color_identity_alias() = ("color_identity" / "coloridentity" / "ci")
+
+                rule word() -> String
+                = s:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '{' | '}']+) { String::from(s) }
+                rule phrase() -> String
+                =s:$("\"" (word() / " ")+ "\"" ) {String::from(s) }
+                // rule exp_types() -> String
+                // = t:$types() { match t {
+                //     "l" => String::from("legendary"),
+                //     "e" => String::from("enchantment"),
+                //     "p" => String::from("planeswalker"),
+                //     "i" => String::from("instant"),
+                //     "s" => String::from("sorcery"),
+                //     "c" => String::from("creature"),
+                //     "a" => String::from("artifact"),
+                //     _ => String::from("ERROR"),
+                // } }
+                // =s:$("\"" [_]* "\"" ) {String::from(s) }
+
+                rule colors() = ['c' | 'w' | 'u' | 'b' | 'g' | 'r']
+                // rule types() = ['l' | 'e' | 'p' | 'i' | 's' | 'c' | 'a']
+                rule all_separator() = ['|' | '/' | '+' | '&']
+                rule or_separator() = ['|' | '/' ]
+                rule and_separator() = ['+' | '&' ]
+                
+            }
+        }
+
+        match omni_parser::root(omni, &mut hm) {
+            Ok(_) => {}
+            Err(_) => { println!("Attempted to run omniparser with incorrect arguments. Resultant hashmap:\n{:?}", hm); }
+        }
+        
+        hm
+    }
+
     pub fn name(mut self, n: String) -> CardFilter {
+        // self.names = n.clone().iter().map(|&mut s| { s.insert(0, '%'); s.push('%'); s.clone() } ).collect();
+        // self.names = Vec::new();
+        // for n in vn {
+        //     let mut mn = n.clone();
+        //     mn.insert(0, '%');
+        //     mn.push('%');
+        //     self.names.push(mn);
+        // }
         self.name = n;
         self.name.insert(0, '%');
-        self.name.push('%');
+        self.name.push( '%');
 
         self
     }
+
+    pub fn text(mut self, t: String) -> CardFilter {
+        self.text = t;
+        self.text.insert(0, '%');
+        self.text.push('%');
+        self
+    }
+
+    pub fn make_filter(&self) -> String {
+        
+        let mut vs = Vec::from([format!("WHERE deck_contents.deck = {}", self.did)]);
+        if !self.name.is_empty() { 
+            // vs.push();
+            // AND (cards.name LIKE '%ana%' OR cards.name LIKE '%wis%')
+            // TODO: iterate over the vecor for names
+            vs.push(format!("AND (cards.name LIKE {})", self.name));
+        }
+        if !self.text.is_empty() {
+            // TODO: make regex
+            vs.push(format!("AND (cards.card_text LIKE {})", self.text));
+        }
+        // for
+
+        vs.join(" ")
+    }
 }
 
-const BANNED: [&'static str; 6] = [
-    "UGL", "UNH", "UST", "H17", "HHO", "HTR"
+const BANNED: [&'static str; 9] = [
+    "UGL", "UNH", "UST", "H17", "HHO", "HTR", "THP1", "THP2", "THP3"
 ];
 
 // impl Set {
@@ -314,10 +464,11 @@ pub fn create_db() -> Result<()> {
         "create table if not exists sets (
             id integer primary key,
             code text not null unique, 
-            name text not null unique)"
-            , NO_PARAMS,
+            name text not null unique
+        )", NO_PARAMS,
     )?;
 
+    //TODO: Add reference to rulings, legalities, and side
     conn.execute(
         "create table if not exists cards (
             id integer primary key,
@@ -332,9 +483,11 @@ pub fn create_db() -> Result<()> {
             related_cards text,
             power text,
             toughness text,
-            cmc integer not null)"
-            , NO_PARAMS)?;
+            cmc integer not null
+        )", NO_PARAMS
+    )?;
 
+    //TODO: Add notes, cost, and date_cost_calculated
     conn.execute(
         "create table if not exists decks (
             id integer primary key,
@@ -351,7 +504,8 @@ pub fn create_db() -> Result<()> {
             deck integer not null,
             tags text,
             foreign key (deck) references decks(id))"
-            , NO_PARAMS)?;
+            , NO_PARAMS
+    )?;
     Ok(())
 }
 
@@ -496,8 +650,9 @@ pub fn rdfdid(id: i32) -> Result<Deck> {
     })
 }
 
-pub fn rvcfcf(did: i32, cf: CardFilter) -> Result<Vec<Card>> {
+pub fn rvcfcf(cf: CardFilter) -> Result<Vec<Card>> {
     let conn = Connection::open("cards.db")?;
+    let _a = add_regexp_function(&conn);
 
     let mut stmt = conn.prepare("
         SELECT 
@@ -516,11 +671,10 @@ pub fn rvcfcf(did: i32, cf: CardFilter) -> Result<Vec<Card>> {
         FROM `cards`
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
-        WHERE deck_contents.deck = ?
-        AND cards.name LIKE ?
+        ?
         ORDER BY name;")?;
 
-        let cards = stmt.query_map(params![did, cf.name], |row| {
+        let cards = stmt.query_map(params![cf.make_filter()], |row| {
             Ok(Card {
                 name: row.get(0)?,
                 text: row.get(1)?,

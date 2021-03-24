@@ -55,8 +55,11 @@ pub fn rvs() -> Result<Vec<Set>> {
 }
 
 pub fn rcs(s: &crate::db::Set) -> Vec<Card> {
-    let url = format!("https://api.magicthegathering.io/v1/cards?set={}", s.code);
-    let c = rvc(url, 1).unwrap();
+    let url = format!("https://api.magicthegathering.io/v1/cards?set={}&legality=Commander", s.code);
+    let c = match rvc(url, 1) {
+        Ok(vc) => { vc }
+        Err(_) => { Vec::new() }
+    };
 
     c
     // todo!()
@@ -75,6 +78,7 @@ fn rvc(url: String, page: i8) -> Result<Vec<Card>> {
         thread::sleep(time::Duration::from_secs(1));
         cards.append(&mut rvc(url, page+1).unwrap());
     }
+    
     Ok(cards)
     // todo!()
 }

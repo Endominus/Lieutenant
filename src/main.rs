@@ -10,7 +10,10 @@ extern crate crossterm;
 extern crate tui;
 extern crate serde_json;
 #[macro_use]
+extern crate peg;
+#[macro_use]
 extern crate lazy_static;
+// #[macro_use]
 
 // mod res;
 // use res::{Command, run};
@@ -22,6 +25,7 @@ use std::sync::RwLock;
 use config::Config;
 use clap::{App, Arg, SubCommand};
 use anyhow::Result;
+use db::CardFilter;
 use serde::Deserialize;
 // use serde::de::Deserialize;
 
@@ -177,6 +181,8 @@ fn main() {
                 ),
             SubCommand::with_name("update")
                 .about("Updates the card database with any new cards added"),
+            SubCommand::with_name("debug")
+                    .about("For testing various features as developed."),
         ])
         .get_matches();
 
@@ -205,6 +211,41 @@ fn main() {
             // if let Err(e) = run(Command::FullPull) {
             //     println!("Error: {}", e);
             // }
+        }
+        ("debug", Some(_sub_m)) => {
+            // let cf = db::CardFilter::new(1).text(String::from("ana"));
+            // println!("Cardfilter produces: {}", cf.make_filter());
+            // let a = network::rcs(& db::Set { code: String::from("TPH1"), name: String::from("Theros Path of Heroes") });
+            // println!("{:?}", CardFilter::parse_omni("n:ana"));
+            // println!("{:?}", CardFilter::parse_omni("name:\" of \""));
+            // println!("{:?}", CardFilter::parse_omni("text:\"draw a card\""));
+            // println!("{:?}", CardFilter::parse_omni("te:lifelink"));
+            println!("{:?}", CardFilter::parse_omni("te:\"draw a card\" n:Ajani"));
+            // println!("{:?}", CardFilter::parse_omni("color:c"));
+            // println!("{:?}", CardFilter::parse_omni("c:w name:blue"));
+            // println!("{:?}", CardFilter::parse_omni("c:wb"));
+            // println!("{:?}", CardFilter::parse_omni("color:w|b"));
+            // println!("{:?}", CardFilter::parse_omni("color:b|g/w"));
+            // println!("{:?}", CardFilter::parse_omni("type:creature"));
+            // println!("{:?}", CardFilter::parse_omni("ty:legendary+sorcery"));
+            println!("{:?}", CardFilter::parse_omni("ty:legendary+creature/sorcery+tribal/instant name:\"how are you\""));
+            // println!("{:?}", CardFilter::parse_omni("ty:c"));
+            // println!("{:?}", CardFilter::parse_omni("ty:coward"));
+            println!("{:?}", CardFilter::parse_omni("ty:instant te:draw ajani"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:0-4"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:-4"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:4-"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:-"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:"));
+            // println!("{:?}", CardFilter::parse_omni("ci:wb"));
+            // println!("{:?}", CardFilter::parse_omni("coloridentity:w/b"));
+            // println!("{:?}", CardFilter::parse_omni("color_identity:b|g|w"));
+            // println!("{:?}", CardFilter::parse_omni("p:0-4"));
+            // println!("{:?}", CardFilter::parse_omni("p:-4"));
+            // println!("{:?}", CardFilter::parse_omni("power:4-"));
+            // println!("{:?}", CardFilter::parse_omni("power:-"));
+            // println!("{:?}", CardFilter::parse_omni("power:"));
+            
         }
         _ => { let _a = run(Command::Draw); }
     }

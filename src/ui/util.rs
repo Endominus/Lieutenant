@@ -1,8 +1,5 @@
 use tui::widgets::{List, ListItem, ListState, Paragraph, Block, Borders, Wrap};
 use tui::style::{Color, Modifier, Style};
-use anyhow::{Result, Error};
-
-// use crate::Card;
 
 #[derive(Copy, Clone)]
 pub enum Screen {

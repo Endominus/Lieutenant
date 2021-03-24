@@ -1,0 +1,22 @@
+-- SQLite
+-- SELECT 
+--     name, 
+--     -- card_text, 
+--     mana_cost,
+--     layout, 
+--     types, 
+--     supertypes, 
+--     subtypes, 
+--     color_identity, 
+--     related_cards, 
+--     power, 
+--     toughness, 
+--     cmc
+-- FROM `cards`
+-- INNER JOIN deck_contents
+-- ON cards.name = deck_contents.card_name
+-- WHERE deck_contents.deck = 1
+-- AND power LIKE '%*%';
+-- AND (cards.name LIKE '%ana%' OR cards.name LIKE '%wis%')
+-- AND (cards.card_text LIKE '%ana%')
+-- ORDER BY name;
