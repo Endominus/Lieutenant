@@ -220,7 +220,7 @@ fn main() {
             // println!("{:?}", CardFilter::parse_omni("name:\" of \""));
             // println!("{:?}", CardFilter::parse_omni("text:\"draw a card\""));
             // println!("{:?}", CardFilter::parse_omni("te:lifelink"));
-            println!("{:?}", CardFilter::parse_omni("te:\"draw a card\" n:Ajani"));
+            // println!("{:?}", CardFilter::parse_omni("te:\"draw a card\" n:Ajani"));
             // println!("{:?}", CardFilter::parse_omni("color:c"));
             // println!("{:?}", CardFilter::parse_omni("c:w name:blue"));
             // println!("{:?}", CardFilter::parse_omni("c:wb"));
@@ -228,15 +228,15 @@ fn main() {
             // println!("{:?}", CardFilter::parse_omni("color:b|g/w"));
             // println!("{:?}", CardFilter::parse_omni("type:creature"));
             // println!("{:?}", CardFilter::parse_omni("ty:legendary+sorcery"));
-            println!("{:?}", CardFilter::parse_omni("ty:legendary+creature/sorcery+tribal/instant name:\"how are you\""));
+            // println!("{:?}", CardFilter::parse_omni("ty:legendary+creature/sorcery+tribal/instant name:\"how are you\""));
             // println!("{:?}", CardFilter::parse_omni("ty:c"));
             // println!("{:?}", CardFilter::parse_omni("ty:coward"));
-            println!("{:?}", CardFilter::parse_omni("ty:instant te:draw ajani"));
+            // println!("{:?}", CardFilter::parse_omni("ty:instant te:draw ajani"));
             // println!("{:?}", CardFilter::parse_omni("cmc:0-4"));
             // println!("{:?}", CardFilter::parse_omni("cmc:-4"));
             // println!("{:?}", CardFilter::parse_omni("cmc:4-"));
-            // println!("{:?}", CardFilter::parse_omni("cmc:-"));
-            // println!("{:?}", CardFilter::parse_omni("cmc:"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:<10"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:>10"));
             // println!("{:?}", CardFilter::parse_omni("ci:wb"));
             // println!("{:?}", CardFilter::parse_omni("coloridentity:w/b"));
             // println!("{:?}", CardFilter::parse_omni("color_identity:b|g|w"));
@@ -245,7 +245,21 @@ fn main() {
             // println!("{:?}", CardFilter::parse_omni("power:4-"));
             // println!("{:?}", CardFilter::parse_omni("power:-"));
             // println!("{:?}", CardFilter::parse_omni("power:"));
-            
+
+            // let omni = String::from("ty:artifact cmc:>4");
+            // let omni = String::from("text:\"you control\" c:r|g");
+            let omni = String::from("ty:hydra cmc:<4");
+            let cf = CardFilter::from(1, & omni);
+            println!("{}", cf.make_filter(true));
+            println!("{:?}", db::rvcfcf(cf, true).unwrap().len());//.iter().map(|f| f.to_string()).collect::<Vec<String>>());
+
+            // let s = "WHERE regexp('.*ozi.*', name)";
+            // let s = "WHERE name REGEXP \'.*ozi.*\' AND mana_cost REGEXP \'R\'";
+            // let s = "WHERE cards.name LIKE \'%ana%\'";
+            // let s = "%ana%";
+            // println!("{:?}", db::db_test(s).unwrap().len());
+
+
         }
         _ => { let _a = run(Command::Draw); }
     }

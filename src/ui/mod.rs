@@ -165,8 +165,10 @@ impl AppState {
     fn usldc(&mut self) {
         // state.sldc
         // let cf = db::CardFilter::new(self.deck_id).name(Vec::from([self.omnitext.clone()]));
-        let cf = db::CardFilter::new(self.deck_id).text(self.omnitext.clone());
-        let vcr = db::rvcfcf(cf);
+        // let cf = db::CardFilter::new(self.deck_id).text(self.omnitext.clone());
+        let ss = self.omnitext.clone().to_lowercase();
+        let cf = db::CardFilter::from(self.deck_id, & ss);
+        let vcr = db::rvcfcf(cf, false);
         let vc = match vcr {
             Ok(vc) => { vc }
             _ => { Vec::new() }

@@ -45,23 +45,41 @@ pub struct Set {
     name: String,
 }
 
-pub struct CardFilter {
+#[derive(Default)]
+pub struct CardFilter<'a> {
     did: i32,
-    name: String,
-    text: String,
+    fi: HashMap<&'a str, String>
 }
 
-impl CardFilter {
-    pub fn new(did: i32) -> CardFilter {
-        CardFilter {
-            did,
-            name: String::new(),
-            text: String::new(),
+impl<'a> CardFilter<'a> {
+    pub fn new(did: i32) -> CardFilter<'a> {
+        // CardFilter {
+        //     did,
+        //     name: String::new(),
+        //     text: String::new(),
 
-        }
+        // }
+
+        CardFilter::default()
     }
 
-    pub fn parse_omni(omni: &str) -> HashMap<String, String> {
+    pub fn from(did: i32, omni: &'a String) -> CardFilter<'a> {
+        let mut cf = CardFilter::default();
+
+        cf.did = did;
+        // let s = omni.clone().to_lowercase();
+        cf.fi = CardFilter::parse_omni(omni.as_str());
+        // for (key, value) in fi {
+        //     match key {
+        //         "cmc" => { cf. = value; }
+        //         _ => {}
+        //     }
+        // }
+
+        cf
+    }
+
+    pub fn parse_omni(omni: &str) -> HashMap<&str, String> {
         let mut hm = HashMap::new();
         // hm.insert(String::from("test"), String::from("test"));
 
@@ -69,33 +87,34 @@ impl CardFilter {
 
         peg::parser!{
             grammar omni_parser() for str {
-                pub rule root(hm: &mut HashMap<String, String>)
+                pub rule root(hm: &mut HashMap<&str, String>)
                 = (fields(hm) / " "+)+ ![_]
 
-                rule fields(hm: &mut HashMap<String, String>)
+                rule fields(hm: &mut HashMap<&str, String>)
                 = text(hm) / color(hm) / ctype(hm) / cmc(hm) / color_identity(hm) / power(hm) / toughness(hm) / name(hm)
 
-                rule cmc(hm: &mut HashMap<String, String>)
-                = "cmc:" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { hm.insert(String::from("cmc"), String::from(value)); }
-                rule name(hm: &mut HashMap<String, String>)
-                = name_alias()? value:ss_values() { hm.insert(String::from("name"), value); }
-                rule text(hm: &mut HashMap<String, String>)
-                = text_alias() ":" value:ss_values() { hm.insert(String::from("text"), value); }
-                rule color(hm: &mut HashMap<String, String>)
-                = color_alias() ":" value:$(colors()+) ** or_separator() { hm.insert(String::from("color"), value.join("|")); }
-                rule ctype(hm: &mut HashMap<String, String>)
-                = type_alias() ":" value:type_group() ** or_separator() { hm.insert(String::from("type"), value.join("|")); }
-                rule power(hm: &mut HashMap<String, String>)
-                = power_alias() ":" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { hm.insert(String::from("power"), String::from(value)); }
-                rule toughness(hm: &mut HashMap<String, String>)
-                = toughness_alias() ":" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { hm.insert(String::from("toughness"), String::from(value)); }
-                rule color_identity(hm: &mut HashMap<String, String>)
-                = color_identity_alias() ":" value:$(colors()+) ** or_separator() { hm.insert(String::from("color_identity"), value.join("|")); }
+                rule cmc(hm: &mut std::collections::HashMap<&str, String>)
+                = "cmc:" value:$number_range() { hm.insert("cmc", String::from(value)); }
+                rule name(hm: &mut HashMap<&str, String>)
+                = name_alias()? value:ss_values() { hm.insert("name", value); }
+                rule text(hm: &mut HashMap<&str, String>)
+                = text_alias() ":" value:ss_values() { hm.insert("text", value); }
+                rule color(hm: &mut HashMap<&str, String>)
+                = color_alias() ":" value:$(colors()+) ** or_separator() { hm.insert("color", value.join("|")); }
+                rule ctype(hm: &mut HashMap<&str, String>)
+                = type_alias() ":" value:type_group() ** or_separator() { hm.insert("type", value.join("|")); }
+                rule power(hm: &mut std::collections::HashMap<&str, String>)
+                = power_alias() ":" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { hm.insert("power", String::from(value)); }
+                rule toughness(hm: &mut std::collections::HashMap<&str, String>)
+                = toughness_alias() ":" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { hm.insert("toughness", String::from(value)); }
+                rule color_identity(hm: &mut HashMap<&str, String>)
+                = color_identity_alias() ":" value:$(colors()+) ** or_separator() { hm.insert("color_identity", value.join("|")); }
 
                 rule ss_values() -> String
                 = v:$(phrase() / word()) { String::from(v) }
                 rule type_group() -> String
                 = and_types:word() ** and_separator() { and_types.join("&") }
+                rule number_range() = ['-' | '>' | '<'] ['0'..='9']+ / ['0'..='9']+ "-"? (['0'..='9']+)?
 
                 rule name_alias() = ("name:" / "n:")
                 rule text_alias() = ("text" / "te")
@@ -139,45 +158,137 @@ impl CardFilter {
         hm
     }
 
-    pub fn name(mut self, n: String) -> CardFilter {
-        // self.names = n.clone().iter().map(|&mut s| { s.insert(0, '%'); s.push('%'); s.clone() } ).collect();
-        // self.names = Vec::new();
-        // for n in vn {
-        //     let mut mn = n.clone();
-        //     mn.insert(0, '%');
-        //     mn.push('%');
-        //     self.names.push(mn);
-        // }
-        self.name = n;
-        self.name.insert(0, '%');
-        self.name.push( '%');
+    pub fn make_filter(&self, general: bool) -> String {
+        //TODO: implement the color identity filter for general search.
+        // let com = rcomfdid(self.did).unwrap();
 
-        self
-    }
-
-    pub fn text(mut self, t: String) -> CardFilter {
-        self.text = t;
-        self.text.insert(0, '%');
-        self.text.push('%');
-        self
-    }
-
-    pub fn make_filter(&self) -> String {
+        let initial = match general {
+            true => { 
+                let com = rcomfdid(self.did).unwrap();
+                let mut colors = String::from("WUBRG");
+                for ci in com.color_identity {
+                    colors = colors.replace(&ci, "");
+                }
+                format!("WHERE color_identity REGEXP \'^[^{}]*$\'", colors) }
+            false => { format!("
+                INNER JOIN deck_contents
+                ON cards.name = deck_contents.card_name
+                WHERE deck_contents.deck = {}", self.did) }
+        };
         
-        let mut vs = Vec::from([format!("WHERE deck_contents.deck = {}", self.did)]);
-        if !self.name.is_empty() { 
-            // vs.push();
-            // AND (cards.name LIKE '%ana%' OR cards.name LIKE '%wis%')
-            // TODO: iterate over the vecor for names
-            vs.push(format!("AND (cards.name LIKE {})", self.name));
-        }
-        if !self.text.is_empty() {
-            // TODO: make regex
-            vs.push(format!("AND (cards.card_text LIKE {})", self.text));
-        }
-        // for
+        let mut vs = Vec::from([initial]);
 
-        vs.join(" ")
+        //TODO: remove once the database is migrated.
+        let SUPERTYPES = ["legendary", "snow"];
+        let TYPES = ["enchantment", "creature", "land", "instant", "sorcery", "artifact", "planeswalker"];
+
+        for (key, value) in self.fi.clone() {
+            match key {
+                "name" => { vs.push(format!("AND (cards.name LIKE \'%{}%\')", value)); }
+                "text" => { 
+                    let s = value.replace("\"", "");
+                    vs.push(format!("AND (cards.card_text LIKE \'%{}%\')", s)); 
+                }
+                "color" => { 
+                    let cgs = value.split("|"); 
+                    let mut vcg = Vec::new();
+                    for cg in cgs {
+                        // vs.push(String::from("("));
+                        let mut vf = Vec::new();
+                        let mut include = ">";
+                        for c in cg.chars() {
+                            let f = match c { //TODO: Speed test instr vs regex
+                                'w' => { format!("instr(mana_cost, 'W') {} 0", include) }
+                                'u' => { format!("instr(mana_cost, 'U') {} 0", include) }
+                                'b' => { format!("instr(mana_cost, 'B') {} 0", include) }
+                                'r' => { format!("instr(mana_cost, 'R') {} 0", include) }
+                                'g' => { format!("instr(mana_cost, 'G') {} 0", include) }
+                                'c' => { format!("mana_cost REGEXP \'^[^WUBRG]*$\'") }
+                                '!' => { include = "="; continue;}
+                                _ => { String::new() }
+                            };
+                            vf.push(f);
+                        }
+                        vcg.push(format!("({})", vf.join(" AND ")));
+                    }
+                    vs.push(format!("AND ({})", vcg.join(" OR ")));
+                }
+                "color_identity" => {
+                    let cigs = value.split("|"); 
+                    let mut vcig = Vec::new();
+                    for cig in cigs {
+                        // vs.push(String::from("("));
+                        let mut vf = Vec::new();
+                        let mut include = ">";
+                        for ci in cig.chars() {
+                            let f = match ci { //TODO: Speed test instr vs regex
+                                'w' => { format!("instr(color_identity, 'W') {} 0", include) }
+                                'u' => { format!("instr(color_identity, 'U') {} 0", include) }
+                                'b' => { format!("instr(color_identity, 'R') {} 0", include) }
+                                'r' => { format!("instr(color_identity, 'B') {} 0", include) }
+                                'g' => { format!("instr(color_identity, 'G') {} 0", include) }
+                                'c' => { format!("color_identity REGEXP \'^[^WUBRG]*$\'") }
+                                '!' => { include = "="; continue;}
+                                _ => { String::new() }
+                            };
+                            vf.push(f);
+                        }
+                        vcig.push(format!("({})", vf.join(" AND ")));
+                    }
+                    vs.push(format!("AND ({})", vcig.join(" OR ")));
+                }
+                "type" => {
+                    //TODO: Refactor when updating to new database model; all types in one column
+                    let tygs = value.split("|"); 
+                    let mut vtyg = Vec::new();
+                    for tyg in tygs {
+                        let mut vf = Vec::new();
+                        for mut ty in tyg.split('&') {
+                            let include = match ty.get(0..1) {
+                                Some("!") => { ty = ty.get(1..).unwrap(); "NOT LIKE" }
+                                Some(_) => { "LIKE" }
+                                None => { "" }
+                            };
+                            let mut card_type = "subtypes";
+                            if SUPERTYPES.contains(&ty) { card_type = "supertypes"; }
+                            if TYPES.contains(&ty) { card_type = "types"; }
+                            vf.push(format!("{} {} \'%{}%\'", card_type, include, ty));
+                        }
+                        vtyg.push(format!("({})", vf.join(" AND ")));
+                    }
+                    vs.push(format!("AND ({})", vtyg.join(" OR ")));
+                }
+                "cmc" => {
+                    // cmc:0-10
+                    // cmc:-10
+                    // cmc:10-
+                    // cmc:10
+                    // cmc:>10
+                    // cmc:<10
+                    match value.get(0..1) {
+                        Some(">") => { vs.push(format!("AND cmc > {}", value.get(1..).unwrap())); }
+                        Some("<") => { vs.push(format!("AND cmc < {}", value.get(1..).unwrap())); }
+                        Some("-") => { vs.push(format!("AND cmc <= {}", value.get(1..).unwrap())); }
+                        Some(_) => { 
+                            match value.find("-") {
+                                Some(i) => {
+                                    let (min, max) = value.split_at(i);
+                                    vs.push(format!("AND (cmc >= {} AND cmc <= {}", min, max.get(1..).unwrap()));
+                                }
+                                None => {}
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                //TODO: Add later. Not critical right now, and will be annoying due to the string->integer translation.
+                // "strength" => {}
+                // "toughness" => {}
+                _ => {}
+            }
+        }
+
+        vs.join("\n")
     }
 }
 
@@ -587,6 +698,53 @@ pub fn rvcfdid(did: i32) -> Result<Vec<Card>> {
     cards
 }
 
+pub fn rcomfdid(did: i32) -> Result<Card> {
+    let conn = Connection::open("cards.db")?;
+    let mut stmt = conn.prepare("SELECT * FROM decks WHERE id = ?;")?;
+
+    let deck = stmt.query_row(params![did], |row| {
+        
+        Ok(Deck {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            commander: rcfn(row.get(2)?)?,
+        })
+    })?;
+
+    let mut stmt = conn.prepare("
+    SELECT 
+        name, 
+        card_text, 
+        mana_cost,
+        layout, 
+        types, 
+        supertypes, 
+        subtypes, 
+        color_identity, 
+        related_cards, 
+        power, 
+        toughness, 
+        cmc
+    FROM cards WHERE name = ?;")?;
+
+    stmt.query_row(params![deck.commander.name], |row| {
+        Ok( Card {
+            name: row.get(0)?,
+            text: row.get(1)?,
+            mana_cost: row.get(2)?,
+            layout: row.get(3)?,
+            types: stovs(row.get(4)?),
+            supertypes: stovs(row.get(5)?),
+            subtypes: stovs(row.get(6)?),
+            color_identity: stovs(row.get(7)?),
+            related_cards: stovs(row.get(8)?),
+            power: row.get(9)?,
+            toughness: row.get(10)?,
+            cmc: row.get(11)?,
+        })
+    })
+}
+
 pub fn rcfn(name: String) -> Result<Card> {
     let conn = Connection::open("cards.db")?;
     let mut stmt = conn.prepare("
@@ -650,31 +808,74 @@ pub fn rdfdid(id: i32) -> Result<Deck> {
     })
 }
 
-pub fn rvcfcf(cf: CardFilter) -> Result<Vec<Card>> {
+pub fn db_test(s: &str) -> Result<Vec<Card>> {
     let conn = Connection::open("cards.db")?;
     let _a = add_regexp_function(&conn);
-
-    let mut stmt = conn.prepare("
+    let qs = format!("
         SELECT 
             name, 
-			card_text, 
-			mana_cost,
+            card_text, 
+            mana_cost,
             layout, 
-			types, 
-			supertypes, 
+            types, 
+            supertypes, 
             subtypes, 
-			color_identity, 
-			related_cards, 
+            color_identity, 
+            related_cards, 
             power, 
-			toughness, 
-			cmc
+            toughness, 
+            cmc
         FROM `cards`
-        INNER JOIN deck_contents
-        ON cards.name = deck_contents.card_name
-        ?
-        ORDER BY name;")?;
+        {}
+        ORDER BY name;", s);
 
-        let cards = stmt.query_map(params![cf.make_filter()], |row| {
+    let mut stmt = conn.prepare(&qs)?;
+
+        let cards = stmt.query_map(NO_PARAMS, |row| {
+            Ok(Card {
+                name: row.get(0)?,
+                text: row.get(1)?,
+                mana_cost: row.get(2)?,
+                layout: row.get(3)?,
+                types: stovs(row.get(4)?),
+                supertypes: stovs(row.get(5)?),
+                subtypes: stovs(row.get(6)?),
+                color_identity: stovs(row.get(7)?),
+                related_cards: stovs(row.get(8)?),
+                power: row.get(9)?,
+                toughness: row.get(10)?,
+                cmc: row.get(11)?,
+            })
+        })?.collect();
+
+        cards
+}
+
+pub fn rvcfcf(cf: CardFilter, general: bool) -> Result<Vec<Card>> {
+    let conn = Connection::open("cards.db")?;
+    let _a = add_regexp_function(&conn);
+    let qs = format!("
+        SELECT 
+            name, 
+            card_text, 
+            mana_cost,
+            layout, 
+            types, 
+            supertypes, 
+            subtypes, 
+            color_identity, 
+            related_cards, 
+            power, 
+            toughness, 
+            cmc
+        FROM `cards`
+        {}
+        ORDER BY name;", cf.make_filter(general));
+    // println!("{}", qs);
+
+    let mut stmt = conn.prepare(& qs)?;
+
+        let cards = stmt.query_map(NO_PARAMS, |row| {
             Ok(Card {
                 name: row.get(0)?,
                 text: row.get(1)?,
@@ -694,6 +895,4 @@ pub fn rvcfcf(cf: CardFilter) -> Result<Vec<Card>> {
         // if cards == Error { println!("No cards found");  }
 
         cards
-
-    // todo!();
 }
