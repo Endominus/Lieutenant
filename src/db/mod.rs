@@ -67,14 +67,11 @@ impl<'a> CardFilter<'a> {
         let mut cf = CardFilter::default();
 
         cf.did = did;
-        // let s = omni.clone().to_lowercase();
-        cf.fi = CardFilter::parse_omni(omni.as_str());
-        // for (key, value) in fi {
-        //     match key {
-        //         "cmc" => { cf. = value; }
-        //         _ => {}
-        //     }
-        // }
+        if omni.len() > 0 { 
+            cf.fi = CardFilter::parse_omni(omni.as_str()); 
+        } else {
+            cf.fi = HashMap::new();
+        }
 
         cf
     }
@@ -91,14 +88,21 @@ impl<'a> CardFilter<'a> {
                 = (fields(hm) / " "+)+ ![_]
 
                 rule fields(hm: &mut HashMap<&str, String>)
-                = text(hm) / color(hm) / ctype(hm) / cmc(hm) / color_identity(hm) / power(hm) / toughness(hm) / name(hm)
+                = (text(hm) 
+                / color(hm) 
+                / ctype(hm) 
+                / cmc(hm) 
+                / color_identity(hm) 
+                / power(hm) 
+                / toughness(hm) 
+                / name(hm))
 
                 rule cmc(hm: &mut std::collections::HashMap<&str, String>)
                 = "cmc:" value:$number_range() { hm.insert("cmc", String::from(value)); }
                 rule name(hm: &mut HashMap<&str, String>)
                 = name_alias()? value:ss_values() { hm.insert("name", value); }
                 rule text(hm: &mut HashMap<&str, String>)
-                = text_alias() ":" value:ss_values() { hm.insert("text", value); }
+                = text_alias() ":" value:text_group() ** or_separator() { hm.insert("text", value.join("|")); }
                 rule color(hm: &mut HashMap<&str, String>)
                 = color_alias() ":" value:$(colors()+) ** or_separator() { hm.insert("color", value.join("|")); }
                 rule ctype(hm: &mut HashMap<&str, String>)
@@ -114,6 +118,8 @@ impl<'a> CardFilter<'a> {
                 = v:$(phrase() / word()) { String::from(v) }
                 rule type_group() -> String
                 = and_types:word() ** and_separator() { and_types.join("&") }
+                rule text_group() -> String
+                = and_text:$(word() / phrase()) ** and_separator() { and_text.join("&") }
                 rule number_range() = ['-' | '>' | '<'] ['0'..='9']+ / ['0'..='9']+ "-"? (['0'..='9']+)?
 
                 rule name_alias() = ("name:" / "n:")
@@ -125,9 +131,9 @@ impl<'a> CardFilter<'a> {
                 rule color_identity_alias() = ("color_identity" / "coloridentity" / "ci")
 
                 rule word() -> String
-                = s:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '{' | '}']+) { String::from(s) }
+                = s:$("!"? ['a'..='z' | 'A'..='Z' | '0'..='9' | '{' | '}' | '/']+) { String::from(s) }
                 rule phrase() -> String
-                =s:$("\"" (word() / " ")+ "\"" ) {String::from(s) }
+                =s:$("!"? "\"" (word() / " " / "+")+ "\"" ) {String::from(s) }
                 // rule exp_types() -> String
                 // = t:$types() { match t {
                 //     "l" => String::from("legendary"),
@@ -152,7 +158,9 @@ impl<'a> CardFilter<'a> {
 
         match omni_parser::root(omni, &mut hm) {
             Ok(_) => {}
-            Err(_) => { println!("Attempted to run omniparser with incorrect arguments. Resultant hashmap:\n{:?}", hm); }
+            Err(_) => { 
+                // println!("Attempted to run omniparser with incorrect arguments. Resultant hashmap:\n{:?}", hm); 
+            }
         }
         
         hm
@@ -186,8 +194,24 @@ impl<'a> CardFilter<'a> {
             match key {
                 "name" => { vs.push(format!("AND (cards.name LIKE \'%{}%\')", value)); }
                 "text" => { 
-                    let s = value.replace("\"", "");
-                    vs.push(format!("AND (cards.card_text LIKE \'%{}%\')", s)); 
+                    // vs.push(format!("AND (cards.card_text LIKE \'%{}%\')", s)); 
+                    let tegs = value.split("|"); 
+                    let mut vteg = Vec::new();
+                    for teg in tegs {
+                        let mut vf = Vec::new();
+                        for mut te in teg.split('&') {
+                            let include = match te.get(0..1) {
+                                Some("!") => { te = te.get(1..).unwrap(); "NOT LIKE" }
+                                Some(_) => { "LIKE" }
+                                None => { "" }
+                            };
+                            // te = te.replace("\"", "");
+                            // te = te.trim_matches("\"");
+                            vf.push(format!("card_text {} \'%{}%\'", include, te.trim_matches('\"')));
+                        }
+                        vteg.push(format!("({})", vf.join(" AND ")));
+                    }
+                    vs.push(format!("AND ({})", vteg.join(" OR ")));
                 }
                 "color" => { 
                     let cgs = value.split("|"); 

@@ -16,7 +16,8 @@ https://docs.magicthegathering.io/
   - Add and remove tags from cards.
   - Jump from a card to its related card.
 - Browse and filter cards in database.
-- Filter by name, text, type, subtype, cmc, color, color identity, power, toughness, and tag.
+  - Filter by name, text, type, subtype, cmc, color, color identity, power, toughness, and tag.
+  - Sort by name and cmc, ascending and descending
 - View deck info.
   - Include mana curve, color groups, type breakdowns
   - Determine the number of "real" cards in deck and warn if that is too high.

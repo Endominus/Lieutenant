@@ -78,6 +78,19 @@ impl<T: ToString> StatefulList<T> {
     pub fn rvli(& self) -> Vec<ListItem> {
         self.items.iter().map(|f| ListItem::new(f.to_string())).collect()
     }
+
+    pub fn rvlis(& self,  pl: &Vec<crate::Card>) -> Vec<ListItem> {
+        let vs: Vec<String> = pl.iter().map(|f| f.to_string()).collect();
+
+        self.items.iter().map(|f| 
+            // let fs = f.to_string();
+            if vs.contains(&f.to_string()) {
+                ListItem::new(f.to_string()).style(Style::default().fg(Color::Yellow))
+            } else {
+                ListItem::new(f.to_string())
+            }
+        ).collect()
+    }
 }
 
 pub struct MainMenuItem {
@@ -97,15 +110,23 @@ pub struct DeckScreen<'a> {
     pub omni: Paragraph<'a>,
     pub lc: List<'a>,
     pub fc: Paragraph<'a>,
+    len: usize,
 }
 
 impl DeckScreen<'_> {
-    pub fn new(omnitext: String, vli: Vec<ListItem>, cardtext: String) -> DeckScreen {
+    pub fn new(omnitext: String, vli: Vec<ListItem>, cardtext: String, mode: Screen) -> DeckScreen {
+        let (omni_title, list_title) = match mode {
+            Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", "Card List") }
+            Screen::DbFilter | Screen::DbCards => { ("Filter Database", "Database") }
+            _ => { panic!(); }
+        };
+        
+        let len = vli.len();
         let input = Paragraph::new(omnitext)
             .style(Style::default())
-            .block(Block::default().borders(Borders::ALL).title("Omnibar"));
+            .block(Block::default().borders(Borders::ALL).title(omni_title));
         let list = List::new(vli)
-            .block(Block::default().title("Card List").borders(Borders::ALL))
+            .block(Block::default().title(list_title).borders(Borders::ALL))
             .style(Style::default().fg(Color::White))
             .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
         let card = Paragraph::new(cardtext)
@@ -117,26 +138,39 @@ impl DeckScreen<'_> {
             omni: input,
             lc: list,
             fc: card,
+            len
         }
     }
 
-    pub fn focus_omni(&mut self) {
+    pub fn focus_omni(&mut self, mode: Screen) {
+        let (omni_title, list_title) = match mode {
+            Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", format!("Card List ({})", self.len)) }
+            Screen::DbFilter | Screen::DbCards => { ("Filter Database", format!("Database ({})", self.len)) }
+            _ => { panic!(); }
+        };
+
         let nb = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow))
-            .title("Omnibar");
+            .title(omni_title);
         self.omni = self.omni.clone().block(nb);
-        let nb = Block::default().title("Card List").borders(Borders::ALL);
+        let nb = Block::default().title(list_title).borders(Borders::ALL);
         self.lc = self.lc.clone().block(nb);
     }
 
-    pub fn focus_lc(&mut self) {
+    pub fn focus_lc(&mut self, mode: Screen) {
+        let (omni_title, list_title) = match mode {
+            Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", format!("Card List ({})", self.len)) }
+            Screen::DbFilter | Screen::DbCards => { ("Filter Database", format!("Database ({})", self.len)) }
+            _ => { panic!(); }
+        };
+
         let nb = Block::default()
             .borders(Borders::ALL)
-            .title("Omnibar");
+            .title(omni_title);
         self.omni = self.omni.clone().block(nb);
         let nb = Block::default()
-            .title("Card List")
+            .title(list_title)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow));
         self.lc = self.lc.clone().block(nb);
