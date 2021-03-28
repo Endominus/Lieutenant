@@ -1,43 +1,26 @@
 extern crate rusqlite;
 extern crate regex;
 
+use crate::Legalities;
 use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
-use crate::{Card, Deck};
+use crate::{Card, Deck, NewCard, Relation};
 use std::{collections::HashMap, fs};
+use rusqlite::{Row, Statement, named_params};
 use serde::Deserialize;
 use regex::Regex;
+use serde_json::Value;
 use self::rusqlite::functions::FunctionFlags;
 use std::sync::Arc;
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 //TODO: Prepare statements and pass around a DB connection object as in https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112
 
-//TODO: Fix
-// for later use, when regex matching is used for text
-fn add_regexp_function(db: &Connection) -> Result<()> {
-    db.create_scalar_function(
-        "regexp",
-        2,
-        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-        move |ctx| {
-            assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
-            let regexp: Arc<Regex> = ctx
-                .get_or_create_aux(0, |vr| -> Result<_, BoxError> {
-                    Ok(Regex::new(vr.as_str()?)?)
-                })?;
-            let is_match = {
-                let text = ctx
-                    .get_raw(1)
-                    .as_str()
-                    .map_err(|e| Error::UserFunctionError(e.into()))?;
+// pub struct DbContext<'a> {
+//     conn: Connection,
+//     stmts: HashMap<&'a str, Statement<'a>>
+// }
 
-                regexp.is_match(text)
-            };
-
-            Ok(is_match)
-        },
-    )
-}
+const DB_FILE: &str = "lieutenant.db";
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Set {
@@ -52,7 +35,7 @@ pub struct CardFilter<'a> {
 }
 
 impl<'a> CardFilter<'a> {
-    pub fn new(did: i32) -> CardFilter<'a> {
+    pub fn new() -> CardFilter<'a> {
         // CardFilter {
         //     did,
         //     name: String::new(),
@@ -148,7 +131,6 @@ impl<'a> CardFilter<'a> {
                 // =s:$("\"" [_]* "\"" ) {String::from(s) }
 
                 rule colors() = ['c' | 'w' | 'u' | 'b' | 'g' | 'r']
-                // rule types() = ['l' | 'e' | 'p' | 'i' | 's' | 'c' | 'a']
                 rule all_separator() = ['|' | '/' | '+' | '&']
                 rule or_separator() = ['|' | '/' ]
                 rule and_separator() = ['+' | '&' ]
@@ -166,13 +148,10 @@ impl<'a> CardFilter<'a> {
         hm
     }
 
-    pub fn make_filter(&self, general: bool) -> String {
-        //TODO: implement the color identity filter for general search.
-        // let com = rcomfdid(self.did).unwrap();
-
+    pub fn make_filter(&self, conn: &Connection, general: bool) -> String {
         let initial = match general {
             true => { 
-                let com = rcomfdid(self.did).unwrap();
+                let com = rcomfdid(conn, self.did).unwrap();
                 let mut colors = String::from("WUBRG");
                 for ci in com.color_identity {
                     colors = colors.replace(&ci, "");
@@ -186,15 +165,10 @@ impl<'a> CardFilter<'a> {
         
         let mut vs = Vec::from([initial]);
 
-        //TODO: remove once the database is migrated.
-        let SUPERTYPES = ["legendary", "snow"];
-        let TYPES = ["enchantment", "creature", "land", "instant", "sorcery", "artifact", "planeswalker"];
-
         for (key, value) in self.fi.clone() {
             match key {
                 "name" => { vs.push(format!("AND (cards.name LIKE \'%{}%\')", value)); }
                 "text" => { 
-                    // vs.push(format!("AND (cards.card_text LIKE \'%{}%\')", s)); 
                     let tegs = value.split("|"); 
                     let mut vteg = Vec::new();
                     for teg in tegs {
@@ -205,8 +179,6 @@ impl<'a> CardFilter<'a> {
                                 Some(_) => { "LIKE" }
                                 None => { "" }
                             };
-                            // te = te.replace("\"", "");
-                            // te = te.trim_matches("\"");
                             vf.push(format!("card_text {} \'%{}%\'", include, te.trim_matches('\"')));
                         }
                         vteg.push(format!("({})", vf.join(" AND ")));
@@ -217,7 +189,6 @@ impl<'a> CardFilter<'a> {
                     let cgs = value.split("|"); 
                     let mut vcg = Vec::new();
                     for cg in cgs {
-                        // vs.push(String::from("("));
                         let mut vf = Vec::new();
                         let mut include = ">";
                         for c in cg.chars() {
@@ -241,7 +212,6 @@ impl<'a> CardFilter<'a> {
                     let cigs = value.split("|"); 
                     let mut vcig = Vec::new();
                     for cig in cigs {
-                        // vs.push(String::from("("));
                         let mut vf = Vec::new();
                         let mut include = ">";
                         for ci in cig.chars() {
@@ -262,7 +232,9 @@ impl<'a> CardFilter<'a> {
                     vs.push(format!("AND ({})", vcig.join(" OR ")));
                 }
                 "type" => {
-                    //TODO: Refactor when updating to new database model; all types in one column
+                    //TODO: Add expansion for supertypes and types
+                    // rule types() = ['l' | 'e' | 'p' | 'i' | 's' | 'c' | 'a']
+
                     let tygs = value.split("|"); 
                     let mut vtyg = Vec::new();
                     for tyg in tygs {
@@ -274,8 +246,6 @@ impl<'a> CardFilter<'a> {
                                 None => { "" }
                             };
                             let mut card_type = "subtypes";
-                            if SUPERTYPES.contains(&ty) { card_type = "supertypes"; }
-                            if TYPES.contains(&ty) { card_type = "types"; }
                             vf.push(format!("{} {} \'%{}%\'", card_type, include, ty));
                         }
                         vtyg.push(format!("({})", vf.join(" AND ")));
@@ -283,12 +253,6 @@ impl<'a> CardFilter<'a> {
                     vs.push(format!("AND ({})", vtyg.join(" OR ")));
                 }
                 "cmc" => {
-                    // cmc:0-10
-                    // cmc:-10
-                    // cmc:10-
-                    // cmc:10
-                    // cmc:>10
-                    // cmc:<10
                     match value.get(0..1) {
                         Some(">") => { vs.push(format!("AND cmc > {}", value.get(1..).unwrap())); }
                         Some("<") => { vs.push(format!("AND cmc < {}", value.get(1..).unwrap())); }
@@ -316,85 +280,326 @@ impl<'a> CardFilter<'a> {
     }
 }
 
-const BANNED: [&'static str; 9] = [
-    "UGL", "UNH", "UST", "H17", "HHO", "HTR", "THP1", "THP2", "THP3"
-];
-
-// impl Set {
-//     pub fn new(code: String, name: String) -> Set {
-//         Set {code, name}
-//     }
-// }
-
 //TODO: Write public function to retrieve all cards. Remove layouts scheme, planar, and vanguard
 
-fn ivctoc(vc: Vec<Card>) -> Result<()> {
-    let conn = Connection::open("cards.db")?;
+// impl<'a> DbContext<'a> {
+//     pub fn new(dbfile: &str) -> Result<DbContext> {
+//         let conn = Connection::open(dbfile)?;
+//         DbContext::add_regexp_function(&conn);
+//         let stmts = HashMap::new();
 
-    let mut stmt = conn.prepare("insert into cards (
-        name, card_text, mana_cost, 
-        layout, types, supertypes, 
-        subtypes, color_identity, related_cards, 
-        cmc, power, toughness)
-        values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)")?;
-
-    for c in vc {
-        let mut rc = Vec::new();
-        for i in 0..c.related_cards.len() {
-            if c.related_cards[i] != c.name {
-                rc.push(c.related_cards[i].clone());
-            }
-        }
-
-        match stmt.insert(&[c.name, c.text, c.mana_cost, 
-            c.layout, c.types.join("|"), c.supertypes.join("|"), 
-            c.subtypes.join("|"), c.color_identity.join("|"), 
-            rc.join("|"), (c.cmc as i8).to_string(),
-            c.power, c.toughness]) {
-                Ok(_) => {},
-                Err(_) => continue,
-            };
+        // stmts.insert("ic", 
+        // conn.prepare("INSERT INTO cards (
+        //     name, mana_cost, cmc, types, card_text, power, toughness, color_identity, related_cards, layout, side, legalities
+        //     VALUES (
+        //         :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :color_identity, :related_cards, :layout, :side, :legalities
+        //     )")?);
+        // stmts.insert("iset", conn.prepare("INSERT INTO sets (code, name) VALUES (:code, :name);")?);
+        // stmts.insert("icntodc", conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?);
+        // stmts.insert("ideck", conn.prepare("INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);")?);
+        // stmts.insert("rcfn", 
+        // conn.prepare("SELECT cmc, color_identity, legalities, mana_cost, name, power, text, toughness, types, layout, related_cards, side
+        //     FROM cards WHERE name = :name;")?);
+        // stmts.insert("rvcfdid", 
+        // conn.prepare("SELECT 
+        //     cmc, color_identity, legalities, mana_cost, name, power, text, toughness, types, layout, related_cards, side
+        //     FROM cards 
+        //     INNER JOIN deck_contents
+        //     ON cards.name = deck_contents.card_name
+        //     WHERE deck_contents.deck = :did;")?);
+        // stmts.insert("rvd", conn.prepare("SELECT * FROM decks;")?);
+        // stmts.insert("rdfdid", conn.prepare("SELECT * FROM decks WHERE id = ?;")?);
             
-            // .unwrap_or_else(|error| {
-                    // panic!("Error: {:?}", error);
-        // });
+    //     Ok(DbContext { conn, stmts })
+    // }
+
+// }
+
+fn add_regexp_function(db: &Connection) -> Result<()> {
+    db.create_scalar_function(
+        "regexp",
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        move |ctx| {
+            assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
+            let regexp: Arc<Regex> = ctx
+                .get_or_create_aux(0, |vr| -> Result<_, BoxError> {
+                    Ok(Regex::new(vr.as_str()?)?)
+                })?;
+            let is_match = {
+                let text = ctx
+                    .get_raw(1)
+                    .as_str()
+                    .map_err(|e| Error::UserFunctionError(e.into()))?;
+
+                regexp.is_match(text)
+            };
+
+            Ok(is_match)
+        },
+    )
+}
+
+pub fn initdb(conn: Connection) -> Result<()> {
+    conn.execute(
+        "create table if not exists rulings (
+            id integer primary key,
+            date text not null,
+            text text not null 
+        )", NO_PARAMS,)?;
+
+    conn.execute(
+        "create table if not exists sets (
+            id integer primary key,
+            code text not null unique, 
+            name text not null unique
+        )", NO_PARAMS,
+    )?;
+
+    conn.execute(
+        "create table if not exists cards (
+            id integer primary key,
+            name text not null unique,
+            mana_cost text not null,
+            cmc integer not null,
+            types text not null,
+            card_text text,
+            power text,
+            toughness text,
+            color_identity text,
+            related_cards text,
+            layout text not null,
+            side text,
+            legalities text not null
+        )", NO_PARAMS,
+    )?;
+    
+    conn.execute(
+        "create table if not exists decks (
+            id integer primary key,
+            name text not null,
+            commander text not null,
+            deck_type text not null,
+            notes text,
+            cost real,
+            date_cost_retrieved text,
+            foreign key (commander) references cards(name))"
+            , NO_PARAMS,)?;
+
+    conn.execute(
+        "create table if not exists deck_contents (
+            id integer primary key,
+            card_name text not null,
+            deck integer not null,
+            tags text,
+            foreign key (deck) references decks(id))"
+            , NO_PARAMS,
+    )?;
+
+    Ok(())
+}
+
+// pub fn ivcfjsmap(dbc: &mut DbContext, jm: Value) -> Result<(usize, usize)> {
+//     if let None = stmts.get_mut("ic") {
+
+//     }
+//     let mut vc: Vec<NewCard> = Vec::new();
+
+//     let (mut success, mut failure) = (0, 0);    
+    
+//     let map =  match &jm["data"] {
+//         serde_json::Value::Object(i) => { i }
+//         _ => { panic!(); }
+//     };
+
+//     for (_name, value) in map {
+//         // For some reason, serde won't deserialize the sequence properly.
+//         for v in value.as_array() {
+//             for c in v {
+//                 let d = serde_json::from_value(c.clone()).unwrap();
+//                 vc.push(d);
+//             }
+//         }
+//     }
+
+//     println!("Generated card array.");
+//     conn.execute_batch("BEGIN TRANSACTION;")?;
+
+//     for mut c in vc {
+//         let (name, side, related) = match c.layout.as_str() {
+//             "split" | "transform" | "aftermath" | 
+//             "flip" | "adventure" | "modal_dfc" => { 
+//                 let test = c.name.clone();
+//                 let (a, b) = test.split_once(" // ").unwrap();
+//                 if Some('a') == c.side { (a, "a", b) } 
+//                 else { (b, "b", a) }
+//             }
+//             "meld" => { 
+//                 if Some('a') == c.side {
+//                     let test = c.name.clone();
+//                     let (a, b) = test.split_once(" // ").unwrap();
+//                     (a, "a", b)
+//                 } else {
+//                     (c.name.as_str(), "b", "unknown")
+//                 }
+//              }
+//             _ => { (c.name.as_str(), "", "") }
+//         };
+
+//         let c = c.clone();
+
+//         match stmt.execute_named(named_params!{
+//             ":name": name,
+//             ":mana_cost": c.mana_cost,
+//             ":cmc": c.cmc,
+//             ":types": c.types,
+//             ":card_text": c.text,
+//             ":power": c.power,
+//             ":toughness": c.toughness,
+//             ":color_identity": c.color_identity.join("|"),
+//             ":related_cards": related,
+//             ":layout": c.layout,
+//             ":side": side,
+//             ":legalities": c.legalities.to_string(),
+//         }) {
+//             Ok(_) => { success += 1; },
+//             Err(_) => { failure += 1; },
+//         }
+//     }
+
+//     println!("Added all cards.");
+    
+//     let _a = conn.execute("DELETE
+//         FROM cards
+//         WHERE legalities = \"\"", NO_PARAMS)?;
+    
+//     println!("Deleted illegal cards.");
+    
+//     conn.execute_batch("COMMIT TRANSACTION;")?;
+    
+//     println!("Committed transaction.");
+
+//     // TODO: for each meld card with relation to unknown, automatically correct it.
+
+//     Ok((success, failure))
+// }
+
+//TODO: is, icntodc, and ideck can all be collapsed into one function.
+// pub fn iset (conn: Connection, s: Set) -> Result<()> {
+//     let mut stmt = stmts.get("iset").unwrap();
+//     stmt.execute_named(named_params!{":code": s.code, ":name": s.name} )?;
+//     Ok(())
+// }
+pub fn icntodc(conn: &Connection, c: String, did: usize) -> Result<()> {
+    let mut stmt = conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?;
+    stmt.execute_named(named_params!{":card_name": c, ":deck": did as u32} )?;
+    Ok(())
+}
+pub fn ideck(conn: &Connection, n: String, c: Card, t: String) -> Result<()> {
+    let mut stmt = conn.prepare("INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);")?;
+    stmt.execute_named(named_params!{":name": n, ":commander": c.name,":deck_type": t} )?;
+    Ok(())
+}
+
+pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: usize) -> Result<()> {
+    conn.execute_batch("BEGIN TRANSACTION;")?;
+    for c in vc {
+        icntodc(conn, c, deck_id)?;
     }
-    
-    Ok(())
-}
-
-fn is (s: Set) -> Result<()> {
-    let conn = Connection::open("cards.db")?;
-
-    let mut stmt = conn.prepare("insert into sets (code, name)
-        values (?1, ?2)")?;
-    
-    stmt.insert(&[s.code, s.name])?;
+    conn.execute_batch("COMMIT TRANSACTION;")?;
 
     Ok(())
 }
 
-fn icntodc(c: String, did: usize) -> Result<()> {
-    let conn = Connection::open("cards.db")?;
-
-    let mut stmt = conn.prepare("insert into deck_contents (card_name, deck)
-        values (?1, ?2)")?;
-    
-    stmt.insert(&[c, did.to_string()])?;
-
-    Ok(())
+pub fn rcfn(conn: &Connection, name: String) -> Result<NewCard> {
+    let mut stmt = conn.prepare("SELECT cmc, color_identity, legalities, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
+        FROM cards WHERE name = :name;")?;
+    stmt.query_row_named(named_params!{":name": name}, |row| {
+        cfr(row)
+    })
 }
 
-fn ideck(n: String, c: Card) -> Result<()> {
-    let conn = Connection::open("cards.db")?;
+pub fn rcomfdid(conn: &Connection, did: i32) -> Result<NewCard> {
+    // let mut stmt = conn.prepare("SELECT commander FROM decks WHERE id = ?;")?;
 
-    let mut stmt = conn.prepare("insert into decks (name, commander, deck_type)
-        values (?1, ?2, ?3)")?;
-    
-    stmt.insert(&[n, c.name, String::from("Commander")])?;
+    let name = conn.query_row("SELECT commander FROM decks WHERE id = ?;",
+    params![did], 
+    |row|{
+        Ok(row.get(0)?)
+    })?;// .query_row(params![did], |row| {
 
-    Ok(())
+    rcfn(conn, name)
 }
+
+pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
+    let mut stmt = conn.prepare("SELECT * FROM decks;")?;
+
+    let a = stmt.query_map(NO_PARAMS, |row| {
+        Ok(Deck {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            commander: rcfn(conn, row.get(2)?)?,
+        })
+    })?;
+    a.collect()
+
+    // decks
+}
+
+pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
+    let mut stmt = conn.prepare("SELECT * FROM decks WHERE id = ?;")?;
+
+    stmt.query_row(params![id], |row| {
+        Ok( Deck {
+            name: row.get(1)?,
+            commander: rcfn(conn, row.get(2)?)?,
+            id: row.get(0)?,
+        })
+    })
+
+    // let a = stmt.query_row(params, f)
+}
+
+pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<NewCard>> {
+    let mut stmt = conn.prepare("SELECT 
+        cmc, color_identity, legalities, mana_cost, name, power, text, toughness, types, layout, related_cards, side
+        FROM cards 
+        INNER JOIN deck_contents
+        ON cards.name = deck_contents.card_name
+        WHERE deck_contents.deck = :did;")?;
+
+    let a = stmt.query_map(NO_PARAMS, |row| { cfr(row)})?;
+    a.collect()
+}
+
+pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<NewCard>> {
+    let qs = format!("
+        SELECT 
+            name, 
+            card_text, 
+            mana_cost,
+            layout, 
+            types, 
+            supertypes, 
+            subtypes, 
+            color_identity, 
+            related_cards, 
+            power, 
+            toughness, 
+            cmc
+        FROM `cards`
+        {}
+        ORDER BY name;", cf.make_filter(conn, general));
+
+    let mut stmt = conn.prepare(& qs)?;
+
+    let cards = stmt.query_map(NO_PARAMS, |row| {
+        cfr(row)
+    })?.collect();
+
+    cards
+}
+
 
 fn stovs(ss: String) -> Vec<String> {
     let mut vs = Vec::new();
@@ -405,518 +610,46 @@ fn stovs(ss: String) -> Vec<String> {
     vs
 }
 
-pub fn rvcftext(mut text: String, did: i32) -> Result<Vec<Card>> {
-    let conn = Connection::open("cards.db")?;
+fn cfr(row:& Row) -> Result<NewCard> {
+    let n = "normal".to_string();
+    let m = "meld".to_string();
+    let l = "leveler".to_string();
+    let s = "saga".to_string();
+    let (side, related_cards) = match row.get::<usize, String>(9) {
+        Ok(n) => { (None, None) }
+        Ok(l) => { (None, None) }
+        Ok(s) => { (None, None) }
+        Ok(m) => { 
+            let a = row.get::<usize, String>(10)?;
+            let b = a.split_once("|").unwrap();
+            let (face, transform) = (String::from(b.0), String::from(b.1));
+            (
+                Some(row.get::<usize, String>(11)?.chars().next().unwrap()), 
+                Some(Relation::Meld{ face: String::from(face), transform: String::from(transform) }) 
+            )
+        }
+        Ok(_) => { (
+            Some(row.get::<usize, String>(11)?.chars().next().unwrap()), 
+            Some(Relation::Single(row.get(10)?))) }
+        Err(_) => { (None, None) }
+    };
+    let tags: Vec<String> = if row.column_names().contains(&"tags") 
+        { row.get::<usize, String>(12)?.split("|").map(|s| s.to_string()).collect() }
+        else { Vec::new() };
 
-    text.insert(0, '%');
-    text.push('%');
-    // let mut stmt = conn.prepare("")?;
-
-    if did < 0 {
-        let mut stmt = conn.prepare("
-            SELECT 
-                name, 
-                card_text, 
-                mana_cost,
-                layout, 
-                types, 
-                supertypes, 
-                subtypes, 
-                color_identity, 
-                related_cards, 
-                power, 
-                toughness, 
-                cmc
-            FROM `cards`
-            WHERE card_text LIKE ?
-            ORDER BY name;")?;
-        let cards = stmt.query_map(params![text], |row| {
-            Ok(Card {
-                name: row.get(0)?,
-                text: row.get(1)?,
-                mana_cost: row.get(2)?,
-                layout: row.get(3)?,
-                types: stovs(row.get(4)?),
-                supertypes: stovs(row.get(5)?),
-                subtypes: stovs(row.get(6)?),
-                color_identity: stovs(row.get(7)?),
-                related_cards: stovs(row.get(8)?),
-                power: row.get(9)?,
-                toughness: row.get(10)?,
-                cmc: row.get(11)?,
-            })
-        })?.collect();
-
-        cards
-    } else {
-        let mut stmt = conn.prepare("
-        SELECT 
-            name, 
-			card_text, 
-			mana_cost,
-            layout, 
-			types, 
-			supertypes, 
-            subtypes, 
-			color_identity, 
-			related_cards, 
-            power, 
-			toughness, 
-			cmc
-        FROM 'cards'
-        INNER JOIN 'deck_contents'
-        ON cards.name = deck_contents.card_name
-        WHERE deck_contents.deck = ?
-        AND cards.card_text LIKE ?
-        ORDER BY cards.name;")?;
-        let cards = stmt.query_map(params![did, text], |row| {
-            Ok(Card {
-                name: row.get(0)?,
-                text: row.get(1)?,
-                mana_cost: row.get(2)?,
-                layout: row.get(3)?,
-                types: stovs(row.get(4)?),
-                supertypes: stovs(row.get(5)?),
-                subtypes: stovs(row.get(6)?),
-                color_identity: stovs(row.get(7)?),
-                related_cards: stovs(row.get(8)?),
-                power: row.get(9)?,
-                toughness: row.get(10)?,
-                cmc: row.get(11)?,
-            })
-        })?.collect();
-
-        cards
-    }
-}
-
-pub fn rvcfname(mut name: String, did: i32) -> Result<Vec<Card>> {
-    let conn = Connection::open("cards.db")?;
-
-    name.insert(0, '%');
-    name.push('%');
-
-    if did < 0 {
-        let mut stmt = conn.prepare("
-            SELECT 
-                name, 
-                card_text, 
-                mana_cost,
-                layout, 
-                types, 
-                supertypes, 
-                subtypes, 
-                color_identity, 
-                related_cards, 
-                power, 
-                toughness, 
-                cmc
-            FROM `cards`
-            WHERE name LIKE ?
-            ORDER BY name;")?;
-        let cards = stmt.query_map(params![name], |row| {
-            Ok(Card {
-                name: row.get(0)?,
-                text: row.get(1)?,
-                mana_cost: row.get(2)?,
-                layout: row.get(3)?,
-                types: stovs(row.get(4)?),
-                supertypes: stovs(row.get(5)?),
-                subtypes: stovs(row.get(6)?),
-                color_identity: stovs(row.get(7)?),
-                related_cards: stovs(row.get(8)?),
-                power: row.get(9)?,
-                toughness: row.get(10)?,
-                cmc: row.get(11)?,
-            })
-        })?.collect();
-
-        cards
-    } else {
-        let mut stmt = conn.prepare("
-        SELECT 
-            name, 
-			card_text, 
-			mana_cost,
-            layout, 
-			types, 
-			supertypes, 
-            subtypes, 
-			color_identity, 
-			related_cards, 
-            power, 
-			toughness, 
-			cmc
-        FROM 'cards'
-        INNER JOIN 'deck_contents'
-        ON cards.name = deck_contents.card_name
-        WHERE deck_contents.deck = ?
-        AND cards.name LIKE ?
-        ORDER BY cards.name;")?;
-        let cards = stmt.query_map(params![did, name], |row| {
-            Ok(Card {
-                name: row.get(0)?,
-                text: row.get(1)?,
-                mana_cost: row.get(2)?,
-                layout: row.get(3)?,
-                types: stovs(row.get(4)?),
-                supertypes: stovs(row.get(5)?),
-                subtypes: stovs(row.get(6)?),
-                color_identity: stovs(row.get(7)?),
-                related_cards: stovs(row.get(8)?),
-                power: row.get(9)?,
-                toughness: row.get(10)?,
-                cmc: row.get(11)?,
-            })
-        })?.collect();
-
-        cards
-    }
-
-    // let mut cs = Vec::new();
-
-    // for c in card_iter {
-    //     cs.push(c);
-    // }
-    
-    // cards
-}
-
-pub fn import_deck(filename: String, deck_id: usize) -> Result<()> {
-    let contents = fs::read_to_string(filename)
-        .expect("Could not read file");
-
-    for line in contents.lines() {
-        icntodc(String::from(line), deck_id)?;
-    }
-    Ok(())
-}
-
-pub fn create_db() -> Result<()> {
-    let conn = Connection::open("cards.db")?;
-
-    conn.execute(
-        "create table if not exists sets (
-            id integer primary key,
-            code text not null unique, 
-            name text not null unique
-        )", NO_PARAMS,
-    )?;
-
-    //TODO: Add reference to rulings, legalities, and side
-    conn.execute(
-        "create table if not exists cards (
-            id integer primary key,
-            name text not null unique,
-            card_text text,
-            mana_cost text not null,
-            layout text not null,
-            types text not null,
-            supertypes text,
-            subtypes text,
-            color_identity text,
-            related_cards text,
-            power text,
-            toughness text,
-            cmc integer not null
-        )", NO_PARAMS
-    )?;
-
-    //TODO: Add notes, cost, and date_cost_calculated
-    conn.execute(
-        "create table if not exists decks (
-            id integer primary key,
-            name text not null,
-            commander text not null,
-            deck_type text not null,
-            foreign key (commander) references cards(name))"
-            , NO_PARAMS)?;
-
-    conn.execute(
-        "create table if not exists deck_contents (
-            id integer primary key,
-            card_name text not null,
-            deck integer not null,
-            tags text,
-            foreign key (deck) references decks(id))"
-            , NO_PARAMS
-    )?;
-    Ok(())
-}
-
-pub fn full_pull() -> Result<()> {
-    println!("Beginning full update of card database.");
-    let conn = Connection::open("cards.db")?;
-    
-    let mut stmt = conn.prepare("select s.code, s.name from sets s;")?;
-    let si: Vec<Set> = stmt.query_map(NO_PARAMS, |row| {
-        Ok(
-            Set {
-                code: row.get(0)?,
-                name: row.get(1)?,
-            }
-        )
-    })?.filter_map(Result::ok).collect();
-    println!("Retrived {} existing sets from the database.", si.len());
-
-    let so = crate::network::rvs().unwrap();
-    
-    let sd = so
-        .iter()
-        .filter(|s| !si.contains(s) && !BANNED.contains(& s.code.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    println!("There are {} sets missing from the database.", sd.len());
-
-    for s in sd {
-        println!("Found set '{}' missing. Retrieving cards now.", s.name);
-        let vc = crate::network::rcs(&s);
-        ivctoc(vc)?;
-        println!("Inserted all cards in {}", s.name);
-        is(s)?;
-    }
-    Ok(())
-}
-
-pub fn rvcfdid(did: i32) -> Result<Vec<Card>> {
-    let conn = Connection::open("cards.db")?;
-
-    let mut stmt = conn.prepare("
-        SELECT 
-            name, 
-			card_text, 
-			mana_cost,
-            layout, 
-			types, 
-			supertypes, 
-            subtypes, 
-			color_identity, 
-			related_cards, 
-            power, 
-			toughness, 
-			cmc
-        FROM `cards`
-        INNER JOIN deck_contents
-        ON cards.name = deck_contents.card_name
-        WHERE deck_contents.deck = ?
-        ORDER BY name;")?;
-
-    
-    let cards = stmt.query_map(params![did], |row| {
-        Ok(Card {
-            name: row.get(0)?,
-            text: row.get(1)?,
-            mana_cost: row.get(2)?,
-            layout: row.get(3)?,
-            types: stovs(row.get(4)?),
-            supertypes: stovs(row.get(5)?),
-            subtypes: stovs(row.get(6)?),
-            color_identity: stovs(row.get(7)?),
-            related_cards: stovs(row.get(8)?),
-            power: row.get(9)?,
-            toughness: row.get(10)?,
-            cmc: row.get(11)?,
-        })
-    })?.collect();
-
-    cards
-}
-
-pub fn rcomfdid(did: i32) -> Result<Card> {
-    let conn = Connection::open("cards.db")?;
-    let mut stmt = conn.prepare("SELECT * FROM decks WHERE id = ?;")?;
-
-    let deck = stmt.query_row(params![did], |row| {
-        
-        Ok(Deck {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            commander: rcfn(row.get(2)?)?,
-        })
-    })?;
-
-    let mut stmt = conn.prepare("
-    SELECT 
-        name, 
-        card_text, 
-        mana_cost,
-        layout, 
-        types, 
-        supertypes, 
-        subtypes, 
-        color_identity, 
-        related_cards, 
-        power, 
-        toughness, 
-        cmc
-    FROM cards WHERE name = ?;")?;
-
-    stmt.query_row(params![deck.commander.name], |row| {
-        Ok( Card {
-            name: row.get(0)?,
-            text: row.get(1)?,
-            mana_cost: row.get(2)?,
-            layout: row.get(3)?,
-            types: stovs(row.get(4)?),
-            supertypes: stovs(row.get(5)?),
-            subtypes: stovs(row.get(6)?),
-            color_identity: stovs(row.get(7)?),
-            related_cards: stovs(row.get(8)?),
-            power: row.get(9)?,
-            toughness: row.get(10)?,
-            cmc: row.get(11)?,
-        })
+    Ok( NewCard {
+        cmc: row.get(0)?,
+        color_identity: stovs(row.get(1)?),
+        legalities: Legalities::from(row.get(2)?),
+        mana_cost: row.get(3)?,
+        name: row.get(4)?,
+        power: row.get(5)?,
+        text: row.get(6)?,
+        toughness: row.get(7)?,
+        types: row.get(8)?,
+        layout: row.get(9)?,
+        related_cards,
+        side,
+        tags
     })
-}
-
-pub fn rcfn(name: String) -> Result<Card> {
-    let conn = Connection::open("cards.db")?;
-    let mut stmt = conn.prepare("
-    SELECT 
-        name, 
-        card_text, 
-        mana_cost,
-        layout, 
-        types, 
-        supertypes, 
-        subtypes, 
-        color_identity, 
-        related_cards, 
-        power, 
-        toughness, 
-        cmc
-    FROM cards WHERE name = ?;")?;
-    stmt.query_row(params![name], |row| {
-        Ok( Card {
-            name: row.get(0)?,
-            text: row.get(1)?,
-            mana_cost: row.get(2)?,
-            layout: row.get(3)?,
-            types: stovs(row.get(4)?),
-            supertypes: stovs(row.get(5)?),
-            subtypes: stovs(row.get(6)?),
-            color_identity: stovs(row.get(7)?),
-            related_cards: stovs(row.get(8)?),
-            power: row.get(9)?,
-            toughness: row.get(10)?,
-            cmc: row.get(11)?,
-        })
-    })
-}
-
-pub fn rvd () -> Result<Vec<Deck>> {
-    let conn = Connection::open("cards.db")?;
-    let mut stmt = conn.prepare("SELECT * FROM decks;")?;
-
-    let decks = stmt.query_map(NO_PARAMS, |row| {
-        
-        Ok(Deck {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            commander: rcfn(row.get(2)?)?,
-        })
-    })?.collect();
-
-    decks
-}
-
-pub fn rdfdid(id: i32) -> Result<Deck> {
-    let conn = Connection::open("cards.db")?;
-    let mut stmt = conn.prepare("SELECT * FROM decks WHERE id = ?;")?;
-    stmt.query_row(params![id], |row| {
-        Ok( Deck {
-            name: row.get(1)?,
-            commander: rcfn(row.get(2)?)?,
-            id: row.get(0)?,
-        })
-    })
-}
-
-pub fn db_test(s: &str) -> Result<Vec<Card>> {
-    let conn = Connection::open("cards.db")?;
-    let _a = add_regexp_function(&conn);
-    let qs = format!("
-        SELECT 
-            name, 
-            card_text, 
-            mana_cost,
-            layout, 
-            types, 
-            supertypes, 
-            subtypes, 
-            color_identity, 
-            related_cards, 
-            power, 
-            toughness, 
-            cmc
-        FROM `cards`
-        {}
-        ORDER BY name;", s);
-
-    let mut stmt = conn.prepare(&qs)?;
-
-        let cards = stmt.query_map(NO_PARAMS, |row| {
-            Ok(Card {
-                name: row.get(0)?,
-                text: row.get(1)?,
-                mana_cost: row.get(2)?,
-                layout: row.get(3)?,
-                types: stovs(row.get(4)?),
-                supertypes: stovs(row.get(5)?),
-                subtypes: stovs(row.get(6)?),
-                color_identity: stovs(row.get(7)?),
-                related_cards: stovs(row.get(8)?),
-                power: row.get(9)?,
-                toughness: row.get(10)?,
-                cmc: row.get(11)?,
-            })
-        })?.collect();
-
-        cards
-}
-
-pub fn rvcfcf(cf: CardFilter, general: bool) -> Result<Vec<Card>> {
-    let conn = Connection::open("cards.db")?;
-    let _a = add_regexp_function(&conn);
-    let qs = format!("
-        SELECT 
-            name, 
-            card_text, 
-            mana_cost,
-            layout, 
-            types, 
-            supertypes, 
-            subtypes, 
-            color_identity, 
-            related_cards, 
-            power, 
-            toughness, 
-            cmc
-        FROM `cards`
-        {}
-        ORDER BY name;", cf.make_filter(general));
-    // println!("{}", qs);
-
-    let mut stmt = conn.prepare(& qs)?;
-
-        let cards = stmt.query_map(NO_PARAMS, |row| {
-            Ok(Card {
-                name: row.get(0)?,
-                text: row.get(1)?,
-                mana_cost: row.get(2)?,
-                layout: row.get(3)?,
-                types: stovs(row.get(4)?),
-                supertypes: stovs(row.get(5)?),
-                subtypes: stovs(row.get(6)?),
-                color_identity: stovs(row.get(7)?),
-                related_cards: stovs(row.get(8)?),
-                power: row.get(9)?,
-                toughness: row.get(10)?,
-                cmc: row.get(11)?,
-            })
-        })?.collect();
-
-        // if cards == Error { println!("No cards found");  }
-
-        cards
 }

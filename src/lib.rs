@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-
+#![feature(str_split_once)]
 // #[macro_use]
 // extern crate serde_derive;
 // extern crate serde_json;

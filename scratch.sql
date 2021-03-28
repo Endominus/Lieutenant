@@ -27,34 +27,57 @@
 -- -- AND instr(mana_cost, 'W') = 0 
 -- ORDER BY name;
 
-SELECT 
-    name, 
+-- SELECT 
+    -- name,
+    -- legalities,
     -- card_text, 
-    mana_cost,
-    layout, 
-    types, 
-    supertypes, 
-    subtypes, 
-    color_identity, 
-    related_cards, 
-    power, 
-    toughness, 
-    cmc
-FROM `cards`
-WHERE 1=1
-AND instr(color_identity, 'U') = 0 
-AND instr(color_identity, 'B') = 0 
-AND ((subtypes LIKE '%hydra%'))
-AND cmc < 4
+    -- mana_cost,
+    -- layout, 
+    -- types, 
+    -- color_identity, 
+    -- related_cards, 
+    -- power, 
+    -- toughness, 
+    -- cmc
+    -- *
+-- FROM cards
+-- WHERE 1=1
+-- AND legalities = "";
+-- AND instr(color_identity, 'U') = 0 
+-- AND instr(color_identity, 'B') = 0 
+-- AND (types LIKE '%hydra%')
+-- AND cmc < 4;
 -- AND (cards.name LIKE '%ozi%')
--- -- AND (
--- --     (instr(mana_cost, 'B') > 0 AND instr(mana_cost, 'R') > 0 AND instr(mana_cost, 'U') > 0)
--- --     OR
--- --     (instr(mana_cost, 'W') > 0 AND instr(mana_cost, 'G') > 0)
--- -- )
--- -- AND ((instr(mana_cost, 'U') > 0 AND instr(mana_cost, 'R') > 0 AND instr(mana_cost, 'B') > 0) OR (instr(mana_cost, 'W') > 0 AND instr(mana_cost, 'G') > 0))
-ORDER BY name;
+-- AND (
+--     (instr(mana_cost, 'B') > 0 AND instr(mana_cost, 'R') > 0 AND instr(mana_cost, 'U') > 0)
+--     OR
+--     (instr(mana_cost, 'W') > 0 AND instr(mana_cost, 'G') > 0)
+-- )
+-- AND ((instr(mana_cost, 'U') > 0 AND instr(mana_cost, 'R') > 0 AND instr(mana_cost, 'B') > 0) OR (instr(mana_cost, 'W') > 0 AND instr(mana_cost, 'G') > 0))
+-- ORDER BY name;
 
--- SELECT DISTINCT layout FROM cards;
+-- SELECT DISTINCT layout from cards;
 
 -- SELECT * FROM cards WHERE name = "Karn Liberated";
+
+-- DELETE from cards;
+
+-- UPDATE cards 
+-- SET related_cards = "Bruna, the Fading Light|Brisela, Voice of Nightmares" 
+-- WHERE name = "Gisela, the Broken Blade";
+-- UPDATE cards 
+-- SET related_cards = "Gisela, the Broken Blade|Brisela, Voice of Nightmares" 
+-- WHERE name = "Bruna, the Fading Light";
+-- UPDATE cards SET related_cards = "Graf Rats|Midnight Scavengers" WHERE name = "Chittering Host";
+-- UPDATE cards SET related_cards = "Midnight Scavengers|Chittering Host" WHERE name = "Graf Rats";
+-- UPDATE cards SET related_cards = "Hanweir Garrison|Hanweir, the Writhing Township" WHERE name = "Hanweir Battlements";
+-- UPDATE cards SET related_cards = "Hanweir Battlements|Hanweir, the Writhing Township" WHERE name = "Hanweir Garrison";
+-- UPDATE cards SET related_cards = "Hanweir Battlements|Hanweir Garrison" WHERE name = "Hanweir, the Writhing Township";
+-- UPDATE cards SET related_cards = "Graf Rats|Chittering Host" WHERE name = "Midnight Scavengers";
+
+-- SELECT * --name,side,layout,related_cards,types 
+-- FROM cards 
+-- WHERE layout = "flip"
+-- -- AND types LIKE '%Enchantment%'
+-- AND name LIKE '%Rune%' 
+-- ORDER BY name;

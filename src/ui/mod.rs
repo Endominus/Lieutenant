@@ -5,6 +5,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use rusqlite::Connection;
 use std::io::stdout;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
@@ -12,8 +13,9 @@ use tui::style::{Color, Modifier, Style};
 use tui::Terminal;
 use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
-use crate::{Card, Deck};
+use crate::{Card, Deck, NewCard};
 use crate::db;
+// use crate::db::DbContext;
 
 mod util;
 use util::{StatefulList, MainMenuItem, Screen, DeckScreen};
@@ -23,14 +25,15 @@ struct AppState {
     title: String,
     deck_id: i32,
     deck: Option<Deck>,
-    contents: Option<Vec<Card>>,
+    contents: Option<Vec<NewCard>>,
     omnitext: String,
     dbftext: String,
-    sldc: StatefulList<Card>,
+    sldc: StatefulList<NewCard>,
     slmm: StatefulList<MainMenuItem>,
     slod: StatefulList<Deck>,
-    sldbc: StatefulList<Card>,
+    sldbc: StatefulList<NewCard>,
     dirty_deck: bool,
+    dbc: Connection,
     quit: bool,
 }
 
@@ -51,6 +54,7 @@ impl AppState {
             omnitext: String::new(),
             dbftext: String::new(),
             dirty_deck: true,
+            dbc: Connection::open("lieutenant.db").unwrap(),
             // dsod: DeckScreen,
             // dsdb: DeckScreen,
         };
@@ -84,8 +88,8 @@ impl AppState {
                         self.deck_id = 1;
                         self.omnitext = String::new();
 
-                        self.deck = Some(db::rdfdid(self.deck_id)?);
-                        self.contents = Some(db::rvcfdid(self.deck_id)?);
+                        self.deck = Some(db::rdfdid(&self.dbc, self.deck_id)?);
+                        self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id)?);
 
                         self.mode = Screen::DeckOmni;
                         self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
@@ -172,7 +176,7 @@ impl AppState {
 
     fn init_deck_view(&mut self) {
         self.mode = Screen::DeckOmni;
-        self.sldc = StatefulList::with_items(db::rvcfdid(1).unwrap());
+        self.sldc = StatefulList::with_items(db::rvcfdid(&self.dbc, 1).unwrap());
         self.sldc.next();
     }
     
@@ -180,7 +184,7 @@ impl AppState {
     
     fn init_open_view(&mut self) {
         self.mode = Screen::OpenDeck;
-        let vd = db::rvd().unwrap();
+        let vd = db::rvd(&self.dbc).unwrap();
         self.slod = StatefulList::with_items(vd);
         self.slod.next();
     }
@@ -215,7 +219,7 @@ impl AppState {
             _ => { panic!(); }
         };
         let cf = db::CardFilter::from(self.deck_id, & ss);
-        let vcr = db::rvcfcf(cf, general);
+        let vcr = db::rvcfcf(&self.dbc, cf, general);
         let vc = match vcr {
             Ok(vc) => { vc }
             _ => { Vec::new() }
@@ -348,7 +352,7 @@ pub fn run() -> Result<()> {
         draw(&mut terminal, &mut state)?;
 
         if let Event::Key(KeyEvent { code, .. }) = read()? {
-            state.handle_input(code);
+            let _a = state.handle_input(code);
         }
 
         if state.quit {

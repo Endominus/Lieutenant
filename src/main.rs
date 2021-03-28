@@ -1,3 +1,6 @@
+#![allow(unused_imports)]
+#![feature(str_split_once)]
+
 #![allow(dead_code)]
 extern crate reqwest;
 extern crate rusqlite;
@@ -13,6 +16,13 @@ extern crate serde_json;
 extern crate peg;
 #[macro_use]
 extern crate lazy_static;
+
+use json::object::Object;
+use rusqlite::Connection;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
+use std::time::{Duration, Instant};
 // #[macro_use]
 
 // mod res;
@@ -25,7 +35,7 @@ use std::sync::RwLock;
 use config::Config;
 use clap::{App, Arg, SubCommand};
 use anyhow::Result;
-use db::CardFilter;
+use db::{CardFilter};
 use serde::Deserialize;
 // use serde::de::Deserialize;
 
@@ -41,6 +51,7 @@ lazy_static! {
         settings
     });
 }
+
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Card {
@@ -63,18 +74,154 @@ pub struct Card {
     pub toughness: String,
     pub layout : String,
 }
+#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct Legalities {
+    #[serde(default)]
+    brawl: String,
+    #[serde(default)]
+    commander: String,
+    #[serde(default)]
+    duel: String,
+    #[serde(default)]
+    future: String,
+    #[serde(default)]
+    frontier: String,
+    #[serde(default)]
+    historic: String,
+    #[serde(default)]
+    legacy: String,
+    #[serde(default)]
+    modern: String,
+    #[serde(default)]
+    pauper: String,
+    #[serde(default)]
+    penny: String,
+    #[serde(default)]
+    pioneer: String,
+    #[serde(default)]
+    standard: String,
+    #[serde(default)]
+    vintage: String,
+}
+
+impl Legalities {
+    fn to_vec(map: serde_json::Value) -> Vec<String> {
+        let legalities = match map {
+            serde_json::Value::Object(i) => { i }
+            _ => { return Vec::new() }
+        };
+
+        legalities.keys().cloned().collect()
+    }
+
+    fn from(s: String) -> Legalities {
+        let mut l = Legalities::default();
+
+        if let Some(_) = s.find("commander") { l.commander = String::from("Allowed"); }
+
+        l
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub enum Relation {
+    Single(String),
+    Meld {face: String, transform: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub enum Layout {
+    Normal,
+    ModalDfc,
+    Split,
+    Transform,
+    Aftermath,
+    Adventure,
+    Flip,
+    Meld,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct CardLayout {
+    lo: Layout,
+    rel: Option<Relation>,
+    side: Option<char>
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewCard {
+    #[serde(rename = "convertedManaCost")]
+    pub cmc: f64,
+    pub color_identity: Vec<String>,
+    pub legalities: Legalities,
+    #[serde(default = "zero")]
+    pub mana_cost: String,
+    pub name: String,
+    #[serde(default)]
+    pub power: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub toughness: String,
+    #[serde(rename = "type")]
+    pub types: String,
+    // pub lo: CardLayout, //TODO: Use this, instead of the below. Problem, since this isn't how the json is structured.
+    pub layout : String,
+    pub related_cards: Option<Relation>,
+    pub side: Option<char>,
+}
 
 impl ToString for Card { fn to_string(& self) -> String { self.name.clone() } }
+
+impl ToString for NewCard { fn to_string(& self) -> String { self.name.clone() } }
+
+impl ToString for Legalities { 
+    fn to_string(& self) -> String {
+        let mut vs = Vec::new();
+        let b = vec![String::default(), String::from("Banned")];
+
+        if !b.contains(&self.brawl) { vs.push("brawl"); }
+        if !b.contains(&self.commander) { vs.push("commander"); }
+        if !b.contains(&self.modern) { vs.push("modern"); }
+        if !b.contains(&self.standard) { vs.push("standard"); }
+
+        vs.join("|")
+    }
+}
 
 fn zero() -> String { String::from("0") }
 
 pub struct Deck {
     pub name: String,
-    pub commander: Card,
+    pub commander: NewCard,
     pub id: i32,
 }
 
 impl ToString for Deck { fn to_string(& self) -> String { self.name.clone() } }
+
+impl NewCard {
+    pub fn ri(&self) -> Vec<String> {
+        let t = self.text.split("\n");
+
+        let mut v = vec![
+            self.name.clone(),
+            self.mana_cost.clone(),
+            self.types.clone()
+        ];
+
+        for l in t {
+            v.push(l.to_string());
+        }
+
+        if self.power.len() > 0 {
+            v.push(format!("{}/{}", self.power, self.toughness));
+        }
+        v
+    }
+}
 
 impl Card {
     pub fn ri(&self) -> Vec<String> {
@@ -121,16 +268,18 @@ pub fn run(command: Command) -> Result<()> {
             // Ok(())
         },
         Command::RetrieveCard(card) => {
-            let a = db::rvcfname(card, -1)?;
-            for card in a {
-                println!("{:?}", card);
-            }
+            // let cf = CardFilter::from(-1, &card);
+            let conn = Connection::open("lieutenant.db")?;
+            let a = db::rcfn(&conn, card)?;
+            // for card in a {
+            println!("{:?}", a);
+            // }
 
             // Ok(())
         },
         Command::FullPull => {
-            db::create_db()?;
-            db::full_pull()?;
+            // db::create_db()?;
+            // db::full_pull()?;
             // network::rs();
             // println!("{:?}", a);
             // Ok(())
@@ -142,7 +291,7 @@ pub fn run(command: Command) -> Result<()> {
             // Ok(()) 
         },
         Command::ImportCards(did, filename) => {
-            db::import_deck(filename, did)?;
+            // db::import_deck(filename, did)?;
             // Ok(())
         }
     }
@@ -216,40 +365,39 @@ fn main() {
             // let cf = db::CardFilter::new(1).text(String::from("ana"));
             // println!("Cardfilter produces: {}", cf.make_filter());
             // let a = network::rcs(& db::Set { code: String::from("TPH1"), name: String::from("Theros Path of Heroes") });
-            println!("{:?}", CardFilter::parse_omni("ana"));
-            println!("{:?}", CardFilter::parse_omni("n:ana"));
-            println!("{:?}", CardFilter::parse_omni("name:\" of \""));
-            println!("{:?}", CardFilter::parse_omni("text:\"draw a card\""));
-            // println!("{:?}", CardFilter::parse_omni("text:+1"));
-            println!("{:?}", CardFilter::parse_omni("text:\"+1\""));
-            println!("{:?}", CardFilter::parse_omni("text:\"+1\" n:aja"));
-            println!("{:?}", CardFilter::parse_omni("text:\"+1\" n:aja ty:creature"));
-            println!("{:?}", CardFilter::parse_omni("te:lifelink"));
-            println!("{:?}", CardFilter::parse_omni("te:\"draw a card\" n:Ajani"));
-            println!("{:?}", CardFilter::parse_omni("color:c"));
-            println!("{:?}", CardFilter::parse_omni("c:w name:blue"));
-            println!("{:?}", CardFilter::parse_omni("c:wb"));
-            println!("{:?}", CardFilter::parse_omni("color:w|b"));
-            println!("{:?}", CardFilter::parse_omni("color:b|g/w"));
-            println!("{:?}", CardFilter::parse_omni("type:creature"));
-            println!("{:?}", CardFilter::parse_omni("ty:legendary+sorcery"));
-            println!("{:?}", CardFilter::parse_omni("ty:legendary+creature/sorcery+tribal/instant name:\"how are you\""));
-            println!("{:?}", CardFilter::parse_omni("ty:c"));
-            println!("{:?}", CardFilter::parse_omni("ty:coward"));
-            println!("{:?}", CardFilter::parse_omni("ty:instant te:draw ajani"));
-            println!("{:?}", CardFilter::parse_omni("cmc:0-4"));
-            println!("{:?}", CardFilter::parse_omni("cmc:-4"));
-            println!("{:?}", CardFilter::parse_omni("cmc:4-"));
-            println!("{:?}", CardFilter::parse_omni("cmc:<10"));
-            println!("{:?}", CardFilter::parse_omni("cmc:>10"));
-            println!("{:?}", CardFilter::parse_omni("ci:wb"));
-            println!("{:?}", CardFilter::parse_omni("coloridentity:w/b"));
-            println!("{:?}", CardFilter::parse_omni("color_identity:b|g|w"));
-            println!("{:?}", CardFilter::parse_omni("p:0-4"));
-            println!("{:?}", CardFilter::parse_omni("p:-4"));
-            println!("{:?}", CardFilter::parse_omni("power:4-"));
-            println!("{:?}", CardFilter::parse_omni("power:-"));
-            println!("{:?}", CardFilter::parse_omni("power:"));
+            // println!("{:?}", CardFilter::parse_omni("ana"));
+            // println!("{:?}", CardFilter::parse_omni("n:ana"));
+            // println!("{:?}", CardFilter::parse_omni("name:\" of \""));
+            // println!("{:?}", CardFilter::parse_omni("text:\"draw a card\""));
+            // println!("{:?}", CardFilter::parse_omni("text:\"+1\""));
+            // println!("{:?}", CardFilter::parse_omni("text:\"+1\" n:aja"));
+            // println!("{:?}", CardFilter::parse_omni("text:\"+1\" n:aja ty:creature"));
+            // println!("{:?}", CardFilter::parse_omni("te:lifelink"));
+            // println!("{:?}", CardFilter::parse_omni("te:\"draw a card\" n:Ajani"));
+            // println!("{:?}", CardFilter::parse_omni("color:c"));
+            // println!("{:?}", CardFilter::parse_omni("c:w name:blue"));
+            // println!("{:?}", CardFilter::parse_omni("c:wb"));
+            // println!("{:?}", CardFilter::parse_omni("color:w|b"));
+            // println!("{:?}", CardFilter::parse_omni("color:b|g/w"));
+            // println!("{:?}", CardFilter::parse_omni("type:creature"));
+            // println!("{:?}", CardFilter::parse_omni("ty:legendary+sorcery"));
+            // println!("{:?}", CardFilter::parse_omni("ty:legendary+creature/sorcery+tribal/instant name:\"how are you\""));
+            // println!("{:?}", CardFilter::parse_omni("ty:c"));
+            // println!("{:?}", CardFilter::parse_omni("ty:coward"));
+            // println!("{:?}", CardFilter::parse_omni("ty:instant te:draw ajani"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:0-4"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:-4"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:4-"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:<10"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:>10"));
+            // println!("{:?}", CardFilter::parse_omni("ci:wb"));
+            // println!("{:?}", CardFilter::parse_omni("coloridentity:w/b"));
+            // println!("{:?}", CardFilter::parse_omni("color_identity:b|g|w"));
+            // println!("{:?}", CardFilter::parse_omni("p:0-4"));
+            // println!("{:?}", CardFilter::parse_omni("p:-4"));
+            // println!("{:?}", CardFilter::parse_omni("power:4-"));
+            // println!("{:?}", CardFilter::parse_omni("power:-"));
+            // println!("{:?}", CardFilter::parse_omni("power:"));
 
             // let omni = String::from("ty:artifact cmc:>4");
             // let omni = String::from("text:\"you control\" c:r|g");
@@ -263,6 +411,25 @@ fn main() {
             // let s = "WHERE cards.name LIKE \'%ana%\'";
             // let s = "%ana%";
             // println!("{:?}", db::db_test(s).unwrap().len());
+
+            // let now = Instant::now();
+            // let file = File::open("AtomicCards.json").unwrap();
+            // let reader = BufReader::new(file);
+            // let a: serde_json::Value = serde_json::from_reader(reader).unwrap();
+            // println!("Imported cards in {} s.", now.elapsed().as_secs());
+            // let now = Instant::now();
+            // let (a, b) = db::ivcfjsmap(a).unwrap();
+            // println!("Inserted {} rows with {} failures in {} ms.", a, b, now.elapsed().as_millis());
+            // println!("{}", a["data"]["Chalice of Life // Chalice of Death"]);
+            // let c: NewCard = serde_json::from_value(
+            //     a["data"]["Chalice of Life // Chalice of Death"].clone())
+            //     .unwrap();
+            // println!("{:?}", c)
+            
+            // println!("{} cards in {} s", vc.len(), now.elapsed().as_secs());
+            // let now = Instant::now();
+            // let a = db::create_new_database();
+            // println!("{:?}: Cards added to database in {} s", a, now.elapsed().as_secs());
 
 
         }
