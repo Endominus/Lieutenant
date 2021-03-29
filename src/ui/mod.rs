@@ -20,7 +20,7 @@ use crate::db;
 // use crate::db::DbContext;
 
 mod util;
-use util::{StatefulList, MainMenuItem, Screen, DeckScreen, MakeDeckScreen, MakeDeckContents};
+use util::{StatefulList, MainMenuItem, Screen, DeckScreen, MakeDeckScreen, MakeDeckContents, Omnitext};
 
 use self::util::MakeDeckFocus;
 
@@ -31,8 +31,8 @@ struct AppState {
     deck_id: i32,
     deck: Option<Deck>,
     contents: Option<Vec<NewCard>>,
-    omnitext: String,
-    dbftext: String,
+    omnitext: Omnitext,
+    dbftext: Omnitext,
     sldc: StatefulList<NewCard>,
     slmm: StatefulList<MainMenuItem>,
     slod: StatefulList<Deck>,
@@ -62,8 +62,8 @@ impl AppState {
             sldbc: StatefulList::new(),
             mdc: MakeDeckContents::default(),
             quit: false,
-            omnitext: String::new(),
-            dbftext: String::new(),
+            omnitext: Omnitext::default(),
+            dbftext: Omnitext::default(),
             dirty_deck: true,
             dirty_cards: Vec::new(),
             dbc: conn,
@@ -108,6 +108,8 @@ impl AppState {
                     KeyCode::Esc => { self.mode = Screen::MainMenu; }
                     // KeyCode::Up => { self.slod.previous(); }
                     // KeyCode::Down => { self.slod.next(); }
+                    KeyCode::Left => { self.omnitext.left(); }
+                    KeyCode::Right => { self.omnitext.right(); }
                     KeyCode::Enter => { 
                         if self.sldc.items.len() > 0 {
                             self.mode = Screen::DeckCard;
@@ -116,8 +118,9 @@ impl AppState {
                     KeyCode::Tab => {
                         self.mode = Screen::DbFilter;
                     }
-                    KeyCode::Backspace => { self.omnitext.pop(); self.uslvc(); }
-                    KeyCode::Char(c) => {self.omnitext.push(c); self.uslvc(); }
+                    KeyCode::Backspace => { self.omnitext.backspace(); self.uslvc(); }
+                    KeyCode::Delete => { self.omnitext.delete(); self.uslvc(); }
+                    KeyCode::Char(c) => {self.omnitext.insert(c); self.uslvc(); }
                     _ => {}
                 }
             }
@@ -141,6 +144,8 @@ impl AppState {
                     KeyCode::Esc => { self.mode = Screen::MainMenu; }
                     // KeyCode::Up => { self.slod.previous(); }
                     // KeyCode::Down => { self.slod.next(); }
+                    KeyCode::Left => { self.dbftext.left(); }
+                    KeyCode::Right => { self.dbftext.right(); }
                     KeyCode::Enter => { 
                         self.uslvc();
                         if self.sldbc.items.len() > 0 {
@@ -151,8 +156,9 @@ impl AppState {
                         // self.mode = Screen::DeckOmni;
                         self.switch_mode(Some(Screen::DeckOmni));
                     }
-                    KeyCode::Backspace => { self.dbftext.pop(); }
-                    KeyCode::Char(c) => {self.dbftext.push(c); }
+                    KeyCode::Backspace => { self.dbftext.backspace(); }
+                    KeyCode::Delete => { self.dbftext.delete(); }
+                    KeyCode::Char(c) => {self.dbftext.insert(c); }
                     _ => {}
                 }
             }
@@ -287,12 +293,12 @@ impl AppState {
         // let cf = db::CardFilter::new(self.deck_id).text(self.omnitext.clone());
         let (ss, general, target) = match self.mode {
             Screen::DeckOmni => { (
-                self.omnitext.clone().to_lowercase(),
+                self.omnitext.get(),
                 false,
                 &mut self.sldc
             )}
             Screen::DbFilter => { (
-                self.dbftext.clone().to_lowercase(),
+                self.dbftext.get(),
                 true,
                 &mut self.sldbc
             )}
@@ -378,7 +384,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                     None => { String::from("No cards found!") }
                 };
                 let mut ds = DeckScreen::new(
-                    state.dbftext.clone(), 
+                    state.dbftext.get_styled(), 
                     state.rvlis(), 
                     text, 
                     state.mode);
@@ -394,7 +400,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                     Some(card) => { card.ri().join("\n") }
                     None => { String::from("No cards found!") }
                 };
-                let mut ds = DeckScreen::new(state.omnitext.clone(), state.rvli(), text, state.mode);
+                let mut ds = DeckScreen::new(state.omnitext.get_styled(), state.rvli(), text, state.mode);
                 
                 ds.focus_omni(state.mode);
                 f.render_widget(ds.omni, chunks[0]);
@@ -424,7 +430,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             Screen::DbCards => {
                 let text = state.sldbc.get().unwrap().ri().join("\n");
                 let mut ds = DeckScreen::new(
-                    state.dbftext.clone(), 
+                    state.dbftext.get_styled(), 
                     state.rvlis(), 
                     text, 
                     state.mode);
@@ -437,7 +443,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             Screen::DeckCard => {
                 // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
                 let text = state.sldc.get().unwrap().ri().join("\n");
-                let mut ds = DeckScreen::new(state.omnitext.clone(), state.rvli(), text, state.mode);
+                let mut ds = DeckScreen::new(state.omnitext.get_styled(), state.rvli(), text, state.mode);
                 
                 ds.focus_lc(state.mode);
                 f.render_widget(ds.omni, chunks[0]);

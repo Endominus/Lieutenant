@@ -1,5 +1,5 @@
 use crossterm::event::KeyCode;
-use tui::widgets::{List, ListItem, ListState, Paragraph, Block, Borders, Wrap};
+use tui::{text::{Span, Spans}, widgets::{List, ListItem, ListState, Paragraph, Block, Borders, Wrap}};
 use tui::style::{Color, Modifier, Style};
 
 use crate::db;
@@ -105,6 +105,67 @@ impl<T: ToString> StatefulList<T> {
 
 }
 
+#[derive(Default)]
+pub struct Omnitext {
+    pub text: String,
+    position: usize,
+}
+
+impl Omnitext {
+    pub fn left(&mut self) {
+        if self.position > 0 {
+            self.position -= 1;
+        }
+    }
+
+    pub fn right(&mut self) {
+        if self.position < self.text.len() {
+            self.position += 1;
+        }
+    }
+    
+    pub fn insert(&mut self, c: char) {
+        self.text.insert(self.position, c);
+        self.position += 1;
+    }
+
+    pub fn delete(&mut self) {
+        if self.position < self.text.len() {
+            self.text.remove(self.position);
+        }
+    }
+
+    pub fn backspace(&mut self) {
+        if self.position > 0 {
+            self.text.remove(self.position - 1);
+            self.position -= 1;
+        }
+    }
+
+    pub fn get(&self) -> String {
+        self.text.clone().to_lowercase()
+    }
+
+    pub fn get_styled(&self) -> Spans {
+        let spans = if self.position < self.text.len() {
+            let (s1, s2) = self.text.split_at(self.position);
+            let (s2, s3) = s2.split_at(1);
+            vec![
+                Span::styled(s1, Style::default()),
+                Span::styled(s2, Style::default().add_modifier(Modifier::UNDERLINED)),
+                Span::styled(s3, Style::default()),
+            ]
+        } else {
+            vec![
+                Span::styled(self.text.as_str(), Style::default()),
+                Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED)),
+            ]
+        };
+
+        Spans::from(spans)
+    }
+}
+
 pub struct MainMenuItem {
     pub text: String,
     pub next: Option<Screen>,
@@ -178,8 +239,8 @@ pub struct DeckScreen<'a> {
     len: usize,
 }
 
-impl DeckScreen<'_> {
-    pub fn new(omnitext: String, vli: Vec<ListItem>, cardtext: String, mode: Screen) -> DeckScreen {
+impl<'a> DeckScreen<'a> {
+    pub fn new(omnitext: Spans<'a>, vli: Vec<ListItem<'a>>, cardtext: String, mode: Screen) -> DeckScreen<'a> {
         let (omni_title, list_title) = match mode {
             Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", "Card List") }
             Screen::DbFilter | Screen::DbCards => { ("Filter Database", "Database") }
