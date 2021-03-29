@@ -314,7 +314,7 @@ impl<'a> CardFilter<'a> {
 
 // }
 
-fn add_regexp_function(db: &Connection) -> Result<()> {
+pub fn add_regexp_function(db: &Connection) -> Result<()> {
     db.create_scalar_function(
         "regexp",
         2,
@@ -384,7 +384,8 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             cost real,
             date_cost_retrieved text,
             foreign key (commander) references cards(name))"
-            , NO_PARAMS,)?;
+            , NO_PARAMS,
+        )?;
 
     conn.execute(
         "create table if not exists deck_contents (
@@ -392,7 +393,8 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             card_name text not null,
             deck integer not null,
             tags text,
-            foreign key (deck) references decks(id))"
+            foreign key (deck) references decks(id),
+            unique (deck, card_name) on conflict ignore)"
             , NO_PARAMS,
     )?;
 
@@ -557,7 +559,7 @@ pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: usize) -> Result
 }
 
 pub fn rcfn(conn: &Connection, name: String) -> Result<NewCard> {
-    let mut stmt = conn.prepare("SELECT cmc, color_identity, legalities, Loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
+    let mut stmt = conn.prepare("SELECT cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
         FROM cards WHERE name = :name;")?;
     stmt.query_row_named(named_params!{":name": name}, |row| {
         cfr(row)
@@ -607,7 +609,7 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
 
 pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<NewCard>> {
     let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, Loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
         FROM cards 
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
@@ -619,9 +621,9 @@ pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<NewCard>> {
 
 pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<NewCard>> {
     let fields = if general {
-        "SELECT cmc, color_identity, legalities, Loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side"
+        "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side"
     } else {
-        "SELECT cmc, color_identity, legalities, Loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags"
+        "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags"
     };
     let qs = format!("
         SELECT {}
@@ -629,11 +631,15 @@ pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<Ne
         {}
         ORDER BY name;", fields, cf.make_filter(conn, general));
 
-    let mut stmt = conn.prepare(& qs)?;
+    // println!("Query:\n{}", qs);
+
+    let mut stmt = conn.prepare(& qs).unwrap();
 
     let cards = stmt.query_map(NO_PARAMS, |row| {
         cfr(row)
     })?.collect();
+
+    // println!("{:?}", cards);
 
     cards
 }

@@ -89,7 +89,7 @@ impl<T: ToString> StatefulList<T> {
         self.items.iter().map(|f| 
             // let fs = f.to_string();
             if vs.contains(&f.to_string()) {
-                ListItem::new(f.to_string()).style(Style::default().fg(Color::Yellow))
+                ListItem::new(f.to_string()).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))
             } else {
                 ListItem::new(f.to_string())
             }

@@ -8,7 +8,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use rusqlite::Connection;
-use std::io::stdout;
+use std::{convert::TryInto, io::stdout};
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
@@ -46,6 +46,8 @@ struct AppState {
 
 impl AppState {
     fn new() -> AppState {
+        let conn = Connection::open("lieutenant.db").unwrap();
+        db::add_regexp_function(&conn).unwrap();
         let mut app = AppState {
             mode: Screen::MainMenu,
             mode_p: Screen::MainMenu,
@@ -62,7 +64,7 @@ impl AppState {
             omnitext: String::new(),
             dbftext: String::new(),
             dirty_deck: true,
-            dbc: Connection::open("lieutenant.db").unwrap(),
+            dbc: conn,
             // dsod: DeckScreen,
             // dsdb: DeckScreen,
         };
@@ -152,6 +154,12 @@ impl AppState {
                     KeyCode::Up => { self.sldbc.previous(); }
                     KeyCode::Down => { self.sldbc.next(); }
                     KeyCode::Tab => { self.mode = Screen::DbFilter; }
+                    KeyCode::Enter => {
+                        let a = self.sldbc.get().unwrap();
+                        db::icntodc(&self.dbc, a.name.clone(), self.deck_id.try_into().unwrap()).unwrap();
+                        // self.dirty_deck = true;
+                        self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+                    }
                     _ => {}
                 }
             }
@@ -206,11 +214,18 @@ impl AppState {
         Ok(())
     }
 
+    // fn reset(&mut self) {
+    //     self.deck_id = -1;
+    //     self.omnitext = String::new();
+    //     self.dbftext = String::new();
+    //     self.contents = None;
+    // }
+
     fn switch_mode(&mut self, next: Option<Screen>) {
         match next {
             Some(Screen::MakeDeck) => { self.mode = Screen::MakeDeck; }
             Some(Screen::OpenDeck) => { self.init_open_view(); }
-            Some(Screen::DeckOmni) => { self.init_deck_view(); }
+            Some(Screen::DeckOmni) => { /* Set deck_id here */ self.init_deck_view(); }
             Some(Screen::Settings) => { self.init_settings(); }
             Some(Screen::DeckCard) => {  }
             Some(_) => {}
@@ -223,11 +238,13 @@ impl AppState {
     fn init_deck_view(&mut self) {
 
         // self.deck_id = 1;
-        self.omnitext = String::new();
-
+        // self.omnitext = String::new();
+        
         self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
-        self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
-
+        if self.dirty_deck {
+            self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+        }
+        
         self.mode = Screen::DeckOmni;
         self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
         self.sldc.next();
