@@ -4,7 +4,7 @@ extern crate regex;
 use crate::Legalities;
 use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
 use crate::{Card, Deck, NewCard, Relation};
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, convert::TryInto, fs};
 use rusqlite::{Row, Statement, named_params};
 use serde::Deserialize;
 use regex::Regex;
@@ -529,13 +529,21 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
 // }
 pub fn icntodc(conn: &Connection, c: String, did: usize) -> Result<()> {
     let mut stmt = conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?;
-    stmt.execute_named(named_params!{":card_name": c, ":deck": did as u32} )?;
+    stmt.execute_named(named_params!{":card_name": c, ":deck_id": did as u32} )?;
     Ok(())
 }
-pub fn ideck(conn: &Connection, n: String, c: Card, t: String) -> Result<()> {
-    let mut stmt = conn.prepare("INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);")?;
-    stmt.execute_named(named_params!{":name": n, ":commander": c.name,":deck_type": t} )?;
-    Ok(())
+pub fn ideck(conn: &Connection, n: String, c: String, t: &str) -> Result<i32> {
+    // let s = format!("INSERT INTO decks (name, commander, deck_type) VALUES ({}, {}, {});", n, c, t);
+    // let mut stmt = conn.prepare(s.as_str())?;
+    let mut stmt = conn.prepare(
+        "INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);").unwrap();
+    // let rid = stmt.insert(NO_PARAMS)?;
+    // conn.query_row(sql, params, f)
+    stmt.execute_named(named_params!{":name": n, ":commander": c,":deck_type": t} ).unwrap();
+    let rid = conn.last_insert_rowid();
+    println!("Row ID is {}", rid);
+    icntodc(conn, c, rid.try_into().unwrap()).unwrap();
+    Ok(rid.try_into().unwrap())
 }
 
 pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: usize) -> Result<()> {
@@ -549,7 +557,7 @@ pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: usize) -> Result
 }
 
 pub fn rcfn(conn: &Connection, name: String) -> Result<NewCard> {
-    let mut stmt = conn.prepare("SELECT cmc, color_identity, legalities, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
+    let mut stmt = conn.prepare("SELECT cmc, color_identity, legalities, Loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
         FROM cards WHERE name = :name;")?;
     stmt.query_row_named(named_params!{":name": name}, |row| {
         cfr(row)
@@ -599,32 +607,27 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
 
 pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<NewCard>> {
     let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, text, toughness, types, layout, related_cards, side
+        cmc, color_identity, legalities, Loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
         FROM cards 
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
         WHERE deck_contents.deck = :did;")?;
 
-    let a = stmt.query_map(NO_PARAMS, |row| { cfr(row)})?;
+    let a = stmt.query_map_named(named_params!{ ":did": did }, |row| { cfr(row)})?;
     a.collect()
 }
 
 pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<NewCard>> {
+    let fields = if general {
+        "SELECT cmc, color_identity, legalities, Loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side"
+    } else {
+        "SELECT cmc, color_identity, legalities, Loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags"
+    };
     let qs = format!("
-        SELECT 
-            name, 
-            card_text, 
-            mana_cost,
-            layout, 
-            types, 
-            color_identity, 
-            related_cards, 
-            power, 
-            toughness, 
-            cmc
+        SELECT {}
         FROM `cards`
         {}
-        ORDER BY name;", cf.make_filter(conn, general));
+        ORDER BY name;", fields, cf.make_filter(conn, general));
 
     let mut stmt = conn.prepare(& qs)?;
 
@@ -645,16 +648,17 @@ fn stovs(ss: String) -> Vec<String> {
     vs
 }
 
+#[allow(unreachable_patterns)]
 fn cfr(row:& Row) -> Result<NewCard> {
-    let n = "normal".to_string();
-    let m = "meld".to_string();
-    let l = "leveler".to_string();
-    let s = "saga".to_string();
+    let _n = "normal".to_string();
+    let _m = "meld".to_string();
+    let _l = "leveler".to_string();
+    let _s = "saga".to_string();
     let (side, related_cards) = match row.get::<usize, String>(10) {
-        Ok(n) => { (None, None) }
-        Ok(l) => { (None, None) }
-        Ok(s) => { (None, None) }
-        Ok(m) => { 
+        Ok(_n) => { (None, None) }
+        Ok(_l) => { (None, None) }
+        Ok(_s) => { (None, None) }
+        Ok(_m) => { 
             let a = row.get::<usize, String>(11)?;
             let b = a.split_once("|").unwrap();
             let (face, transform) = (String::from(b.0), String::from(b.1));
@@ -668,9 +672,14 @@ fn cfr(row:& Row) -> Result<NewCard> {
             Some(Relation::Single(row.get(11)?))) }
         Err(_) => { (None, None) }
     };
-    let tags: Vec<String> = if row.column_names().contains(&"tags") 
-        { row.get::<usize, String>(13)?.split("|").map(|s| s.to_string()).collect() }
-        else { Vec::new() };
+    let tags: Vec<String> = if row.column_names().contains(&"tags") { 
+        match row.get::<usize, String>(13) {
+            Ok(a) => {
+                a.split("|").map(|s| s.to_string()).collect()
+            }
+            Err(_) => { Vec::new() }
+        } 
+    } else { Vec::new() };
 
     Ok( NewCard {
         cmc: row.get(0)?,

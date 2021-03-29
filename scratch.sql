@@ -58,10 +58,16 @@
 
 -- SELECT DISTINCT layout from cards;
 
--- SELECT * FROM cards WHERE name = "Karn Liberated";
+-- SELECT * FROM cards WHERE name LIKE "%Isperia%";
 
 -- DELETE from cards;
+DELETE FROM decks;
+DELETE FROM deck_contents;
+-- DROP TABLE cards;
 
+-- UPDATE cards 
+-- SET related_cards = "Bruna, the Fading Light|Gisela, the Broken Blade" 
+-- WHERE name = "Brisela, Voice of Nightmares";
 -- UPDATE cards 
 -- SET related_cards = "Bruna, the Fading Light|Brisela, Voice of Nightmares" 
 -- WHERE name = "Gisela, the Broken Blade";
@@ -75,9 +81,9 @@
 -- UPDATE cards SET related_cards = "Hanweir Battlements|Hanweir Garrison" WHERE name = "Hanweir, the Writhing Township";
 -- UPDATE cards SET related_cards = "Graf Rats|Chittering Host" WHERE name = "Midnight Scavengers";
 
--- SELECT * --name,side,layout,related_cards,types 
+-- SELECT name,card_text,side,layout,related_cards,types 
 -- FROM cards 
--- WHERE layout = "flip"
+-- WHERE layout = "meld"
 -- -- AND types LIKE '%Enchantment%'
--- AND name LIKE '%Rune%' 
+-- -- AND name LIKE '%Rune%' 
 -- ORDER BY name;

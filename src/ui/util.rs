@@ -1,5 +1,8 @@
+use crossterm::event::KeyCode;
 use tui::widgets::{List, ListItem, ListState, Paragraph, Block, Borders, Wrap};
 use tui::style::{Color, Modifier, Style};
+
+use crate::db;
 
 #[derive(Copy, Clone)]
 pub enum Screen {
@@ -11,6 +14,7 @@ pub enum Screen {
     OpenDeck,
     Settings,
     MakeDeck,
+    Error(&'static str),
 }
 
 pub struct StatefulList<T: ToString> {
@@ -105,6 +109,59 @@ impl MainMenuItem {
 }
 
 impl ToString for MainMenuItem { fn to_string(&self) -> String { self.text.clone() } }
+
+#[derive(Clone)]
+pub enum MakeDeckFocus {
+    Title,
+    Commander,
+    // Type
+}
+
+impl Default for MakeDeckFocus {fn default() -> Self { Self::Title } }
+
+#[derive(Default)]
+pub struct MakeDeckContents {
+    pub focus: MakeDeckFocus,
+    pub title: String,
+    pub commander: String,
+}
+
+// impl MakeDeckContents {}
+pub struct MakeDeckScreen<'a> {
+    pub title_entry: Paragraph<'a>,
+    pub commander_entry: Paragraph<'a>,
+}
+
+impl<'a> MakeDeckScreen<'a> {
+    pub fn new(mdc: &MakeDeckContents) -> MakeDeckScreen<'a> {
+        let (te, ce) = match mdc.focus {
+            MakeDeckFocus::Title => {
+                (Paragraph::new(mdc.title.clone())
+                    .style(Style::default())
+                    .block(Block::default().borders(Borders::ALL).title("Deck Name")
+                        .style(Style::default().fg(Color::Yellow))),
+                Paragraph::new(mdc.commander.clone())
+                .style(Style::default())
+                .block(Block::default().borders(Borders::ALL).title("Commander")))
+            }
+            MakeDeckFocus::Commander => {
+                (Paragraph::new(mdc.title.clone())
+                    .style(Style::default())
+                    .block(Block::default().borders(Borders::ALL).title("Deck Name")
+                        .style(Style::default().fg(Color::Cyan))),
+                Paragraph::new(mdc.commander.clone())
+                    .style(Style::default())
+                    .block(Block::default().borders(Borders::ALL).title("Commander"))
+                        .style(Style::default().fg(Color::Yellow)))
+            }
+        };
+
+        MakeDeckScreen {
+            title_entry: te,
+            commander_entry: ce,
+        }
+    }
+}
 
 pub struct DeckScreen<'a> {
     pub omni: Paragraph<'a>,

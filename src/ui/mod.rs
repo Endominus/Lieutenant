@@ -1,5 +1,7 @@
 // extern crate anyhow;
 
+use tui::widgets::{Clear, Paragraph};
+use tui::layout::Rect;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, read, KeyEvent},
     execute,
@@ -18,10 +20,13 @@ use crate::db;
 // use crate::db::DbContext;
 
 mod util;
-use util::{StatefulList, MainMenuItem, Screen, DeckScreen};
+use util::{StatefulList, MainMenuItem, Screen, DeckScreen, MakeDeckScreen, MakeDeckContents};
+
+use self::util::MakeDeckFocus;
 
 struct AppState {
     mode: Screen,
+    mode_p: Screen,
     title: String,
     deck_id: i32,
     deck: Option<Deck>,
@@ -32,6 +37,7 @@ struct AppState {
     slmm: StatefulList<MainMenuItem>,
     slod: StatefulList<Deck>,
     sldbc: StatefulList<NewCard>,
+    mdc: MakeDeckContents,
     dirty_deck: bool,
     dbc: Connection,
     quit: bool,
@@ -42,6 +48,7 @@ impl AppState {
     fn new() -> AppState {
         let mut app = AppState {
             mode: Screen::MainMenu,
+            mode_p: Screen::MainMenu,
             title: String::from("Main Menu"),
             deck_id: -1,
             deck: None,
@@ -50,6 +57,7 @@ impl AppState {
             slmm: StatefulList::new(),
             slod: StatefulList::new(),
             sldbc: StatefulList::new(),
+            mdc: MakeDeckContents::default(),
             quit: false,
             omnitext: String::new(),
             dbftext: String::new(),
@@ -85,15 +93,8 @@ impl AppState {
                     KeyCode::Down => { self.slod.next(); }
                     KeyCode::Enter => { 
                         // TODO: Assign correct deck ID to config
-                        self.deck_id = 1;
-                        self.omnitext = String::new();
-
-                        self.deck = Some(db::rdfdid(&self.dbc, self.deck_id)?);
-                        self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id)?);
-
-                        self.mode = Screen::DeckOmni;
-                        self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
-                        self.sldc.next();
+                        self.deck_id = self.slod.get().unwrap().id;
+                        self.init_deck_view();
                     }
                     _ => {}
                 }
@@ -154,6 +155,51 @@ impl AppState {
                     _ => {}
                 }
             }
+            Screen::MakeDeck => {
+                match c {
+                    KeyCode::Esc => { self.mode = Screen::MainMenu; }
+                    KeyCode::Enter => {
+                        match self.mdc.focus {
+                            MakeDeckFocus::Title => { self.mdc.focus = MakeDeckFocus::Commander; }
+                            MakeDeckFocus::Commander => { 
+                                match db::rcfn(&self.dbc, self.mdc.commander.clone()) {
+                                    Ok(_) => {
+                                        self.deck_id = db::ideck(
+                                            &self.dbc, 
+                                            self.mdc.title.clone(), 
+                                            self.mdc.commander.clone(), 
+                                            "Commander").unwrap();
+                                        self.mdc = MakeDeckContents::default();
+                                        self.init_deck_view();
+                                    }
+                                    Err(_) => {
+                                        self.mode_p = self.mode;
+                                        self.mode = Screen::Error("Commander name not found in database.\nPlease check spelling and try again.\nPress Enter to continue.");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Backspace => { 
+                        match self.mdc.focus {
+                            MakeDeckFocus::Title => { self.mdc.title.pop(); }
+                            MakeDeckFocus::Commander => { self.mdc.commander.pop(); }
+                        }
+                    }
+                    KeyCode::Char(ch) => {
+                        match self.mdc.focus {
+                            MakeDeckFocus::Title => { self.mdc.title.push(ch); }
+                            MakeDeckFocus::Commander => { self.mdc.commander.push(ch); }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Screen::Error(_) => {
+                if KeyCode::Enter == c {
+                    self.mode = self.mode_p;
+                }
+            }
             _ => {}
         }
 
@@ -162,7 +208,7 @@ impl AppState {
 
     fn switch_mode(&mut self, next: Option<Screen>) {
         match next {
-            Some(Screen::MakeDeck) => { self.init_create_view(); }
+            Some(Screen::MakeDeck) => { self.mode = Screen::MakeDeck; }
             Some(Screen::OpenDeck) => { self.init_open_view(); }
             Some(Screen::DeckOmni) => { self.init_deck_view(); }
             Some(Screen::Settings) => { self.init_settings(); }
@@ -175,8 +221,15 @@ impl AppState {
     fn init_create_view(&mut self) {}
 
     fn init_deck_view(&mut self) {
+
+        // self.deck_id = 1;
+        self.omnitext = String::new();
+
+        self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
+        self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+
         self.mode = Screen::DeckOmni;
-        self.sldc = StatefulList::with_items(db::rvcfdid(&self.dbc, 1).unwrap());
+        self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
         self.sldc.next();
     }
     
@@ -250,7 +303,19 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                     .split(cut[1]));
                 vrct
             }
-            Screen::Settings | Screen::MakeDeck => { Vec::new() }
+            Screen::MakeDeck => { 
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Length(3)])
+                    .split(f.size())
+            }
+            Screen::Error(_) => { 
+                Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(f.size())
+            }
+            Screen::Settings => { Vec::new() }
         };        
             
         match state.mode {
@@ -300,7 +365,18 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 
                 f.render_stateful_widget(list, chunks[0], &mut state.slod.state.clone());}
             Screen::Settings => {}
-            Screen::MakeDeck => {}
+            Screen::Error(s) => {
+                let err_message = Paragraph::new(s)
+                    .block(Block::default().title("Error!"));
+                let area = centered_rect(60, 20, f.size());
+                f.render_widget(Clear, area);
+                f.render_widget(err_message, area);
+            }
+            Screen::MakeDeck => {
+                let mds = MakeDeckScreen::new(&state.mdc);
+                f.render_widget(mds.title_entry, chunks[0]);
+                f.render_widget(mds.commander_entry, chunks[1]);
+            }
             Screen::DbCards => {
                 let text = state.sldbc.get().unwrap().ri().join("\n");
                 let mut ds = DeckScreen::new(
@@ -328,11 +404,31 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
     Ok(())
 }
 
-// fn main_widgets() -> Vec<Widget> {
-//     let mut r = Vec::new();
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(
+            [
+                Constraint::Percentage((100 - percent_y) / 2),
+                Constraint::Percentage(percent_y),
+                Constraint::Percentage((100 - percent_y) / 2),
+            ]
+            .as_ref(),
+        )
+        .split(r);
 
-//     r
-// }
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(
+            [
+                Constraint::Percentage((100 - percent_x) / 2),
+                Constraint::Percentage(percent_x),
+                Constraint::Percentage((100 - percent_x) / 2),
+            ]
+            .as_ref(),
+        )
+        .split(popup_layout[1])[1]
+}
 
 pub fn run() -> Result<()> {
     enable_raw_mode()?;

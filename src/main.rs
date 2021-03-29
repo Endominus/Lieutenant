@@ -220,6 +220,8 @@ impl NewCard {
 
         if self.power.len() > 0 {
             v.push(format!("{}/{}", self.power, self.toughness));
+        } else if self.loyalty.len() > 0 {
+            v.push(self.loyalty.clone());
         }
         v
     }
