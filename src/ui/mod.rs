@@ -1,6 +1,6 @@
 // extern crate anyhow;
 
-use tui::widgets::{Clear, Paragraph};
+use tui::widgets::{Clear, ListItem, Paragraph};
 use tui::layout::Rect;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, read, KeyEvent},
@@ -39,6 +39,7 @@ struct AppState {
     sldbc: StatefulList<NewCard>,
     mdc: MakeDeckContents,
     dirty_deck: bool,
+    dirty_cards: Vec<NewCard>,
     dbc: Connection,
     quit: bool,
 }
@@ -64,6 +65,7 @@ impl AppState {
             omnitext: String::new(),
             dbftext: String::new(),
             dirty_deck: true,
+            dirty_cards: Vec::new(),
             dbc: conn,
             // dsod: DeckScreen,
             // dsdb: DeckScreen,
@@ -141,7 +143,8 @@ impl AppState {
                         }
                     }
                     KeyCode::Tab => {
-                        self.mode = Screen::DeckOmni;
+                        // self.mode = Screen::DeckOmni;
+                        self.switch_mode(Some(Screen::DeckOmni));
                     }
                     KeyCode::Backspace => { self.dbftext.pop(); }
                     KeyCode::Char(c) => {self.dbftext.push(c); }
@@ -157,8 +160,9 @@ impl AppState {
                     KeyCode::Enter => {
                         let a = self.sldbc.get().unwrap();
                         db::icntodc(&self.dbc, a.name.clone(), self.deck_id.try_into().unwrap()).unwrap();
-                        // self.dirty_deck = true;
-                        self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+                        self.dirty_deck = true;
+                        self.dirty_cards.push(db::rcfn(&self.dbc, a.name.clone())?);
+                        // let mut a = &self.contents.unwrap();
                     }
                     _ => {}
                 }
@@ -245,6 +249,7 @@ impl AppState {
             self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
         }
         
+        self.dirty_deck = false;
         self.mode = Screen::DeckOmni;
         self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
         self.sldc.next();
@@ -297,6 +302,23 @@ impl AppState {
         *target = StatefulList::with_items(vc);
         target.next();
     }
+
+    pub fn rvli(&self) -> Vec<ListItem> {
+        match self.mode {
+            Screen::DbCards | Screen::DbFilter => { self.sldbc.rvli() }
+            Screen::DeckCard | Screen::DeckOmni => { self.sldc.rvli() }
+            Screen::MainMenu => { self.slmm.rvli() }
+            Screen::OpenDeck => { self.slod.rvli() }
+            _ => { Vec::new() }
+        }
+    }
+
+    pub fn rvlis(&self) -> Vec<ListItem> {
+        let mut a = self.contents.clone().unwrap();
+        a.append(&mut self.dirty_cards.clone());
+
+        self.sldbc.rvlis(a)
+    }
 }
 
 fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut AppState) -> Result<()> {
@@ -337,7 +359,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             
         match state.mode {
             Screen::MainMenu => {
-                let list = List::new(state.slmm.rvli())
+                let list = List::new(state.rvli())
                     .block(Block::default().title("Main Menu").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White))
                     .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
@@ -352,7 +374,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 };
                 let mut ds = DeckScreen::new(
                     state.dbftext.clone(), 
-                    state.sldbc.rvlis(&state.contents.clone().unwrap()), 
+                    state.rvlis(), 
                     text, 
                     state.mode);
                 
@@ -367,7 +389,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                     Some(card) => { card.ri().join("\n") }
                     None => { String::from("No cards found!") }
                 };
-                let mut ds = DeckScreen::new(state.omnitext.clone(), state.sldc.rvli(), text, state.mode);
+                let mut ds = DeckScreen::new(state.omnitext.clone(), state.rvli(), text, state.mode);
                 
                 ds.focus_omni(state.mode);
                 f.render_widget(ds.omni, chunks[0]);
@@ -375,7 +397,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 f.render_widget(ds.fc, chunks[2]);
             }
             Screen::OpenDeck => {
-                let list = List::new(state.slod.rvli())
+                let list = List::new(state.rvli())
                     .block(Block::default().title("Open Deck").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White))
                     .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
@@ -398,7 +420,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 let text = state.sldbc.get().unwrap().ri().join("\n");
                 let mut ds = DeckScreen::new(
                     state.dbftext.clone(), 
-                    state.sldbc.rvlis(&state.contents.clone().unwrap()), 
+                    state.rvlis(), 
                     text, 
                     state.mode);
                 
@@ -410,7 +432,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             Screen::DeckCard => {
                 // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
                 let text = state.sldc.get().unwrap().ri().join("\n");
-                let mut ds = DeckScreen::new(state.omnitext.clone(), state.sldc.rvli(), text, state.mode);
+                let mut ds = DeckScreen::new(state.omnitext.clone(), state.rvli(), text, state.mode);
                 
                 ds.focus_lc(state.mode);
                 f.render_widget(ds.omni, chunks[0]);
