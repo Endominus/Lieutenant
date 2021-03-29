@@ -529,8 +529,13 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
 //     stmt.execute_named(named_params!{":code": s.code, ":name": s.name} )?;
 //     Ok(())
 // }
-pub fn icntodc(conn: &Connection, c: String, did: usize) -> Result<()> {
+pub fn icntodc(conn: &Connection, c: String, did: i32) -> Result<()> {
     let mut stmt = conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?;
+    stmt.execute_named(named_params!{":card_name": c, ":deck_id": did as u32} )?;
+    Ok(())
+}
+pub fn dcntodc(conn: &Connection, c: String, did: i32) -> Result<()> {
+    let mut stmt = conn.prepare("DELETE FROM deck_contents WHERE card_name = :card_name AND deck = :deck_id")?;
     stmt.execute_named(named_params!{":card_name": c, ":deck_id": did as u32} )?;
     Ok(())
 }
@@ -548,7 +553,7 @@ pub fn ideck(conn: &Connection, n: String, c: String, t: &str) -> Result<i32> {
     Ok(rid.try_into().unwrap())
 }
 
-pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: usize) -> Result<()> {
+pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: i32) -> Result<()> {
     conn.execute_batch("BEGIN TRANSACTION;")?;
     for c in vc {
         icntodc(conn, c, deck_id)?;

@@ -79,6 +79,13 @@ impl<T: ToString> StatefulList<T> {
         None
     }
 
+    pub fn remove (&mut self) {
+        let a = self.state.selected().unwrap();
+        self.items.remove(a);
+        if a == self.items.len() { self.state.select(Some(a-1)); }
+    }
+
+
     pub fn rvli(& self) -> Vec<ListItem> {
         self.items.iter().map(|f| ListItem::new(f.to_string())).collect()
     }
@@ -95,6 +102,7 @@ impl<T: ToString> StatefulList<T> {
             }
         ).collect()
     }
+
 }
 
 pub struct MainMenuItem {

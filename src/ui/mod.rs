@@ -127,6 +127,11 @@ impl AppState {
                     KeyCode::Up => { self.sldc.previous(); }
                     KeyCode::Down => { self.sldc.next(); }
                     KeyCode::Tab => { self.mode = Screen::DeckOmni; }
+                    KeyCode::Backspace | KeyCode::Delete => {
+                        db::dcntodc(&self.dbc, self.sldc.get().unwrap().name.clone(), self.deck_id);
+                        self.sldc.remove();
+                        self.dirty_deck = true;
+                    }
                     _ => {}
                 }
             }
