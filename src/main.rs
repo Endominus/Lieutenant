@@ -155,6 +155,8 @@ pub struct NewCard {
     pub cmc: f64,
     pub color_identity: Vec<String>,
     pub legalities: Legalities,
+    #[serde(default)]
+    pub loyalty: String,
     #[serde(default = "zero")]
     pub mana_cost: String,
     pub name: String,
@@ -412,14 +414,16 @@ fn main() {
             // let s = "%ana%";
             // println!("{:?}", db::db_test(s).unwrap().len());
 
-            // let now = Instant::now();
-            // let file = File::open("AtomicCards.json").unwrap();
-            // let reader = BufReader::new(file);
-            // let a: serde_json::Value = serde_json::from_reader(reader).unwrap();
-            // println!("Imported cards in {} s.", now.elapsed().as_secs());
-            // let now = Instant::now();
-            // let (a, b) = db::ivcfjsmap(a).unwrap();
-            // println!("Inserted {} rows with {} failures in {} ms.", a, b, now.elapsed().as_millis());
+            let now = Instant::now();
+            let conn = Connection::open("lieutenant.db").unwrap();
+            let file = File::open("AtomicCards.json").unwrap();
+            let reader = BufReader::new(file);
+            let a: serde_json::Value = serde_json::from_reader(reader).unwrap();
+            println!("Imported cards in {} s.", now.elapsed().as_secs());
+            let now = Instant::now();
+            let _iresult = db::initdb(&conn);
+            let (a, b) = db::ivcfjsmap(&conn, a).unwrap();
+            println!("Inserted {} rows with {} failures in {} ms.", a, b, now.elapsed().as_millis());
             // println!("{}", a["data"]["Chalice of Life // Chalice of Death"]);
             // let c: NewCard = serde_json::from_value(
             //     a["data"]["Chalice of Life // Chalice of Death"].clone())

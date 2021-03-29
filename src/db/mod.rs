@@ -245,8 +245,7 @@ impl<'a> CardFilter<'a> {
                                 Some(_) => { "LIKE" }
                                 None => { "" }
                             };
-                            let mut card_type = "subtypes";
-                            vf.push(format!("{} {} \'%{}%\'", card_type, include, ty));
+                            vf.push(format!("types {} \'%{}%\'", include, ty));
                         }
                         vtyg.push(format!("({})", vf.join(" AND ")));
                     }
@@ -340,7 +339,7 @@ fn add_regexp_function(db: &Connection) -> Result<()> {
     )
 }
 
-pub fn initdb(conn: Connection) -> Result<()> {
+pub fn initdb(conn: &Connection) -> Result<()> {
     conn.execute(
         "create table if not exists rulings (
             id integer primary key,
@@ -366,6 +365,7 @@ pub fn initdb(conn: Connection) -> Result<()> {
             card_text text,
             power text,
             toughness text,
+            loyalty text,
             color_identity text,
             related_cards text,
             layout text not null,
@@ -399,92 +399,129 @@ pub fn initdb(conn: Connection) -> Result<()> {
     Ok(())
 }
 
-// pub fn ivcfjsmap(dbc: &mut DbContext, jm: Value) -> Result<(usize, usize)> {
-//     if let None = stmts.get_mut("ic") {
+pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
+    let mut stmt = conn.prepare("INSERT INTO cards (
+        name, mana_cost, cmc, types, card_text, power, toughness, loyalty, color_identity, related_cards, layout, side, legalities
+    ) VALUES (
+            :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :loyalty, :color_identity, :related_cards, :layout, :side, :legalities
+    )")?;
+    let mut vc: Vec<NewCard> = Vec::new();
 
-//     }
-//     let mut vc: Vec<NewCard> = Vec::new();
-
-//     let (mut success, mut failure) = (0, 0);    
+    let (mut success, mut failure) = (0, 0);    
     
-//     let map =  match &jm["data"] {
-//         serde_json::Value::Object(i) => { i }
-//         _ => { panic!(); }
-//     };
+    let map =  match &jm["data"] {
+        serde_json::Value::Object(i) => { i }
+        _ => { panic!(); }
+    };
 
-//     for (_name, value) in map {
-//         // For some reason, serde won't deserialize the sequence properly.
-//         for v in value.as_array() {
-//             for c in v {
-//                 let d = serde_json::from_value(c.clone()).unwrap();
-//                 vc.push(d);
-//             }
-//         }
-//     }
+    for (_name, value) in map {
+        // For some reason, serde won't deserialize the sequence properly.
+        for v in value.as_array() {
+            for c in v {
+                let d = serde_json::from_value(c.clone()).unwrap();
+                vc.push(d);
+            }
+        }
+    }
 
-//     println!("Generated card array.");
-//     conn.execute_batch("BEGIN TRANSACTION;")?;
+    println!("Generated card array.");
+    conn.execute_batch("BEGIN TRANSACTION;")?;
 
-//     for mut c in vc {
-//         let (name, side, related) = match c.layout.as_str() {
-//             "split" | "transform" | "aftermath" | 
-//             "flip" | "adventure" | "modal_dfc" => { 
-//                 let test = c.name.clone();
-//                 let (a, b) = test.split_once(" // ").unwrap();
-//                 if Some('a') == c.side { (a, "a", b) } 
-//                 else { (b, "b", a) }
-//             }
-//             "meld" => { 
-//                 if Some('a') == c.side {
-//                     let test = c.name.clone();
-//                     let (a, b) = test.split_once(" // ").unwrap();
-//                     (a, "a", b)
-//                 } else {
-//                     (c.name.as_str(), "b", "unknown")
-//                 }
-//              }
-//             _ => { (c.name.as_str(), "", "") }
-//         };
+    for c in vc {
+        let mut name = c.name.clone();
+        let mut side = String::new();
+        let mut related = String::new();
+        match c.layout.as_str() {
+            "split" | "transform" | "aftermath" | 
+            "flip" | "adventure" | "modal_dfc" => { 
+                let names = c.name.split_once(" // ").unwrap();
+                if Some('a') == c.side {
+                    name = names.0.to_string();
+                    related = names.1.to_string();
+                    side = "a".to_string()
+                } else {
+                    name = names.1.to_string();
+                    related = names.0.to_string();
+                    side = "b".to_string()
+                }
+            }
+            "meld" => {
+                if Some('a') == c.side {
+                    let names = c.name.split_once(" // ").unwrap();
+                    name = names.0.to_string();
+                    related = names.1.to_string();
+                    side = "a".to_string()
+                } else {
+                    related = "UNKNOWN".to_string();
+                    side = "b".to_string()
+                }
+            }
+            _ => {}
+        }
+        // let (name, side, related) = match c.layout.as_str() {
+        //     "split" | "transform" | "aftermath" | 
+        //     "flip" | "adventure" | "modal_dfc" => { 
+        //         let test = c.name.clone();
+        //         let (a, b) = test.split_once(" // ").unwrap();
+        //         if Some('a') == c.side { (a, "a", b) } 
+        //         else { (b, "b", a) }
+        //     }
+        //     "meld" => { 
+        //         if Some('a') == c.side {
+        //             let test = c.name.clone();
+        //             let (a, b) = test.split_once(" // ").unwrap();
+        //             (a, "a", b)
+        //         } else {
+        //             (c.name.as_str(), "b", "unknown")
+        //         }
+        //      }
+        //     _ => { (c.name.as_str(), "", "") }
+        // };
 
-//         let c = c.clone();
+        let c = c.clone();
 
-//         match stmt.execute_named(named_params!{
-//             ":name": name,
-//             ":mana_cost": c.mana_cost,
-//             ":cmc": c.cmc,
-//             ":types": c.types,
-//             ":card_text": c.text,
-//             ":power": c.power,
-//             ":toughness": c.toughness,
-//             ":color_identity": c.color_identity.join("|"),
-//             ":related_cards": related,
-//             ":layout": c.layout,
-//             ":side": side,
-//             ":legalities": c.legalities.to_string(),
-//         }) {
-//             Ok(_) => { success += 1; },
-//             Err(_) => { failure += 1; },
-//         }
-//     }
+        match stmt.execute_named(named_params!{
+            ":name": name,
+            ":mana_cost": c.mana_cost,
+            ":cmc": c.cmc,
+            ":types": c.types,
+            ":card_text": c.text,
+            ":power": c.power,
+            ":toughness": c.toughness,
+            ":loyalty": c.loyalty,
+            ":color_identity": c.color_identity.join("|"),
+            ":related_cards": related,
+            ":layout": c.layout,
+            ":side": side,
+            ":legalities": c.legalities.to_string(),
+        }) {
+            Ok(_) => { success += 1; },
+            Err(_) => { 
+                // Usually an unset
+                failure += 1;
+                println!("Failed for {}", name);
+             },
+        }
+    }
 
-//     println!("Added all cards.");
+    println!("Added all cards.");
     
-//     let _a = conn.execute("DELETE
-//         FROM cards
-//         WHERE legalities = \"\"", NO_PARAMS)?;
+    let _a = conn.execute("DELETE
+        FROM cards
+        WHERE legalities = \"\"", NO_PARAMS)?;
     
-//     println!("Deleted illegal cards.");
+    println!("Deleted illegal cards.");
     
-//     conn.execute_batch("COMMIT TRANSACTION;")?;
+    conn.execute_batch("COMMIT TRANSACTION;")?;
     
-//     println!("Committed transaction.");
+    println!("Committed transaction.");
 
-//     // TODO: for each meld card with relation to unknown, automatically correct it.
+    // TODO: for each meld card with relation to unknown, automatically correct it.
 
-//     Ok((success, failure))
-// }
+    Ok((success, failure))
+}
 
-//TODO: is, icntodc, and ideck can all be collapsed into one function.
+// // TODO: is, icntodc, and ideck can all be collapsed into one function.
 // pub fn iset (conn: Connection, s: Set) -> Result<()> {
 //     let mut stmt = stmts.get("iset").unwrap();
 //     stmt.execute_named(named_params!{":code": s.code, ":name": s.name} )?;
@@ -562,7 +599,7 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
 
 pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<NewCard>> {
     let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, mana_cost, name, power, text, toughness, types, layout, related_cards, side
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, text, toughness, types, layout, related_cards, side
         FROM cards 
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
@@ -580,8 +617,6 @@ pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<Ne
             mana_cost,
             layout, 
             types, 
-            supertypes, 
-            subtypes, 
             color_identity, 
             related_cards, 
             power, 
@@ -615,39 +650,40 @@ fn cfr(row:& Row) -> Result<NewCard> {
     let m = "meld".to_string();
     let l = "leveler".to_string();
     let s = "saga".to_string();
-    let (side, related_cards) = match row.get::<usize, String>(9) {
+    let (side, related_cards) = match row.get::<usize, String>(10) {
         Ok(n) => { (None, None) }
         Ok(l) => { (None, None) }
         Ok(s) => { (None, None) }
         Ok(m) => { 
-            let a = row.get::<usize, String>(10)?;
+            let a = row.get::<usize, String>(11)?;
             let b = a.split_once("|").unwrap();
             let (face, transform) = (String::from(b.0), String::from(b.1));
             (
-                Some(row.get::<usize, String>(11)?.chars().next().unwrap()), 
+                Some(row.get::<usize, String>(12)?.chars().next().unwrap()), 
                 Some(Relation::Meld{ face: String::from(face), transform: String::from(transform) }) 
             )
         }
         Ok(_) => { (
-            Some(row.get::<usize, String>(11)?.chars().next().unwrap()), 
-            Some(Relation::Single(row.get(10)?))) }
+            Some(row.get::<usize, String>(12)?.chars().next().unwrap()), 
+            Some(Relation::Single(row.get(11)?))) }
         Err(_) => { (None, None) }
     };
     let tags: Vec<String> = if row.column_names().contains(&"tags") 
-        { row.get::<usize, String>(12)?.split("|").map(|s| s.to_string()).collect() }
+        { row.get::<usize, String>(13)?.split("|").map(|s| s.to_string()).collect() }
         else { Vec::new() };
 
     Ok( NewCard {
         cmc: row.get(0)?,
         color_identity: stovs(row.get(1)?),
         legalities: Legalities::from(row.get(2)?),
-        mana_cost: row.get(3)?,
-        name: row.get(4)?,
-        power: row.get(5)?,
-        text: row.get(6)?,
-        toughness: row.get(7)?,
-        types: row.get(8)?,
-        layout: row.get(9)?,
+        loyalty: row.get(3)?,
+        mana_cost: row.get(4)?,
+        name: row.get(5)?,
+        power: row.get(6)?,
+        text: row.get(7)?,
+        toughness: row.get(8)?,
+        types: row.get(9)?,
+        layout: row.get(10)?,
         related_cards,
         side,
         tags
