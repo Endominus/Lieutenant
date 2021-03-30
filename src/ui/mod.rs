@@ -37,6 +37,7 @@ struct AppState {
     slmm: StatefulList<MainMenuItem>,
     slod: StatefulList<Deck>,
     sldbc: StatefulList<NewCard>,
+    tag: String,
     mdc: MakeDeckContents,
     dirty_deck: bool,
     dirty_cards: Vec<NewCard>,
@@ -60,6 +61,7 @@ impl AppState {
             slmm: StatefulList::new(),
             slod: StatefulList::new(),
             sldbc: StatefulList::new(),
+            tag: String::default(),
             mdc: MakeDeckContents::default(),
             quit: false,
             omnitext: Omnitext::default(),
@@ -113,6 +115,9 @@ impl AppState {
                     KeyCode::Enter => { 
                         if self.sldc.items.len() > 0 {
                             self.mode = Screen::DeckCard;
+                            if let Some(tag) = self.omnitext.rt() {
+                                self.tag = tag;
+                            }
                         }
                     }
                     KeyCode::Tab => {
@@ -131,9 +136,18 @@ impl AppState {
                     KeyCode::Down => { self.sldc.next(); }
                     KeyCode::Tab => { self.mode = Screen::DeckOmni; }
                     KeyCode::Backspace | KeyCode::Delete => {
-                        db::dcntodc(&self.dbc, self.sldc.get().unwrap().name.clone(), self.deck_id);
+                        db::dcntodc(&self.dbc, self.sldc.get().unwrap().name.clone(), self.deck_id).unwrap();
                         self.sldc.remove();
                         self.dirty_deck = true;
+                    }
+                    KeyCode::Enter => {
+                        if let Some(card) = db::ttindc(
+                            &self.dbc, 
+                            self.sldc.get().unwrap().name.clone(), 
+                            &self.tag, 
+                            self.deck_id) {
+                                self.sldc.replace(card);
+                        };
                     }
                     _ => {}
                 }

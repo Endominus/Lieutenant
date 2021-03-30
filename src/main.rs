@@ -19,7 +19,7 @@ extern crate lazy_static;
 
 use json::object::Object;
 use rusqlite::Connection;
-use std::fs::File;
+use std::{collections::HashMap, fs::File};
 use std::io::BufReader;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -223,6 +223,7 @@ impl NewCard {
         } else if self.loyalty.len() > 0 {
             v.push(self.loyalty.clone());
         }
+        v.push(format!("Tags: {}", self.tags.join(" ")));
         v
     }
 }
@@ -294,7 +295,7 @@ pub fn run(command: Command) -> Result<()> {
             let _a = ui::run();
             // Ok(()) 
         },
-        Command::ImportCards(did, filename) => {
+        Command::ImportCards(_did, _filename) => {
             // db::import_deck(filename, did)?;
             // Ok(())
         }
@@ -402,13 +403,47 @@ fn main() {
             // println!("{:?}", CardFilter::parse_omni("power:4-"));
             // println!("{:?}", CardFilter::parse_omni("power:-"));
             // println!("{:?}", CardFilter::parse_omni("power:"));
-
-            // let omni = String::from("ty:artifact cmc:>4");
-            // let omni = String::from("text:\"you control\" c:r|g");
-            // let omni = String::from("ty:hydra cmc:<4");
+            // println!("{:?}", CardFilter::parse_omni("n:"));
+            // println!("{:?}", CardFilter::parse_omni("n:\"\""));
+            // println!("{:?}", CardFilter::parse_omni("power:"));
+            // println!("{:?}", CardFilter::parse_omni("te:"));
+            // println!("{:?}", CardFilter::parse_omni("color:"));
+            // println!("{:?}", CardFilter::parse_omni("c:"));
+            // println!("{:?}", CardFilter::parse_omni("ty:"));
+            // println!("{:?}", CardFilter::parse_omni("cmc:"));
+            // println!("{:?}", CardFilter::parse_omni("coloridentity:"));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni(""));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni("n:"));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni("n:\"\""));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni("power:"));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni("te:"));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni("color:"));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni("c:"));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni("ty:"));
+            // // assert_eq!(HashMap::new(), CardFilter::parse_omni("cmc:"));
+            // assert_eq!(HashMap::new(), CardFilter::parse_omni("coloridentity:"));
+            
+            // let conn = Connection::open("lieutenant.db").unwrap();
+            // db::add_regexp_function(&conn).unwrap();
+            // let omni = String::from("ty:artifact cmc:>4 te:w|");
+            // let omni = String::from("ty:artifact cmc:>4 color:w|");
             // let cf = CardFilter::from(1, & omni);
-            // println!("{}", cf.make_filter(true));
-            // println!("{:?}", db::rvcfcf(cf, true).unwrap().len());//.iter().map(|f| f.to_string()).collect::<Vec<String>>());
+            // println!("{}", cf.make_filter(&conn, false));
+            // let omni = String::from("ty: cmc:>4");
+            // let cf = CardFilter::from(1, & omni);
+            // println!("{}", cf.make_filter(&conn, false));
+            // let omni = String::from("cmc:>4 tag:");
+            // let cf = CardFilter::from(1, & omni);
+            // println!("{}", cf.make_filter(&conn, false));
+            // let omni = String::from("cmc:>4 color_identity:");
+            // let cf = CardFilter::from(1, & omni);
+            // println!("{}", cf.make_filter(&conn, false));
+            // let omni = String::from("text:\"you control\" c:r|g");
+            // let omni = String::from("cmc:<4 tag:ramp"); //tags REGEXP '\|?ramp(?:$|\|)'
+            // let omni = String::from("cmc:<4 ci:c"); //color_identity REGEXP '^[^WUBRG]*$'
+            // let cf = CardFilter::from(1, & omni);
+            // println!("{}", cf.make_filter(&conn, false));
+            // println!("{:?}", db::rvcfcf(&conn, cf, false));//.iter().map(|f| f.to_string()).collect::<Vec<String>>());
 
             // let s = "WHERE regexp('.*ozi.*', name)";
             // let s = "WHERE name REGEXP \'.*ozi.*\' AND mana_cost REGEXP \'R\'";
@@ -416,16 +451,16 @@ fn main() {
             // let s = "%ana%";
             // println!("{:?}", db::db_test(s).unwrap().len());
 
-            let now = Instant::now();
-            let conn = Connection::open("lieutenant.db").unwrap();
-            let file = File::open("AtomicCards.json").unwrap();
-            let reader = BufReader::new(file);
-            let a: serde_json::Value = serde_json::from_reader(reader).unwrap();
-            println!("Imported cards in {} s.", now.elapsed().as_secs());
-            let now = Instant::now();
-            let _iresult = db::initdb(&conn);
-            let (a, b) = db::ivcfjsmap(&conn, a).unwrap();
-            println!("Inserted {} rows with {} failures in {} ms.", a, b, now.elapsed().as_millis());
+            // let now = Instant::now();
+            // let conn = Connection::open("lieutenant.db").unwrap();
+            // let file = File::open("AtomicCards.json").unwrap();
+            // let reader = BufReader::new(file);
+            // let a: serde_json::Value = serde_json::from_reader(reader).unwrap();
+            // println!("Imported cards in {} s.", now.elapsed().as_secs());
+            // let now = Instant::now();
+            // let _iresult = db::initdb(&conn);
+            // let (a, b) = db::ivcfjsmap(&conn, a).unwrap();
+            // println!("Inserted {} rows with {} failures in {} ms.", a, b, now.elapsed().as_millis());
             // println!("{}", a["data"]["Chalice of Life // Chalice of Death"]);
             // let c: NewCard = serde_json::from_value(
             //     a["data"]["Chalice of Life // Chalice of Death"].clone())

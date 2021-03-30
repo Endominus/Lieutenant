@@ -1,4 +1,5 @@
 use crossterm::event::KeyCode;
+use regex::Regex;
 use tui::{text::{Span, Spans}, widgets::{List, ListItem, ListState, Paragraph, Block, Borders, Wrap}};
 use tui::style::{Color, Modifier, Style};
 
@@ -85,6 +86,11 @@ impl<T: ToString> StatefulList<T> {
         if a == self.items.len() { self.state.select(Some(a-1)); }
     }
 
+    pub fn replace(&mut self, obj: T) {
+        let a = self.state.selected().unwrap();
+        self.items.remove(a);
+        self.items.insert(a, obj);
+    }
 
     pub fn rvli(& self) -> Vec<ListItem> {
         self.items.iter().map(|f| ListItem::new(f.to_string())).collect()
@@ -163,6 +169,12 @@ impl Omnitext {
         };
 
         Spans::from(spans)
+    }
+
+    pub fn rt(&self) -> Option<String> {
+        let re = Regex::new(r"\+tag:(\w+)").unwrap();
+        if let Some(cap) = re.captures(self.text.as_str()) { return Some(String::from(&cap[1])) }
+        None
     }
 }
 
