@@ -95,7 +95,7 @@ impl<T: ToString> StatefulList<T> {
         None
     }
 
-    pub fn remove (&mut self) -> Option<String> {
+    pub fn remove(&mut self) -> Option<String> {
         let mut a = self.state.selected().unwrap();
         self.items.remove(a);
         if self.items.len() > 0 {
@@ -104,6 +104,23 @@ impl<T: ToString> StatefulList<T> {
             Some(self.items.get(a).unwrap().to_string().clone())
         } else {
             None
+        }
+    }
+
+    pub fn remove_named(&mut self, s: &String) {
+        let mut i = 0;
+        let a = self.state.selected().unwrap();
+        for item in &self.items {
+            if &item.to_string() == s {
+                break;
+            }
+            i += 1;
+        }
+        if i < self.items.len() {
+            self.items.remove(i);
+            if i < a {
+                self.state.select(Some(a-1));
+            }
         }
     }
 

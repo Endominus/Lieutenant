@@ -128,6 +128,11 @@ impl AppState {
                     }
                     KeyCode::Tab => {
                         self.mode = Screen::DbFilter;
+                        if self.dirty_deck {
+                            self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+                            self.dirty_deck = false;
+                            self.dirty_cards = Vec::new();
+                        }
                         if let Some(c) = self.sldbc.get_string() {
                             self.ac = Some(db::rcfn(&self.dbc, &c).unwrap());
                         } else {
@@ -168,19 +173,7 @@ impl AppState {
                     }
                     KeyCode::Tab => { self.mode = Screen::DeckOmni; }
                     KeyCode::Char(' ') => { self.ac_switch(false); }
-                    KeyCode::Backspace | KeyCode::Delete => {
-                        db::dcntodc(&self.dbc, self.sldc.get().unwrap().name.clone(), self.deck_id).unwrap();
-                        if let Some(s) = self.sldc.remove() {
-                            self.ac = Some(db::rcfndid(
-                                &self.dbc, 
-                                &s, 
-                                self.deck_id).unwrap());
-                        } else {
-                            self.ac = None;
-                            self.mode = Screen::DeckOmni;
-                        }
-                        self.dirty_deck = true;
-                    }
+                    KeyCode::Backspace | KeyCode::Delete => { self.remove_from_deck(); }
                     
                     KeyCode::Enter => {
                         if let Some(card) = db::ttindc(
@@ -237,11 +230,38 @@ impl AppState {
                      }
                     KeyCode::Tab => { self.mode = Screen::DbFilter; }
                     KeyCode::Enter => {
-                        let a = self.sldbc.get().unwrap();
-                        db::icntodc(&self.dbc, a.name.clone(), self.deck_id.try_into().unwrap()).unwrap();
+                        let card = self.sldbc.get().unwrap().clone();
+                        db::icntodc(&self.dbc, &card.name, self.deck_id.try_into().unwrap()).unwrap();
                         self.dirty_deck = true;
-                        self.dirty_cards.push(db::rcfn(&self.dbc, &a.name)?);
-                        // let mut a = &self.contents.unwrap();
+                        self.dirty_cards.push(db::rcfn(&self.dbc, &card.name)?);
+                        
+                        match &card.lo {
+                            crate::Layout::Flip(_, n) | 
+                            crate::Layout::Split(_, n) | 
+                            crate::Layout::ModalDfc(_, n) | 
+                            crate::Layout::Aftermath(_, n) | 
+                            crate::Layout::Adventure(_, n) | 
+                            crate::Layout::Transform(_, n) => { 
+                                db::icntodc(&self.dbc, &n, self.deck_id).unwrap();
+                                self.dirty_cards.push(db::rcfn(&self.dbc, &n)?);
+                            }
+                            crate::Layout::Meld(s, n, m) => { 
+                                if s == &'b' { 
+                                    db::icntodc(&self.dbc, &n, self.deck_id).unwrap();
+                                    self.dirty_cards.push(db::rcfn(&self.dbc, &n)?);
+                                    db::icntodc(&self.dbc, &m, self.deck_id).unwrap();
+                                    self.dirty_cards.push(db::rcfn(&self.dbc, &m)?);
+                                } else {
+                                    let names: Vec<String> =  self.contents.as_ref().unwrap().iter().map(|c| c.to_string()).collect();
+                                    if names.contains(&n) { 
+                                        db::icntodc(&self.dbc, &m, self.deck_id).unwrap(); 
+                                        self.dirty_cards.push(db::rcfn(&self.dbc, &m)?);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+
                     }
                     KeyCode::Char(' ') => { self.ac_switch(true); }
                     _ => {}
@@ -298,6 +318,43 @@ impl AppState {
         Ok(())
     }
 
+    fn remove_from_deck(&mut self) {
+        let card = self.sldc.get().unwrap().clone();
+        match &card.lo {
+            crate::Layout::Flip(_, n) | 
+            crate::Layout::Split(_, n) | 
+            crate::Layout::ModalDfc(_, n) | 
+            crate::Layout::Aftermath(_, n) | 
+            crate::Layout::Adventure(_, n) | 
+            crate::Layout::Transform(_, n) => { 
+                self.sldc.remove_named(&n); 
+                db::dcntodc(&self.dbc, &n, self.deck_id).unwrap();
+            }
+            crate::Layout::Meld(s, n, m) => { 
+                self.sldc.remove_named(&m);
+                // This should be the only database call that could result in an error.
+                let _a = db::dcntodc(&self.dbc, &m, self.deck_id);
+                if s == &'b' { 
+                    self.sldc.remove_named(&n); 
+                    db::dcntodc(&self.dbc, &n, self.deck_id).unwrap();
+                } 
+            }
+            _ => {}
+        }
+        db::dcntodc(&self.dbc, &card.name, self.deck_id).unwrap();
+        if let Some(s) = self.sldc.remove() {
+            self.ac = Some(db::rcfndid(
+                &self.dbc, 
+                &s, 
+                self.deck_id).unwrap());
+        } else {
+            self.ac = None;
+            self.mode = Screen::DeckOmni;
+        }
+
+        self.dirty_deck = true;
+    }
+
     fn reset(&mut self) {
         self.deck_id = -1;
         self.ac = None;
@@ -332,9 +389,10 @@ impl AppState {
         
         if self.dirty_deck {
             self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+            self.dirty_deck = false;
+            self.dirty_cards = Vec::new();
             self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
             self.sldc.next();
-            self.dirty_deck = false;
         }
 
         if let Some(c) = self.sldc.get_string() {
