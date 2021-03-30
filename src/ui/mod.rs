@@ -15,7 +15,7 @@ use tui::style::{Color, Modifier, Style};
 use tui::Terminal;
 use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
-use crate::{Card, Deck, NewCard};
+use crate::{Deck, Card};
 use crate::db;
 // use crate::db::DbContext;
 
@@ -30,17 +30,17 @@ struct AppState {
     title: String,
     deck_id: i32,
     deck: Option<Deck>,
-    contents: Option<Vec<NewCard>>,
+    contents: Option<Vec<Card>>,
     omnitext: Omnitext,
     dbftext: Omnitext,
-    sldc: StatefulList<NewCard>,
+    sldc: StatefulList<Card>,
     slmm: StatefulList<MainMenuItem>,
     slod: StatefulList<Deck>,
-    sldbc: StatefulList<NewCard>,
+    sldbc: StatefulList<Card>,
     tag: String,
     mdc: MakeDeckContents,
     dirty_deck: bool,
-    dirty_cards: Vec<NewCard>,
+    dirty_cards: Vec<Card>,
     dbc: Connection,
     quit: bool,
 }

@@ -1,9 +1,9 @@
 extern crate rusqlite;
 extern crate regex;
 
-use crate::Legalities;
+use crate::{Legalities, JsonCard};
 use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
-use crate::{Card, Deck, NewCard, Relation};
+use crate::{Deck, Card, Relation};
 use std::{collections::HashMap, convert::TryInto, fs};
 use rusqlite::{Row, Statement, named_params};
 use serde::Deserialize;
@@ -418,12 +418,13 @@ pub fn initdb(conn: &Connection) -> Result<()> {
 }
 
 pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
+    //TODO: since we've split the Json out of Card, see if any of this can be more effectively passed in
     let mut stmt = conn.prepare("INSERT INTO cards (
         name, mana_cost, cmc, types, card_text, power, toughness, loyalty, color_identity, related_cards, layout, side, legalities
     ) VALUES (
             :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :loyalty, :color_identity, :related_cards, :layout, :side, :legalities
     )")?;
-    let mut vc: Vec<NewCard> = Vec::new();
+    let mut vc: Vec<JsonCard> = Vec::new();
 
     let (mut success, mut failure) = (0, 0);    
     
@@ -476,25 +477,6 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
             }
             _ => {}
         }
-        // let (name, side, related) = match c.layout.as_str() {
-        //     "split" | "transform" | "aftermath" | 
-        //     "flip" | "adventure" | "modal_dfc" => { 
-        //         let test = c.name.clone();
-        //         let (a, b) = test.split_once(" // ").unwrap();
-        //         if Some('a') == c.side { (a, "a", b) } 
-        //         else { (b, "b", a) }
-        //     }
-        //     "meld" => { 
-        //         if Some('a') == c.side {
-        //             let test = c.name.clone();
-        //             let (a, b) = test.split_once(" // ").unwrap();
-        //             (a, "a", b)
-        //         } else {
-        //             (c.name.as_str(), "b", "unknown")
-        //         }
-        //      }
-        //     _ => { (c.name.as_str(), "", "") }
-        // };
 
         let c = c.clone();
 
@@ -557,7 +539,7 @@ pub fn dcntodc(conn: &Connection, c: String, did: i32) -> Result<()> {
     Ok(())
 }
 
-pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<NewCard> {
+pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<Card> {
     let mut card = rcfndid(conn, &c, did).unwrap();
     if card.tags.contains(&t) {
         card.tags.remove(card.tags.iter().position(|x| x == t).unwrap());
@@ -597,7 +579,7 @@ pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: i32) -> Result<(
     Ok(())
 }
 
-pub fn rcfn(conn: &Connection, name: String) -> Result<NewCard> {
+pub fn rcfn(conn: &Connection, name: String) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
         FROM cards WHERE name = :name;")?;
     stmt.query_row_named(named_params!{":name": name}, |row| {
@@ -605,7 +587,7 @@ pub fn rcfn(conn: &Connection, name: String) -> Result<NewCard> {
     })
 }
 
-pub fn rcfndid(conn: &Connection, name: &String, did: i32) -> Result<NewCard> {
+pub fn rcfndid(conn: &Connection, name: &String, did: i32) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT 
         cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
         FROM cards 
@@ -618,7 +600,7 @@ pub fn rcfndid(conn: &Connection, name: &String, did: i32) -> Result<NewCard> {
     })
 }
 
-pub fn rcomfdid(conn: &Connection, did: i32) -> Result<NewCard> {
+pub fn rcomfdid(conn: &Connection, did: i32) -> Result<Card> {
     // let mut stmt = conn.prepare("SELECT commander FROM decks WHERE id = ?;")?;
 
     let name = conn.query_row("SELECT commander FROM decks WHERE id = ?;",
@@ -659,7 +641,7 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
     // let a = stmt.query_row(params, f)
 }
 
-pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<NewCard>> {
+pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<Card>> {
     let mut stmt = conn.prepare("SELECT 
         cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
         FROM cards 
@@ -671,7 +653,7 @@ pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<NewCard>> {
     a.collect()
 }
 
-pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<NewCard>> {
+pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<Card>> {
     let fields = if general {
         "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side"
     } else {
@@ -707,7 +689,7 @@ fn stovs(ss: String) -> Vec<String> {
 }
 
 #[allow(unreachable_patterns)]
-fn cfr(row:& Row) -> Result<NewCard> {
+fn cfr(row:& Row) -> Result<Card> {
     // println!("In cfr!");
     let _n = "normal".to_string();
     let _m = "meld".to_string();
@@ -745,7 +727,7 @@ fn cfr(row:& Row) -> Result<NewCard> {
         } 
     } else { Vec::new() };
 
-    Ok( NewCard {
+    Ok( Card {
         cmc: row.get(0)?,
         color_identity: stovs(row.get(1)?),
         legalities: Legalities::from(row.get(2)?),

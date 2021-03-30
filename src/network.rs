@@ -11,8 +11,7 @@ use std::{thread, time};
 
 // use self::serde_json::Value;
 use anyhow::Result;
-use crate::db::Set;
-use crate::Card;
+use crate::{Card, db::Set, JsonCard};
 
 
 fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
@@ -34,7 +33,7 @@ fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
 //     // meta: i8
 // }
 
-pub fn retrieve_card_by_name(name: String) -> Result<Vec<Card>> {
+pub fn retrieve_card_by_name(name: String) -> Result<Vec<JsonCard>> {
     let url = format!("https://api.magicthegathering.io/v1/cards?name=\"{}\"", name);
     rvc(url, 1)
     // todo!()
@@ -54,7 +53,7 @@ pub fn rvs() -> Result<Vec<Set>> {
     Ok(sets)
 }
 
-pub fn rcs(s: &crate::db::Set) -> Vec<Card> {
+pub fn rcs(s: &crate::db::Set) -> Vec<JsonCard> {
     let url = format!("https://api.magicthegathering.io/v1/cards?set={}&legality=Commander", s.code);
     let c = match rvc(url, 1) {
         Ok(vc) => { vc }
@@ -65,12 +64,12 @@ pub fn rcs(s: &crate::db::Set) -> Vec<Card> {
     // todo!()
 }
 
-fn rvc(url: String, page: i8) -> Result<Vec<Card>> {
+fn rvc(url: String, page: i8) -> Result<Vec<JsonCard>> {
     let url = format!("{url}&page={page}", url = url, page = page);
     let res = get(&url)?;
 
     // let mut cards = res.json::<Cards>()?;
-    let mut cards = res.json::<Vec<Card>>()?;
+    let mut cards = res.json::<Vec<JsonCard>>()?;
 
     
     if cards.len() == 100 {

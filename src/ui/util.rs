@@ -96,7 +96,7 @@ impl<T: ToString> StatefulList<T> {
         self.items.iter().map(|f| ListItem::new(f.to_string())).collect()
     }
 
-    pub fn rvlis(& self,  pl: Vec<crate::NewCard>) -> Vec<ListItem> {
+    pub fn rvlis(& self,  pl: Vec<crate::Card>) -> Vec<ListItem> {
         let vs: Vec<String> = pl.iter().map(|f| f.to_string()).collect();
 
         self.items.iter().map(|f| 

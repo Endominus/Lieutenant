@@ -52,28 +52,6 @@ lazy_static! {
     });
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Card {
-    pub name: String,
-    pub supertypes: Vec<String>,
-    pub types: Vec<String>,
-    pub subtypes: Vec<String>,
-    #[serde(default)]
-    pub text: String,
-    pub cmc: f64,
-    #[serde(default = "zero")]
-    pub mana_cost: String,
-    pub color_identity: Vec<String>,
-    #[serde(rename = "names")]
-    #[serde(default)]
-    pub related_cards: Vec<String>,
-    #[serde(default)]
-    pub power: String,
-    #[serde(default)]
-    pub toughness: String,
-    pub layout : String,
-}
 #[derive(Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Legalities {
     #[serde(default)]
@@ -148,9 +126,10 @@ pub struct CardLayout {
     side: Option<char>
 }
 
+//TODO: Add a JsonCard struct to facilitate import from json.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NewCard {
+pub struct JsonCard {
     #[serde(rename = "convertedManaCost")]
     pub cmc: f64,
     pub color_identity: Vec<String>,
@@ -174,11 +153,34 @@ pub struct NewCard {
     pub layout : String,
     pub related_cards: Option<Relation>,
     pub side: Option<char>,
+    //TODO: Add rarity and sets
+}
+
+impl JsonCard {
+    pub fn convert(&self) -> Card { todo!(); }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Card {
+    pub cmc: f64,
+    pub color_identity: Vec<String>,
+    pub legalities: Legalities,
+    pub loyalty: String,
+    pub mana_cost: String,
+    pub name: String,
+    pub power: String,
+    pub tags: Vec<String>,
+    pub text: String,
+    pub toughness: String,
+    pub types: String,
+    // pub lo: CardLayout, //TODO: Use this, instead of the below. Problem, since this isn't how the json is structured.
+    pub layout : String,
+    pub related_cards: Option<Relation>,
+    pub side: Option<char>,
+    //TODO: Add rarity and sets
 }
 
 impl ToString for Card { fn to_string(& self) -> String { self.name.clone() } }
-
-impl ToString for NewCard { fn to_string(& self) -> String { self.name.clone() } }
 
 impl ToString for Legalities { 
     fn to_string(& self) -> String {
@@ -198,13 +200,13 @@ fn zero() -> String { String::from("0") }
 
 pub struct Deck {
     pub name: String,
-    pub commander: NewCard,
+    pub commander: Card,
     pub id: i32,
 }
 
 impl ToString for Deck { fn to_string(& self) -> String { self.name.clone() } }
 
-impl NewCard {
+impl Card {
     pub fn ri(&self) -> Vec<String> {
         let t = self.text.split("\n");
 
@@ -224,31 +226,6 @@ impl NewCard {
             v.push(self.loyalty.clone());
         }
         v.push(format!("Tags: {}", self.tags.join(" ")));
-        v
-    }
-}
-
-impl Card {
-    pub fn ri(&self) -> Vec<String> {
-        let t = self.text.split("\n");
-        let types = format!("{} {} - {}", 
-            self.supertypes.join(" "),
-            self.types.join(" "),
-            self.subtypes.join(" "));
-
-        let mut v = vec![
-            self.name.clone(),
-            self.mana_cost.clone(),
-            types
-        ];
-
-        for l in t {
-            v.push(l.to_string());
-        }
-
-        if self.power.len() > 0 {
-            v.push(format!("{}/{}", self.power, self.toughness));
-        }
         v
     }
 }
