@@ -272,12 +272,12 @@ impl AppState {
         self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
         if self.dirty_deck {
             self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+            self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
+            self.sldc.next();
+            self.dirty_deck = false;
         }
         
-        self.dirty_deck = false;
         self.mode = Screen::DeckOmni;
-        self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
-        self.sldc.next();
     }
     
     fn init_settings(&mut self) {}
