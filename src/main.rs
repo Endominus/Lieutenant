@@ -109,21 +109,16 @@ pub enum Relation {
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub enum Layout {
+    Adventure(char, String),
+    Aftermath(char, String),
+    Flip(char, String),
+    Leveler,
+    Meld(char, String, String),
+    ModalDfc(char, String),
     Normal,
-    ModalDfc,
-    Split,
-    Transform,
-    Aftermath,
-    Adventure,
-    Flip,
-    Meld,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct CardLayout {
-    lo: Layout,
-    rel: Option<Relation>,
-    side: Option<char>
+    Saga,
+    Split(char, String),
+    Transform(char, String),
 }
 
 //TODO: Add a JsonCard struct to facilitate import from json.
@@ -149,7 +144,6 @@ pub struct JsonCard {
     pub toughness: String,
     #[serde(rename = "type")]
     pub types: String,
-    // pub lo: CardLayout, //TODO: Use this, instead of the below. Problem, since this isn't how the json is structured.
     pub layout : String,
     pub related_cards: Option<Relation>,
     pub side: Option<char>,
@@ -173,10 +167,10 @@ pub struct Card {
     pub text: String,
     pub toughness: String,
     pub types: String,
-    // pub lo: CardLayout, //TODO: Use this, instead of the below. Problem, since this isn't how the json is structured.
-    pub layout : String,
-    pub related_cards: Option<Relation>,
-    pub side: Option<char>,
+    pub lo: Layout, //TODO: Use this, instead of the below. Problem, since this isn't how the json is structured.
+    // pub layout : String,
+    // pub related_cards: Option<Relation>,
+    // pub side: Option<char>,
     //TODO: Add rarity and sets
 }
 
@@ -208,24 +202,39 @@ impl ToString for Deck { fn to_string(& self) -> String { self.name.clone() } }
 
 impl Card {
     pub fn ri(&self) -> Vec<String> {
-        let t = self.text.split("\n");
-
         let mut v = vec![
             self.name.clone(),
             self.mana_cost.clone(),
-            self.types.clone()
+            self.types.clone(),
+            "\n".to_string(),
         ];
-
+            
+        let t = self.text.split("\n");
         for l in t {
             v.push(l.to_string());
         }
 
         if self.power.len() > 0 {
-            v.push(format!("{}/{}", self.power, self.toughness));
+            v.push(format!("Power/Toughness: {}/{}", self.power, self.toughness));
         } else if self.loyalty.len() > 0 {
-            v.push(self.loyalty.clone());
+            v.push(format!("Loyalty: {}", self.loyalty.clone()));
         }
-        v.push(format!("Tags: {}", self.tags.join(" ")));
+
+        v.push(String::from("\n"));
+
+        match &self.lo {
+            Layout::Adventure(_, rel) => { v.push(format!("See also: {}", rel)); }
+            Layout::Aftermath(_, _) => {}
+            Layout::Flip(_, rel) => {v.push(format!("See also: {}", rel));}
+            Layout::ModalDfc(_, _) => {}
+            Layout::Split(_, _) => {}
+            Layout::Transform(_, _) => {}
+            Layout::Meld(_, _, _) => {}
+            _ => {}
+        }
+        if self.tags.len() > 0 {
+            v.push(format!("Tags: {}", self.tags.join(" ")));
+        }
         v
     }
 }

@@ -7,16 +7,26 @@ https://docs.magicthegathering.io/
 # 1.0 Feature List
 - Remember most recently opened deck and allow direct loading.
 - Add, edit, and remove decks.
-  - Implement Create Deck screen.
+  - ~~Implement Create Deck screen.~~
   - Takes Deck Name, Commander, and optionally a file to import.
   - Import needs to handle the '//' case of split cards, and automatically adding the other half of cards.
   - Modify deck table to include basic lands somehow.
 - Manipulate cards in a deck.
-  - Add and remove cards. Automatically add the other half of split or transform cards.
-  - Add and remove tags from cards.
+  - ~~Add and remove cards.~~
+  - Automatically add the other half of split or transform cards.
+  - ~~Add and remove tags from cards.~~
   - Jump from a card to its related card.
 - Browse and filter cards in database.
-  - Filter by name, text, type, subtype, cmc, color, color identity, power, toughness, and tag.
+  - Filter by; 
+    - ~~name,~~
+    - ~~text,~~
+    - ~~type,~~
+    - ~~cmc,~~
+    - ~~color,~~
+    - ~~color identity,~~
+    - ~~tag~~
+    - power, 
+    - toughness,
   - Sort by name and cmc, ascending and descending
 - View deck info.
   - Include mana curve, color groups, type breakdowns

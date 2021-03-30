@@ -1,7 +1,7 @@
 extern crate rusqlite;
 extern crate regex;
 
-use crate::{Legalities, JsonCard};
+use crate::{JsonCard, Layout, Legalities};
 use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
 use crate::{Deck, Card, Relation};
 use std::{collections::HashMap, convert::TryInto, fs};
@@ -580,7 +580,8 @@ pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: i32) -> Result<(
 }
 
 pub fn rcfn(conn: &Connection, name: String) -> Result<Card> {
-    let mut stmt = conn.prepare("SELECT cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
+    let mut stmt = conn.prepare("SELECT 
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
         FROM cards WHERE name = :name;")?;
     stmt.query_row_named(named_params!{":name": name}, |row| {
         cfr(row)
@@ -689,30 +690,58 @@ fn stovs(ss: String) -> Vec<String> {
 }
 
 #[allow(unreachable_patterns)]
+#[allow(unused_variables)]
 fn cfr(row:& Row) -> Result<Card> {
-    // println!("In cfr!");
-    let _n = "normal".to_string();
-    let _m = "meld".to_string();
-    let _l = "leveler".to_string();
-    let _s = "saga".to_string();
-    let (side, related_cards) = match row.get::<usize, String>(10) {
-        Ok(_n) => { (None, None) }
-        Ok(_l) => { (None, None) }
-        Ok(_s) => { (None, None) }
-        Ok(_m) => { 
-            let a = row.get::<usize, String>(11)?;
-            let b = a.split_once("|").unwrap();
-            let (face, transform) = (String::from(b.0), String::from(b.1));
-            (
-                Some(row.get::<usize, String>(12)?.chars().next().unwrap()), 
-                Some(Relation::Meld{ face: String::from(face), transform: String::from(transform) }) 
-            )
-        }
-        Ok(_) => { (
-            Some(row.get::<usize, String>(12)?.chars().next().unwrap()), 
-            Some(Relation::Single(row.get(11)?))) }
-        Err(_) => { (None, None) }
+
+    let lo = match row.get::<usize, String>(10) {
+        Ok(s) => { 
+            match s.as_str() {
+                "adventure" => {
+                    let rel = row.get::<usize, String>(11)?;
+                    let side = row.get::<usize, String>(12)?.chars().next().unwrap();
+                    Layout::Adventure(side, rel)    
+                }
+                "aftermath" => {
+                    let rel = row.get::<usize, String>(11)?;
+                    let side = row.get::<usize, String>(12)?.chars().next().unwrap();
+                    Layout::Aftermath(side, rel)    
+                }
+                "flip" => {
+                    let rel = row.get::<usize, String>(11)?;
+                    let side = row.get::<usize, String>(12)?.chars().next().unwrap();
+                    Layout::Flip(side, rel)    
+                }
+                "leveler" => { Layout::Leveler }
+                "meld" => { 
+                    let rel = row.get::<usize, String>(11)?;
+                    let rels = rel.split_once("|").unwrap();
+                    let (face, transform) = (String::from(rels.0), String::from(rels.1));
+                    let side = row.get::<usize, String>(12)?.chars().next().unwrap();
+                    Layout::Meld(side, face, transform)
+                }
+                "modaldfc" => {
+                    let rel = row.get::<usize, String>(11)?;
+                    let side = row.get::<usize, String>(12)?.chars().next().unwrap();
+                    Layout::ModalDfc(side, rel)    
+                }
+                "normal" => { Layout::Normal }
+                "saga" => { Layout::Saga }
+                "split" => {
+                    let rel = row.get::<usize, String>(11)?;
+                    let side = row.get::<usize, String>(12)?.chars().next().unwrap();
+                    Layout::Split(side, rel)    
+                }
+                "transform" => {
+                    let rel = row.get::<usize, String>(11)?;
+                    let side = row.get::<usize, String>(12)?.chars().next().unwrap();
+                    Layout::Transform(side, rel)
+                }
+                _ => { Layout::Normal }
+            }
+         }
+        Err(_) => { Layout::Normal }
     };
+    
     let tags: Vec<String> = if row.column_names().contains(&"tags") { 
         // println!("In tags!");
         match row.get::<usize, String>(13) {
@@ -738,9 +767,7 @@ fn cfr(row:& Row) -> Result<Card> {
         text: row.get(7)?,
         toughness: row.get(8)?,
         types: row.get(9)?,
-        layout: row.get(10)?,
-        related_cards,
-        side,
+        lo,
         tags
     })
 }

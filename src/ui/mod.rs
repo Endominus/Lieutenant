@@ -107,7 +107,7 @@ impl AppState {
             }
             Screen::DeckOmni => {
                 match c {
-                    KeyCode::Esc => { self.mode = Screen::MainMenu; }
+                    KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
                     // KeyCode::Up => { self.slod.previous(); }
                     // KeyCode::Down => { self.slod.next(); }
                     KeyCode::Left => { self.omnitext.left(); }
@@ -131,7 +131,7 @@ impl AppState {
             }
             Screen::DeckCard => {
                 match c {
-                    KeyCode::Esc => { self.mode = Screen::MainMenu; }
+                    KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
                     KeyCode::Up => { self.sldc.previous(); }
                     KeyCode::Down => { self.sldc.next(); }
                     KeyCode::Tab => { self.mode = Screen::DeckOmni; }
@@ -155,7 +155,7 @@ impl AppState {
 
             Screen::DbFilter => {
                 match c {
-                    KeyCode::Esc => { self.mode = Screen::MainMenu; }
+                    KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
                     // KeyCode::Up => { self.slod.previous(); }
                     // KeyCode::Down => { self.slod.next(); }
                     KeyCode::Left => { self.dbftext.left(); }
@@ -178,7 +178,7 @@ impl AppState {
             }
             Screen::DbCards => {
                 match c {
-                    KeyCode::Esc => { self.mode = Screen::MainMenu; }
+                    KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
                     KeyCode::Up => { self.sldbc.previous(); }
                     KeyCode::Down => { self.sldbc.next(); }
                     KeyCode::Tab => { self.mode = Screen::DbFilter; }
@@ -243,12 +243,13 @@ impl AppState {
         Ok(())
     }
 
-    // fn reset(&mut self) {
-    //     self.deck_id = -1;
-    //     self.omnitext = String::new();
-    //     self.dbftext = String::new();
-    //     self.contents = None;
-    // }
+    fn reset(&mut self) {
+        self.deck_id = -1;
+        self.omnitext = Omnitext::default();
+        self.dbftext = Omnitext::default();
+        self.contents = None;
+        self.dirty_deck = true;
+    }
 
     fn switch_mode(&mut self, next: Option<Screen>) {
         match next {
@@ -257,6 +258,7 @@ impl AppState {
             Some(Screen::DeckOmni) => { /* Set deck_id here */ self.init_deck_view(); }
             Some(Screen::Settings) => { self.init_settings(); }
             Some(Screen::DeckCard) => {  }
+            Some(Screen::MainMenu) => { self.reset(); self.mode = Screen::MainMenu;}
             Some(_) => {}
             None => { self.quit = true }
         }
