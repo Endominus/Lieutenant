@@ -15,7 +15,7 @@ use tui::style::{Color, Modifier, Style};
 use tui::Terminal;
 use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
-use crate::{Deck, Card};
+use crate::{Card, Deck, db::rcfndid};
 use crate::db;
 // use crate::db::DbContext;
 
@@ -37,9 +37,11 @@ struct AppState {
     slmm: StatefulList<MainMenuItem>,
     slod: StatefulList<Deck>,
     sldbc: StatefulList<Card>,
+    ac: Option<Card>,
     tag: String,
     mdc: MakeDeckContents,
     dirty_deck: bool,
+    dirty_dbf: bool,
     dirty_cards: Vec<Card>,
     dbc: Connection,
     quit: bool,
@@ -61,12 +63,14 @@ impl AppState {
             slmm: StatefulList::new(),
             slod: StatefulList::new(),
             sldbc: StatefulList::new(),
+            ac: None,
             tag: String::default(),
             mdc: MakeDeckContents::default(),
             quit: false,
             omnitext: Omnitext::default(),
             dbftext: Omnitext::default(),
             dirty_deck: true,
+            dirty_dbf: true,
             dirty_cards: Vec::new(),
             dbc: conn,
             // dsod: DeckScreen,
@@ -100,6 +104,8 @@ impl AppState {
                     KeyCode::Enter => { 
                         // TODO: Assign correct deck ID to config
                         self.deck_id = self.slod.get().unwrap().id;
+                        self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
+                        self.dirty_deck = true;
                         self.init_deck_view();
                     }
                     _ => {}
@@ -122,24 +128,59 @@ impl AppState {
                     }
                     KeyCode::Tab => {
                         self.mode = Screen::DbFilter;
+                        if let Some(c) = self.sldbc.get_string() {
+                            self.ac = Some(db::rcfn(&self.dbc, &c).unwrap());
+                        } else {
+                            self.ac = None;
+                        }
                     }
                     KeyCode::Backspace => { self.omnitext.backspace(); self.uslvc(); }
                     KeyCode::Delete => { self.omnitext.delete(); self.uslvc(); }
-                    KeyCode::Char(c) => {self.omnitext.insert(c); self.uslvc(); }
+                    KeyCode::Char(c) => {
+                        self.omnitext.insert(c); 
+                        self.uslvc(); 
+                        if let Some(s) = self.sldc.get_string() {
+                            self.ac = Some(db::rcfndid(
+                                &self.dbc, 
+                                &s, 
+                                self.deck_id).unwrap());
+                        } else {
+                            self.ac = None;
+                        } 
+                    }
                     _ => {}
                 }
             }
             Screen::DeckCard => {
                 match c {
                     KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
-                    KeyCode::Up => { self.sldc.previous(); }
-                    KeyCode::Down => { self.sldc.next(); }
+                    KeyCode::Up => { 
+                        self.ac = Some(db::rcfndid(
+                            &self.dbc, 
+                            &self.sldc.previous(), 
+                            self.deck_id).unwrap()); 
+                    }
+                    KeyCode::Down => { 
+                        self.ac = Some(db::rcfndid(
+                            &self.dbc, 
+                            &self.sldc.next().unwrap(), 
+                            self.deck_id).unwrap());  
+                        }
                     KeyCode::Tab => { self.mode = Screen::DeckOmni; }
                     KeyCode::Backspace | KeyCode::Delete => {
                         db::dcntodc(&self.dbc, self.sldc.get().unwrap().name.clone(), self.deck_id).unwrap();
-                        self.sldc.remove();
+                        if let Some(s) = self.sldc.remove() {
+                            self.ac = Some(db::rcfndid(
+                                &self.dbc, 
+                                &s, 
+                                self.deck_id).unwrap());
+                        } else {
+                            self.ac = None;
+                            self.mode = Screen::DeckOmni;
+                        }
                         self.dirty_deck = true;
                     }
+                    
                     KeyCode::Enter => {
                         if let Some(card) = db::ttindc(
                             &self.dbc, 
@@ -161,33 +202,63 @@ impl AppState {
                     KeyCode::Left => { self.dbftext.left(); }
                     KeyCode::Right => { self.dbftext.right(); }
                     KeyCode::Enter => { 
-                        self.uslvc();
+                        if self.dirty_dbf {
+                            self.uslvc();
+                            self.dirty_dbf = false;
+                        }
                         if self.sldbc.items.len() > 0 {
                             self.mode = Screen::DbCards;
+                            self.ac = Some(db::rcfn(&self.dbc, &self.sldbc.get_string().unwrap()).unwrap());
                         }
                     }
                     KeyCode::Tab => {
                         // self.mode = Screen::DeckOmni;
                         self.switch_mode(Some(Screen::DeckOmni));
                     }
-                    KeyCode::Backspace => { self.dbftext.backspace(); }
-                    KeyCode::Delete => { self.dbftext.delete(); }
-                    KeyCode::Char(c) => {self.dbftext.insert(c); }
+                    KeyCode::Backspace => { self.dbftext.backspace(); self.dirty_dbf = true; }
+                    KeyCode::Delete => { self.dbftext.delete(); self.dirty_dbf = true; }
+                    KeyCode::Char(c) => {self.dbftext.insert(c); self.dirty_dbf = true; }
                     _ => {}
                 }
             }
             Screen::DbCards => {
                 match c {
                     KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
-                    KeyCode::Up => { self.sldbc.previous(); }
-                    KeyCode::Down => { self.sldbc.next(); }
+                    KeyCode::Up => { 
+                        self.ac = Some(db::rcfn(
+                        &self.dbc, 
+                        &self.sldbc.previous()).unwrap());  
+                    }
+                    KeyCode::Down => { 
+                        self.ac = Some(db::rcfn(
+                            &self.dbc, 
+                            &self.sldbc.next().unwrap()).unwrap()); 
+                     }
                     KeyCode::Tab => { self.mode = Screen::DbFilter; }
                     KeyCode::Enter => {
                         let a = self.sldbc.get().unwrap();
                         db::icntodc(&self.dbc, a.name.clone(), self.deck_id.try_into().unwrap()).unwrap();
                         self.dirty_deck = true;
-                        self.dirty_cards.push(db::rcfn(&self.dbc, a.name.clone())?);
+                        self.dirty_cards.push(db::rcfn(&self.dbc, &a.name)?);
                         // let mut a = &self.contents.unwrap();
+                    }
+                    KeyCode::Char(' ') => {
+                        let mut rel = String::new();
+                        if let Some(card) = &self.ac {
+                            match &card.lo {
+                                crate::Layout::Adventure(_, n) => { rel = n.clone() }
+                                crate::Layout::Aftermath(_, n) => { rel = n.clone() }
+                                crate::Layout::Flip(_, n) => { rel = n.clone() }
+                                crate::Layout::ModalDfc(_, n) => { rel = n.clone() }
+                                crate::Layout::Split(_, n) => { rel = n.clone() }
+                                crate::Layout::Transform(_, n) => { rel = n.clone() }
+                                crate::Layout::Meld(_, n, _) => { rel = n.clone() }
+                                crate::Layout::Leveler => {}
+                                crate::Layout::Saga => {}
+                                crate::Layout::Normal => {}
+                            }
+                        }
+                        self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
                     }
                     _ => {}
                 }
@@ -199,7 +270,7 @@ impl AppState {
                         match self.mdc.focus {
                             MakeDeckFocus::Title => { self.mdc.focus = MakeDeckFocus::Commander; }
                             MakeDeckFocus::Commander => { 
-                                match db::rcfn(&self.dbc, self.mdc.commander.clone()) {
+                                match db::rcfn(&self.dbc, &self.mdc.commander) {
                                     Ok(_) => {
                                         self.deck_id = db::ideck(
                                             &self.dbc, 
@@ -245,10 +316,12 @@ impl AppState {
 
     fn reset(&mut self) {
         self.deck_id = -1;
+        self.ac = None;
         self.omnitext = Omnitext::default();
         self.dbftext = Omnitext::default();
         self.contents = None;
         self.dirty_deck = true;
+        self.dirty_dbf = true;
     }
 
     fn switch_mode(&mut self, next: Option<Screen>) {
@@ -271,12 +344,17 @@ impl AppState {
         // self.deck_id = 1;
         // self.omnitext = String::new();
         
-        self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
         if self.dirty_deck {
             self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
             self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
             self.sldc.next();
             self.dirty_deck = false;
+        }
+
+        if let Some(c) = self.sldc.get_string() {
+            self.ac = Some(db::rcfndid(&self.dbc, &c, self.deck_id).unwrap());
+        } else {
+            self.ac = None;
         }
         
         self.mode = Screen::DeckOmni;
@@ -303,6 +381,7 @@ impl AppState {
         self.slmm.next();
     }
 
+    //TODO: Investigate making this return the first item of the new list for self.ac?
     fn uslvc(&mut self) {
         // state.sldc
         // let cf = db::CardFilter::new(self.deck_id).name(Vec::from([self.omnitext.clone()]));
@@ -345,6 +424,13 @@ impl AppState {
         a.append(&mut self.dirty_cards.clone());
 
         self.sldbc.rvlis(a)
+    }
+
+    pub fn get_card_info(&self) -> String {
+        match &self.ac {
+            Some(card) => { card.ri().join("\n") }
+            None => { String::from("No card found!") }
+        }
     }
 }
 
@@ -395,10 +481,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             }
             Screen::DbFilter => {
                 // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = match state.sldbc.get() {
-                    Some(card) => { card.ri().join("\n") }
-                    None => { String::from("No cards found!") }
-                };
+                let text = state.get_card_info();
                 let mut ds = DeckScreen::new(
                     state.dbftext.get_styled(), 
                     state.rvlis(), 
@@ -412,10 +495,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             }
             Screen::DeckOmni => {
                 // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = match state.sldc.get() {
-                    Some(card) => { card.ri().join("\n") }
-                    None => { String::from("No cards found!") }
-                };
+                let text = state.get_card_info();
                 let mut ds = DeckScreen::new(state.omnitext.get_styled(), state.rvli(), text, state.mode);
                 
                 ds.focus_omni(state.mode);
@@ -444,7 +524,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 f.render_widget(mds.commander_entry, chunks[1]);
             }
             Screen::DbCards => {
-                let text = state.sldbc.get().unwrap().ri().join("\n");
+                let text = state.get_card_info();
                 let mut ds = DeckScreen::new(
                     state.dbftext.get_styled(), 
                     state.rvlis(), 
@@ -458,7 +538,7 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             }
             Screen::DeckCard => {
                 // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = state.sldc.get().unwrap().ri().join("\n");
+                let text = state.get_card_info();
                 let mut ds = DeckScreen::new(state.omnitext.get_styled(), state.rvli(), text, state.mode);
                 
                 ds.focus_lc(state.mode);

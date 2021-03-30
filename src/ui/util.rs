@@ -39,21 +39,27 @@ impl<T: ToString> StatefulList<T> {
         }
     }
 
-    pub fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i >= self.items.len() - 1 {
-                    0
-                } else {
-                    i + 1
+    pub fn next(&mut self) -> Option<String> {
+        if self.items.len() > 0 {
+            let i = match self.state.selected() {
+                Some(i) => {
+                    if i >= self.items.len() - 1 {
+                        0
+                    } else {
+                        i + 1
+                    }
                 }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
+                None => 0,
+            };
+            self.state.select(Some(i));
+            Some(self.items.get(i).unwrap().to_string())
+        } else {
+            None
+        }
     }
 
-    pub fn previous(&mut self) {
+    //TODO: Never going to apply, but check for len here as well?
+    pub fn previous(&mut self) -> String {
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -65,6 +71,7 @@ impl<T: ToString> StatefulList<T> {
             None => 0,
         };
         self.state.select(Some(i));
+        self.items.get(i).unwrap().to_string()
     }
 
     pub fn unselect(&mut self) {
@@ -80,10 +87,24 @@ impl<T: ToString> StatefulList<T> {
         None
     }
 
-    pub fn remove (&mut self) {
-        let a = self.state.selected().unwrap();
+    pub fn get_string(& self) -> Option<String> {
+        if self.items.len() > 0 {
+            let a = self.items.get(self.state.selected().unwrap()).unwrap();
+            return Some(a.to_string());
+        }
+        None
+    }
+
+    pub fn remove (&mut self) -> Option<String> {
+        let mut a = self.state.selected().unwrap();
         self.items.remove(a);
-        if a == self.items.len() { self.state.select(Some(a-1)); }
+        if self.items.len() > 0 {
+            if a == self.items.len() { a -= 1; }
+            self.state.select(Some(a));
+            Some(self.items.get(a).unwrap().to_string().clone())
+        } else {
+            None
+        }
     }
 
     pub fn replace(&mut self, obj: T) {

@@ -206,7 +206,6 @@ impl Card {
             self.name.clone(),
             self.mana_cost.clone(),
             self.types.clone(),
-            "\n".to_string(),
         ];
             
         let t = self.text.split("\n");
@@ -220,16 +219,44 @@ impl Card {
             v.push(format!("Loyalty: {}", self.loyalty.clone()));
         }
 
-        v.push(String::from("\n"));
-
         match &self.lo {
-            Layout::Adventure(_, rel) => { v.push(format!("See also: {}", rel)); }
-            Layout::Aftermath(_, _) => {}
-            Layout::Flip(_, rel) => {v.push(format!("See also: {}", rel));}
-            Layout::ModalDfc(_, _) => {}
-            Layout::Split(_, _) => {}
-            Layout::Transform(_, _) => {}
-            Layout::Meld(_, _, _) => {}
+            Layout::Adventure(side, rel) => { 
+                match side { 
+                    'a' => { v.push(format!("Also has Adventure: {}", rel)); } 
+                    'b' => { v.push(format!("Adventure of: {}", rel)); } 
+                    _ => {} 
+                }
+            }
+            Layout::Aftermath(side, rel) => { 
+                match side { 
+                    'a' => { v.push(format!("Also has Aftermath: {}", rel)); } 
+                    'b' => { v.push(format!("Aftermath of: {}", rel)); } 
+                    _ => {} 
+                }
+            }
+            Layout::Flip(side, rel) => { 
+                match side { 
+                    'a' => { v.push(format!("Also has Flip side: {}", rel)); } 
+                    'b' => { v.push(format!("Flip side of: {}", rel)); } 
+                    _ => {} 
+                }
+            }
+            Layout::ModalDfc(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
+            Layout::Split(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
+            Layout::Transform(side, rel) => { 
+                match side { 
+                    'a' => { v.push(format!("Transforms into: {}", rel)); } 
+                    'b' => { v.push(format!("Transforms from: {}", rel)); } 
+                    _ => {} 
+                }
+            }
+            Layout::Meld(side, face, meld) => { 
+                match side { 
+                    'a' => { v.push(format!("Melds with {} to form {}", face, meld)); } 
+                    'b' => { v.push(format!("Melds from {} and {}", face, meld)); } 
+                    _ => {} 
+                }
+            }
             _ => {}
         }
         if self.tags.len() > 0 {
@@ -261,7 +288,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::RetrieveCard(card) => {
             // let cf = CardFilter::from(-1, &card);
             let conn = Connection::open("lieutenant.db")?;
-            let a = db::rcfn(&conn, card)?;
+            let a = db::rcfn(&conn, &card)?;
             // for card in a {
             println!("{:?}", a);
             // }

@@ -579,7 +579,7 @@ pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: i32) -> Result<(
     Ok(())
 }
 
-pub fn rcfn(conn: &Connection, name: String) -> Result<Card> {
+pub fn rcfn(conn: &Connection, name: &String) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT 
         cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
         FROM cards WHERE name = :name;")?;
@@ -610,7 +610,7 @@ pub fn rcomfdid(conn: &Connection, did: i32) -> Result<Card> {
         Ok(row.get(0)?)
     })?;// .query_row(params![did], |row| {
 
-    rcfn(conn, name)
+    rcfn(conn, &name)
 }
 
 pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
@@ -620,7 +620,7 @@ pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
         Ok(Deck {
             id: row.get(0)?,
             name: row.get(1)?,
-            commander: rcfn(conn, row.get(2)?)?,
+            commander: rcfn(conn, &row.get(2)?)?,
         })
     })?;
     a.collect()
@@ -634,7 +634,7 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
     stmt.query_row(params![id], |row| {
         Ok( Deck {
             name: row.get(1)?,
-            commander: rcfn(conn, row.get(2)?)?,
+            commander: rcfn(conn, &row.get(2)?)?,
             id: row.get(0)?,
         })
     })
