@@ -165,8 +165,9 @@ impl AppState {
                             &self.dbc, 
                             &self.sldc.next().unwrap(), 
                             self.deck_id).unwrap());  
-                        }
+                    }
                     KeyCode::Tab => { self.mode = Screen::DeckOmni; }
+                    KeyCode::Char(' ') => { self.ac_switch(false); }
                     KeyCode::Backspace | KeyCode::Delete => {
                         db::dcntodc(&self.dbc, self.sldc.get().unwrap().name.clone(), self.deck_id).unwrap();
                         if let Some(s) = self.sldc.remove() {
@@ -242,24 +243,7 @@ impl AppState {
                         self.dirty_cards.push(db::rcfn(&self.dbc, &a.name)?);
                         // let mut a = &self.contents.unwrap();
                     }
-                    KeyCode::Char(' ') => {
-                        let mut rel = String::new();
-                        if let Some(card) = &self.ac {
-                            match &card.lo {
-                                crate::Layout::Adventure(_, n) => { rel = n.clone() }
-                                crate::Layout::Aftermath(_, n) => { rel = n.clone() }
-                                crate::Layout::Flip(_, n) => { rel = n.clone() }
-                                crate::Layout::ModalDfc(_, n) => { rel = n.clone() }
-                                crate::Layout::Split(_, n) => { rel = n.clone() }
-                                crate::Layout::Transform(_, n) => { rel = n.clone() }
-                                crate::Layout::Meld(_, n, _) => { rel = n.clone() }
-                                crate::Layout::Leveler => {}
-                                crate::Layout::Saga => {}
-                                crate::Layout::Normal => {}
-                            }
-                        }
-                        self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
-                    }
+                    KeyCode::Char(' ') => { self.ac_switch(true); }
                     _ => {}
                 }
             }
@@ -320,6 +304,8 @@ impl AppState {
         self.omnitext = Omnitext::default();
         self.dbftext = Omnitext::default();
         self.contents = None;
+        self.sldc = StatefulList::new();
+        self.sldbc = StatefulList::new();
         self.dirty_deck = true;
         self.dirty_dbf = true;
     }
@@ -379,6 +365,47 @@ impl AppState {
         
         self.slmm = StatefulList::with_items(items);
         self.slmm.next();
+    }
+
+    fn ac_switch(&mut self, general: bool) {
+        let mut rel = String::new();
+        let mut rel2 = String::new();
+        let mut side = &'a';
+        if let Some(card) = &self.ac {
+            match &card.lo {
+                crate::Layout::Flip(_, n) | 
+                crate::Layout::Split(_, n) | 
+                crate::Layout::ModalDfc(_, n) | 
+                crate::Layout::Aftermath(_, n) | 
+                crate::Layout::Adventure(_, n) | 
+                crate::Layout::Transform(_, n) => { rel = n.clone() }
+                crate::Layout::Meld(s, n, m) => { side = s; rel = n.clone(); rel2 = m.clone(); }
+                _ => {}
+            }
+        }
+        
+        if rel2 != String::new() {
+            if side == &'a' {
+                let meld = db::rcfn(&self.dbc, &rel2).unwrap();
+                match meld.lo {
+                    crate::Layout::Meld(_, face, _) => {
+                        if face.clone() == rel {
+                            rel = rel2;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if general {
+            self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
+        } else {
+            if let Ok(c) = db::rcfndid(&self.dbc, &rel, self.deck_id) {
+                self.ac = Some(c);
+            } else {
+                self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
+            }
+        }
     }
 
     //TODO: Investigate making this return the first item of the new list for self.ac?
