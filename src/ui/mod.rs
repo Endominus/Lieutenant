@@ -181,7 +181,8 @@ impl AppState {
                             self.sldc.get().unwrap().name.clone(), 
                             &self.tag, 
                             self.deck_id) {
-                                self.sldc.replace(card);
+                                self.sldc.replace(card.clone());
+                                self.ac = Some(card);
                         };
                     }
                     _ => {}

@@ -1,5 +1,6 @@
 extern crate rusqlite;
 extern crate regex;
+extern crate tokio;
 
 use crate::{JsonCard, Layout, Legalities};
 use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
@@ -12,13 +13,17 @@ use serde_json::Value;
 use self::rusqlite::functions::FunctionFlags;
 use std::sync::Arc;
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+use std::{thread, time};
 
-//TODO: Prepare statements and pass around a DB connection object as in https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112
+use futures::prelude::*;
+// use tokio::prelude::*;
 
 // pub struct DbContext<'a> {
 //     conn: Connection,
 //     stmts: HashMap<&'a str, Statement<'a>>
 // }
+
+use crate::network::rcostfcn;
 
 const DB_FILE: &str = "lieutenant.db";
 
@@ -119,7 +124,7 @@ impl<'a> CardFilter<'a> {
                 rule tag_alias() = ("tag" / "tags")
 
                 rule word() -> String
-                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}']+) { String::from(s) }
+                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '\'' | '.']+) { String::from(s) }
                 rule phrase() -> String
                 =s:$("!"? "\"" (word() / " " / "+" / ":" / "/")+ "\"" ) {String::from(s) }
                 // rule exp_types() -> String
@@ -180,7 +185,7 @@ WHERE deck_contents.deck = {}", self.did) }
 
         for (key, value) in self.fi.clone() {
             match key {
-                "name" => { vs.push(format!("AND (cards.name LIKE \'%{}%\')", value)); }
+                "name" => { vs.push(format!("AND (cards.name LIKE \'%{}%\')", value.trim_matches('\"'))); }
                 "tag" => { vs.push(format!(r#"AND tags IS NOT NULL AND tags REGEXP '\|?{}(?:$|\|)'"#, value))}
                 "text" => { 
                     let tegs = value.split("|"); 
@@ -193,7 +198,7 @@ WHERE deck_contents.deck = {}", self.did) }
                                 Some(_) => { "LIKE" }
                                 None => { continue; }
                             };
-                            vf.push(format!("card_text {} \'%{}%\'", include, te.trim_matches('\"')));
+                            vf.push(format!("card_text {} \"%{}%\"", include, te.trim_matches('\"')));
                         }
                         if vf.len() > 0 {
                             vteg.push(format!("({})", vf.join(" AND ")));
@@ -261,9 +266,28 @@ WHERE deck_contents.deck = {}", self.did) }
                                 Some(_) => { "LIKE" }
                                 None => { "" }
                             };
+                            match ty {
+                                "per" => { 
+                                    // ty = "permanent"; 
+                                    vf.push(format!("types NOT LIKE \'%instant%\'"));
+                                    vf.push(format!("types NOT LIKE \'%sorcery%\'"));
+                                    continue;
+                                }
+                                "l" => { ty = "legendary";}
+                                "e" => { ty = "enchantment";}
+                                "p" => { ty = "planeswalker";}
+                                "i" => { ty = "instant";}
+                                "s" => { ty = "sorcery";}
+                                "c" => { ty = "creature";}
+                                "a" => { ty = "artifact";}
+                                "" => { continue; }
+                                _ => {}
+                            }
                             vf.push(format!("types {} \'%{}%\'", include, ty));
                         }
-                        vtyg.push(format!("({})", vf.join(" AND ")));
+                        if vf.len() > 0 {
+                            vtyg.push(format!("({})", vf.join(" AND ")));
+                        }
                     }
                     vs.push(format!("AND ({})", vtyg.join(" OR ")));
                 }
@@ -386,7 +410,9 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             related_cards text,
             layout text not null,
             side text,
-            legalities text not null
+            legalities text not null,
+            price real,
+            date_price_retrieved text
         )", NO_PARAMS,
     )?;
     
@@ -397,8 +423,6 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             commander text not null,
             deck_type text not null,
             notes text,
-            cost real,
-            date_cost_retrieved text,
             foreign key (commander) references cards(name))"
             , NO_PARAMS,
         )?;
@@ -689,10 +713,7 @@ fn stovs(ss: String) -> Vec<String> {
     vs
 }
 
-#[allow(unreachable_patterns)]
-#[allow(unused_variables)]
 fn cfr(row:& Row) -> Result<Card> {
-
     let lo = match row.get::<usize, String>(10) {
         Ok(s) => { 
             match s.as_str() {
@@ -770,4 +791,56 @@ fn cfr(row:& Row) -> Result<Card> {
         lo,
         tags
     })
+}
+
+pub fn ucfd(conn: &Connection, did: i32) -> Result<()> {
+    let mut stmt = conn.prepare(r#"
+        SELECT name, layout, related_cards, side, date_price_retrieved, tags
+        FROM cards
+        INNER JOIN deck_contents
+        ON cards.name = deck_contents.card_name
+        WHERE deck_contents.deck = :did
+        AND side != 'b'
+        AND date_price_retrieved < date()
+        AND tags IS NOT NULL 
+        AND tags REGEXP '\|?main(?:$|\|)';"#).unwrap();
+    let delay = time::Duration::from_millis(100);
+    let a: Result<Vec<(String, f64)>> = stmt.query_map_named(named_params!{":did": did}, |row| {
+            thread::sleep(delay);
+            Ok((row.get::<usize, String>(0)?, rpfdc(row)?))
+        }
+    )?.collect();
+
+    stmt = conn.prepare("UPDATE cards 
+    SET price = :price, 
+    date_price_retrieved = date()
+    WHERE name = :name;").unwrap();
+    // a
+    let mut num = 0;
+    for (name, price) in a.unwrap() {
+        num += stmt.execute_named(named_params!{":price": price, ":name": name}).unwrap();
+    }
+    println!("{} total prices updated.", num);
+    Ok(())
+}
+
+//clarity courteous
+
+pub fn rpfdc(row: &Row) -> Result<f64> {
+    let layout: String = row.get(1)?;
+    let related_cards: String = row.get(2)?;
+    let s = if related_cards.len() > 0 
+        && layout != String::from("meld") {
+        format!("{} // {}", row.get::<usize, String>(0)?, row.get::<usize, String>(2)?)
+    } else {
+        row.get::<usize, String>(0)?
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let future = rcostfcn(&s);
+    let res = rt.block_on(future).unwrap();
+
+    println!("{} has a price of {}", s, res);
+
+    Ok(res)
 }

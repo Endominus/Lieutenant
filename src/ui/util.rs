@@ -8,13 +8,14 @@ use crate::db;
 #[derive(Copy, Clone)]
 pub enum Screen {
     MainMenu,
-    DbFilter,
-    DbCards,
-    DeckOmni,
-    DeckCard,
+    MakeDeck,
     OpenDeck,
     Settings,
-    MakeDeck,
+    DeckOmni,
+    DeckCard,
+    DbFilter,
+    DbCards,
+    // DeckStat,
     Error(&'static str),
 }
 

@@ -18,6 +18,7 @@ extern crate peg;
 extern crate lazy_static;
 
 use json::object::Object;
+use network::rcostfcn;
 use rusqlite::Connection;
 use std::{collections::HashMap, fs::File};
 use std::io::BufReader;
@@ -204,8 +205,9 @@ impl Card {
     pub fn ri(&self) -> Vec<String> {
         let mut v = vec![
             self.name.clone(),
-            self.mana_cost.clone(),
+            format!("{}, ({})", self.mana_cost, self.cmc),
             self.types.clone(),
+            String::new(),
         ];
             
         let t = self.text.split("\n");
@@ -218,6 +220,8 @@ impl Card {
         } else if self.loyalty.len() > 0 {
             v.push(format!("Loyalty: {}", self.loyalty.clone()));
         }
+
+        v.push(String::new());
 
         match &self.lo {
             Layout::Adventure(side, rel) => { 
@@ -259,6 +263,10 @@ impl Card {
             }
             _ => {}
         }
+        
+        v.push(String::new());
+
+
         if self.tags.len() > 0 {
             v.push(format!("Tags: {}", self.tags.join(" ")));
         }
@@ -277,11 +285,12 @@ pub enum Command {
 
 pub fn run(command: Command) -> Result<()> {
     match command {
-        Command::RetrieveCardOnline(card) => {
-            let a = network::retrieve_card_by_name(card)?;
-            for card in a {
-                println!("{:?}", card);
-            }
+        Command::RetrieveCardOnline(_card) => {
+            // let a = db::rpfdc(&card);
+            // println!("Card price is: {}", a)
+            // for card in a {
+            //     println!("{:?}", card);
+            // }
 
             // Ok(())
         },
@@ -332,6 +341,14 @@ fn main() {
                         .index(1)
                         .required(true),
                 ),
+            SubCommand::with_name("price")
+                .about("Retrieves the price of a given card")
+                .arg(
+                    Arg::with_name("input")
+                        .help("card to get")
+                        .index(1)
+                        .required(true),
+                ),
             SubCommand::with_name("import")
                 .about("Imports cards from a file into a deck")
                 .arg(
@@ -364,6 +381,12 @@ fn main() {
             println!("Getting cards with name: {}", sub_m.value_of("input").unwrap());
             let _a = run(Command::RetrieveCard(sub_m.value_of("input").unwrap().to_string()));
         }
+        ("price", Some(sub_m)) => {
+            let s = sub_m.value_of("input").unwrap();
+            println!("Getting cards with name: {}", s);
+            let _a = run(Command::RetrieveCardOnline(s.to_string()));
+
+        }
         ("import", Some(sub_m)) => {
             println!("Inserting all cards from {} into deck with ID {}", 
             sub_m.value_of("filename").unwrap(), 
@@ -380,11 +403,14 @@ fn main() {
             // }
         }
         ("debug", Some(_sub_m)) => {
+            let conn = Connection::open("lieutenant.db").unwrap();
+            db::add_regexp_function(&conn).unwrap();
+
+            // let a = network::rcs(& db::Set { code: String::from("TPH1"), name: String::from("Theros Path of Heroes") });
             // let cf = db::CardFilter::new(1).text(String::from("ana"));
             // println!("Cardfilter produces: {}", cf.make_filter());
-            // let a = network::rcs(& db::Set { code: String::from("TPH1"), name: String::from("Theros Path of Heroes") });
             // println!("{:?}", CardFilter::parse_omni("ana"));
-            // println!("{:?}", CardFilter::parse_omni("n:ana"));
+            // println!("{:?}", CardFilter::parse_omni("n:\"kor sky\""));
             // println!("{:?}", CardFilter::parse_omni("name:\" of \""));
             // println!("{:?}", CardFilter::parse_omni("text:\"draw a card\""));
             // println!("{:?}", CardFilter::parse_omni("text:\"+1\""));
@@ -436,11 +462,9 @@ fn main() {
             // // assert_eq!(HashMap::new(), CardFilter::parse_omni("cmc:"));
             // assert_eq!(HashMap::new(), CardFilter::parse_omni("coloridentity:"));
             
-            // let conn = Connection::open("lieutenant.db").unwrap();
-            // db::add_regexp_function(&conn).unwrap();
-            // let omni = String::from("ty:artifact cmc:>4 te:w|");
+            // let omni = String::from("n:\"kor sky\" ty:artifact cmc:>4 te:w|");
             // let omni = String::from("ty:artifact cmc:>4 color:w|");
-            // let cf = CardFilter::from(1, & omni);
+            // let cf = CardFilter::from(2, & omni);
             // println!("{}", cf.make_filter(&conn, false));
             // let omni = String::from("ty: cmc:>4");
             // let cf = CardFilter::from(1, & omni);
@@ -451,7 +475,7 @@ fn main() {
             // let omni = String::from("cmc:>4 color_identity:");
             // let cf = CardFilter::from(1, & omni);
             // println!("{}", cf.make_filter(&conn, false));
-            // let omni = String::from("text:\"you control\" c:r|g");
+            // let omni = String::from("text:\"you control can\'t\" c:r|g");
             // let omni = String::from("cmc:<4 tag:ramp"); //tags REGEXP '\|?ramp(?:$|\|)'
             // let omni = String::from("cmc:<4 ci:c"); //color_identity REGEXP '^[^WUBRG]*$'
             // let cf = CardFilter::from(1, & omni);
@@ -465,7 +489,6 @@ fn main() {
             // println!("{:?}", db::db_test(s).unwrap().len());
 
             // let now = Instant::now();
-            // let conn = Connection::open("lieutenant.db").unwrap();
             // let file = File::open("AtomicCards.json").unwrap();
             // let reader = BufReader::new(file);
             // let a: serde_json::Value = serde_json::from_reader(reader).unwrap();
@@ -484,6 +507,20 @@ fn main() {
             // let now = Instant::now();
             // let a = db::create_new_database();
             // println!("{:?}: Cards added to database in {} s", a, now.elapsed().as_secs());
+
+            // let future = async move {
+            //     let a = rcostfcn(&"Raging Goblin".to_string()).await;
+            //     println!("{:?}", a)
+            // };
+
+            // let res = tokio::runtime::Builder::new()
+            //     .basic_scheduler()
+            //     .enable_all()
+            //     .build()
+            //     .unwrap()
+            //     .block_on(future);
+            // res
+            let _a = db::ucfd(&conn, 2);
 
 
         }

@@ -58,12 +58,25 @@
 
 -- SELECT DISTINCT layout from cards;
 
+-- SELECT 
+--         cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
+--         FROM cards WHERE card_text LIKE "%can't be blocked%";
+
 -- SELECT * FROM cards WHERE name LIKE "%Isperia%";
 
 -- DELETE from cards;
-DELETE FROM decks;
-DELETE FROM deck_contents;
+-- DELETE FROM decks;
+-- DELETE FROM deck_contents;
 -- DROP TABLE cards;
+-- DROP TABLE deck_contents;
+
+-- create table if not exists deck_contents (
+--             id integer primary key,
+--             card_name text not null,
+--             deck integer not null,
+--             tags text,
+--             foreign key (deck) references decks(id),
+--             unique (deck, card_name) on conflict ignore);
 
 -- UPDATE cards 
 -- SET related_cards = "Bruna, the Fading Light|Gisela, the Broken Blade" 
@@ -81,9 +94,16 @@ DELETE FROM deck_contents;
 -- UPDATE cards SET related_cards = "Hanweir Battlements|Hanweir Garrison" WHERE name = "Hanweir, the Writhing Township";
 -- UPDATE cards SET related_cards = "Graf Rats|Chittering Host" WHERE name = "Midnight Scavengers";
 
+-- UPDATE deck_contents SET tags = NULL WHERE tags = "";
+
+-- SELECT * FROM deck_contents WHERE tags IS NOT NULL;
+
 -- SELECT name,card_text,side,layout,related_cards,types 
 -- FROM cards 
 -- WHERE layout = "meld"
 -- -- AND types LIKE '%Enchantment%'
 -- -- AND name LIKE '%Rune%' 
 -- ORDER BY name;
+
+-- ALTER TABLE cards ADD COLUMN price REAL;
+-- ALTER TABLE cards ADD COLUMN date_price_retrieved TEXT;

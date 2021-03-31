@@ -2,15 +2,17 @@
 
 // use reqwest::Client;
 // use reqwest::Error;
-use reqwest::blocking::get;
+// use reqwest::blocking::get;
 use std::{thread, time};
 // use serde::Deserialize;
 // use serde::de::{self, Deserialize};
-// use reqwest::Response;
+use reqwest::Response;
+use reqwest::get;
 // use std::io::Read;
 
 // use self::serde_json::Value;
 use anyhow::Result;
+use serde_json::Value;
 use crate::{Card, db::Set, JsonCard};
 
 
@@ -33,51 +35,78 @@ fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
 //     // meta: i8
 // }
 
-pub fn retrieve_card_by_name(name: String) -> Result<Vec<JsonCard>> {
-    let url = format!("https://api.magicthegathering.io/v1/cards?name=\"{}\"", name);
-    rvc(url, 1)
-    // todo!()
-}
+// pub fn retrieve_card_by_name(name: String) -> Result<Vec<JsonCard>> {
+//     let url = format!("https://api.magicthegathering.io/v1/cards?name=\"{}\"", name);
+//     rvc(url, 1)
+//     // todo!()
+// }
 
-pub fn rvs() -> Result<Vec<Set>> {
-    println!("Retrieving all sets now...");
+// pub fn rvs() -> Result<Vec<Set>> {
+//     println!("Retrieving all sets now...");
 
-    let url = "https://api.magicthegathering.io/v1/sets";
-    let response = get(url)?;
+//     let url = "https://api.magicthegathering.io/v1/sets";
+//     let response = get(url)?;
 
-    // let sets = response.json::<Sets>()?;
-    let sets = response.json::<Vec<Set>>()?;
+//     // let sets = response.json::<Sets>()?;
+//     let sets = response.json::<Vec<Set>>()?;
 
-    println!("Retrieved a total of {} sets.", sets.len());
+//     println!("Retrieved a total of {} sets.", sets.len());
 
-    Ok(sets)
-}
+//     Ok(sets)
+// }
 
-pub fn rcs(s: &crate::db::Set) -> Vec<JsonCard> {
-    let url = format!("https://api.magicthegathering.io/v1/cards?set={}&legality=Commander", s.code);
-    let c = match rvc(url, 1) {
-        Ok(vc) => { vc }
-        Err(_) => { Vec::new() }
+// pub fn rcs(s: &crate::db::Set) -> Vec<JsonCard> {
+//     let url = format!("https://api.magicthegathering.io/v1/cards?set={}&legality=Commander", s.code);
+//     let c = match rvc(url, 1) {
+//         Ok(vc) => { vc }
+//         Err(_) => { Vec::new() }
+//     };
+
+//     c
+//     // todo!()
+// }
+
+// fn rvc(url: String, page: i8) -> Result<Vec<JsonCard>> {
+//     let url = format!("{url}&page={page}", url = url, page = page);
+//     let res = get(&url)?;
+
+//     // let mut cards = res.json::<Cards>()?;
+//     let mut cards = res.json::<Vec<JsonCard>>()?;
+
+    
+//     if cards.len() == 100 {
+//         // println!("Found {}, going to next page", cards.len());
+//         thread::sleep(time::Duration::from_secs(1));
+//         cards.append(&mut rvc(url, page+1).unwrap());
+//     }
+    
+//     Ok(cards)
+//     // todo!()
+// }
+
+pub async fn rcostfcn(cn: &String) -> Result<f64> {
+    let api = format!("https://api.scryfall.com/cards/search?q=name=%22{}%22", cn);
+    let res = get(api).await?.text().await?;
+    let res_json: Value = serde_json::from_str(res.as_str())?;
+    // println!("{:?}", res_json);
+    let price: f64 = match &res_json["data"] {
+        Value::Array(vc) => {
+            let mut r = 0.0;
+            for c in vc {
+                match c {
+                    Value::Object(c) => {
+                        if c["name"].as_str().unwrap() == cn {
+                            // println!("{:?}", c["prices"]["usd"]);
+                            r = c["prices"]["usd"].as_str().unwrap_or("0.0").parse().unwrap();
+                        }
+                    }
+                    _ => { panic!(); }
+                }
+            }
+            r
+        }
+        Value::Object(_) => { panic!(); }
+        _ => { 0.0 }
     };
-
-    c
-    // todo!()
-}
-
-fn rvc(url: String, page: i8) -> Result<Vec<JsonCard>> {
-    let url = format!("{url}&page={page}", url = url, page = page);
-    let res = get(&url)?;
-
-    // let mut cards = res.json::<Cards>()?;
-    let mut cards = res.json::<Vec<JsonCard>>()?;
-
-    
-    if cards.len() == 100 {
-        // println!("Found {}, going to next page", cards.len());
-        thread::sleep(time::Duration::from_secs(1));
-        cards.append(&mut rvc(url, page+1).unwrap());
-    }
-    
-    Ok(cards)
-    // todo!()
+    Ok(price)
 }
