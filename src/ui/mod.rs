@@ -1,6 +1,6 @@
 // extern crate anyhow;
 
-use tui::widgets::{Clear, ListItem, Paragraph};
+use tui::widgets::{Clear, ListItem, Paragraph, Row};
 use tui::layout::Rect;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, read, KeyEvent},
@@ -8,7 +8,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use rusqlite::Connection;
-use std::{convert::TryInto, io::stdout};
+use std::{collections::HashMap, convert::TryInto, io::stdout};
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
@@ -22,7 +22,7 @@ use crate::db;
 mod util;
 use util::{StatefulList, MainMenuItem, Screen, DeckScreen, MakeDeckScreen, MakeDeckContents, Omnitext};
 
-use self::util::MakeDeckFocus;
+use self::util::{DeckStatInfo, DeckStatScreen, MakeDeckFocus};
 
 struct AppState {
     mode: Screen,
@@ -40,6 +40,7 @@ struct AppState {
     ac: Option<Card>,
     tag: String,
     mdc: MakeDeckContents,
+    dsi: DeckStatInfo,
     dirty_deck: bool,
     dirty_dbf: bool,
     dirty_cards: Vec<Card>,
@@ -66,6 +67,7 @@ impl AppState {
             ac: None,
             tag: String::default(),
             mdc: MakeDeckContents::default(),
+            dsi: DeckStatInfo::default(),
             quit: false,
             omnitext: Omnitext::default(),
             dbftext: Omnitext::default(),
@@ -119,10 +121,14 @@ impl AppState {
                     KeyCode::Left => { self.omnitext.left(); }
                     KeyCode::Right => { self.omnitext.right(); }
                     KeyCode::Enter => { 
-                        if self.sldc.items.len() > 0 {
-                            self.mode = Screen::DeckCard;
-                            if let Some(tag) = self.omnitext.rt() {
-                                self.tag = tag;
+                        if self.omnitext.text == String::from("/stat") {
+                            self.mode = Screen::DeckStat;
+                        } else {
+                            if self.sldc.items.len() > 0 {
+                                self.mode = Screen::DeckCard;
+                                if let Some(tag) = self.omnitext.rt() {
+                                    self.tag = tag;
+                                }
                             }
                         }
                     }
@@ -139,19 +145,28 @@ impl AppState {
                             self.ac = None;
                         }
                     }
-                    KeyCode::Backspace => { self.omnitext.backspace(); self.uslvc(); }
+                    KeyCode::Backspace => { 
+                        let cur = self.omnitext.rt();
+                        self.omnitext.backspace(); 
+                        if cur == None || cur == self.omnitext.rt() {
+                            self.uslvc();
+                        } 
+                    }
                     KeyCode::Delete => { self.omnitext.delete(); self.uslvc(); }
                     KeyCode::Char(c) => {
+                        let cur = self.omnitext.rt();
                         self.omnitext.insert(c); 
-                        self.uslvc(); 
-                        if let Some(s) = self.sldc.get_string() {
-                            self.ac = Some(db::rcfndid(
-                                &self.dbc, 
-                                &s, 
-                                self.deck_id).unwrap());
-                        } else {
-                            self.ac = None;
-                        } 
+                        if cur == None || cur == self.omnitext.rt() {
+                            self.uslvc(); 
+                            if let Some(s) = self.sldc.get_string() {
+                                self.ac = Some(db::rcfndid(
+                                    &self.dbc, 
+                                    &s, 
+                                    self.deck_id).unwrap());
+                            } else {
+                                self.ac = None;
+                            } 
+                        }
                     }
                     _ => {}
                 }
@@ -173,8 +188,7 @@ impl AppState {
                     }
                     KeyCode::Tab => { self.mode = Screen::DeckOmni; }
                     KeyCode::Char(' ') => { self.ac_switch(false); }
-                    KeyCode::Backspace | KeyCode::Delete => { self.remove_from_deck(); }
-                    
+                    KeyCode::Delete => { self.remove_from_deck(); }
                     KeyCode::Enter => {
                         if let Some(card) = db::ttindc(
                             &self.dbc, 
@@ -232,37 +246,9 @@ impl AppState {
                     KeyCode::Tab => { self.mode = Screen::DbFilter; }
                     KeyCode::Enter => {
                         let card = self.sldbc.get().unwrap().clone();
-                        db::icntodc(&self.dbc, &card.name, self.deck_id.try_into().unwrap()).unwrap();
+                        let mut dc = db::ictodc(&self.dbc, &card, self.deck_id.try_into().unwrap()).unwrap();
                         self.dirty_deck = true;
-                        self.dirty_cards.push(db::rcfn(&self.dbc, &card.name)?);
-                        
-                        match &card.lo {
-                            crate::Layout::Flip(_, n) | 
-                            crate::Layout::Split(_, n) | 
-                            crate::Layout::ModalDfc(_, n) | 
-                            crate::Layout::Aftermath(_, n) | 
-                            crate::Layout::Adventure(_, n) | 
-                            crate::Layout::Transform(_, n) => { 
-                                db::icntodc(&self.dbc, &n, self.deck_id).unwrap();
-                                self.dirty_cards.push(db::rcfn(&self.dbc, &n)?);
-                            }
-                            crate::Layout::Meld(s, n, m) => { 
-                                if s == &'b' { 
-                                    db::icntodc(&self.dbc, &n, self.deck_id).unwrap();
-                                    self.dirty_cards.push(db::rcfn(&self.dbc, &n)?);
-                                    db::icntodc(&self.dbc, &m, self.deck_id).unwrap();
-                                    self.dirty_cards.push(db::rcfn(&self.dbc, &m)?);
-                                } else {
-                                    let names: Vec<String> =  self.contents.as_ref().unwrap().iter().map(|c| c.to_string()).collect();
-                                    if names.contains(&n) { 
-                                        db::icntodc(&self.dbc, &m, self.deck_id).unwrap(); 
-                                        self.dirty_cards.push(db::rcfn(&self.dbc, &m)?);
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-
+                        self.dirty_cards.append(&mut dc);
                     }
                     KeyCode::Char(' ') => { self.ac_switch(true); }
                     _ => {}
@@ -279,8 +265,8 @@ impl AppState {
                                     Ok(_) => {
                                         self.deck_id = db::ideck(
                                             &self.dbc, 
-                                            self.mdc.title.clone(), 
-                                            self.mdc.commander.clone(), 
+                                            &self.mdc.title, 
+                                            &self.mdc.commander, 
                                             "Commander").unwrap();
                                         self.mdc = MakeDeckContents::default();
                                         self.init_deck_view();
@@ -306,6 +292,11 @@ impl AppState {
                         }
                     }
                     _ => {}
+                }
+            }
+            Screen::DeckStat => {
+                match c {
+                    _ => { self.mode = Screen::DeckOmni; }
                 }
             }
             Screen::Error(_) => {
@@ -439,7 +430,7 @@ impl AppState {
                 crate::Layout::Adventure(_, n) | 
                 crate::Layout::Transform(_, n) => { rel = n.clone() }
                 crate::Layout::Meld(s, n, m) => { side = s; rel = n.clone(); rel2 = m.clone(); }
-                _ => {}
+                _ => { return; }
             }
         }
         
@@ -469,9 +460,7 @@ impl AppState {
 
     //TODO: Investigate making this return the first item of the new list for self.ac?
     fn uslvc(&mut self) {
-        // state.sldc
-        // let cf = db::CardFilter::new(self.deck_id).name(Vec::from([self.omnitext.clone()]));
-        // let cf = db::CardFilter::new(self.deck_id).text(self.omnitext.clone());
+
         let (ss, general, target) = match self.mode {
             Screen::DeckOmni => { (
                 self.omnitext.get(),
@@ -518,6 +507,85 @@ impl AppState {
             None => { String::from("No card found!") }
         }
     }
+
+    pub fn generate_dss_info(& self) -> DeckStatInfo {
+        let mut dsi = DeckStatInfo::default();
+        db::ucfd(&self.dbc, self.deck_id).unwrap();
+        let vc = db::rvmcfd(&self.dbc, self.deck_id).unwrap();
+        let types = vec!["Legendary", "Land", "Creature", "Planeswalker", "Enchantment", "Instant", "Sorcery", "Artifact"];
+        let mut hm_type: HashMap<String, u64> = HashMap::new();
+        let mut hm_cmc: HashMap<String, u64> = HashMap::new();
+        // let mut hm_price: HashMap<String, f64> = HashMap::new();
+        let mut hm_tag: HashMap<String, u64> = HashMap::new();
+
+        for s in types.clone() { hm_type.insert(String::from(s), 0); }
+        for num in 0..7 { hm_cmc.insert((num as u8).to_string(), 0); }
+        hm_cmc.insert("7+".to_string(), 0);
+
+        for c in vc {
+            for t in c.types.clone().split(" ") {
+                match t {
+                    "Legendary" => { let a: u64 = hm_type.get(&String::from("Legendary")).unwrap() + 1;  hm_type.insert(String::from("Legendary"), a); }
+                    "Land" => { let a: u64 = hm_type.get(&String::from("Land")).unwrap() + 1;  hm_type.insert(String::from("Land"), a); }
+                    "Creature" => { let a: u64 = hm_type.get(&String::from("Creature")).unwrap() + 1;  hm_type.insert(String::from("Creature"), a); }
+                    "Planeswalker" => { let a: u64 = hm_type.get(&String::from("Planeswalker")).unwrap() + 1;  hm_type.insert(String::from("Planeswalker"), a); }
+                    "Enchantment" => { let a: u64 = hm_type.get(&String::from("Enchantment")).unwrap() + 1;  hm_type.insert(String::from("Enchantment"), a); }
+                    "Instant" => { let a: u64 = hm_type.get(&String::from("Instant")).unwrap() + 1;  hm_type.insert(String::from("Instant"), a); }
+                    "Sorcery" => { let a: u64 = hm_type.get(&String::from("Sorcery")).unwrap() + 1;  hm_type.insert(String::from("Sorcery"), a); }
+                    "Artifact" => { let a: u64 = hm_type.get(&String::from("Artifact")).unwrap() + 1;  hm_type.insert(String::from("Artifact"), a); }
+                    _ => {}
+                }
+            }
+
+            match c.cmc {
+                0 => { if !c.types.contains("Land") { let a: u64 = hm_cmc.get(&String::from("0")).unwrap() + 1;  hm_cmc.insert(String::from("0"), a); } }
+                1 => { let a: u64 = hm_cmc.get(&String::from("1")).unwrap() + 1;  hm_cmc.insert(String::from("1"), a); }
+                2 => { let a: u64 = hm_cmc.get(&String::from("2")).unwrap() + 1;  hm_cmc.insert(String::from("2"), a); }
+                3 => { let a: u64 = hm_cmc.get(&String::from("3")).unwrap() + 1;  hm_cmc.insert(String::from("3"), a); }
+                4 => { let a: u64 = hm_cmc.get(&String::from("4")).unwrap() + 1;  hm_cmc.insert(String::from("4"), a); }
+                5 => { let a: u64 = hm_cmc.get(&String::from("5")).unwrap() + 1;  hm_cmc.insert(String::from("5"), a); }
+                6 => { let a: u64 = hm_cmc.get(&String::from("6")).unwrap() + 1;  hm_cmc.insert(String::from("6"), a); }
+                _ => { let a: u64 = hm_cmc.get(&String::from("7+")).unwrap() + 1;  hm_cmc.insert(String::from("7+"), a);}
+            }
+
+            for tag in c.tags {
+                if let Some(v) = hm_tag.get_mut(&tag) {
+                    let a: u64 = v.checked_add(1).unwrap();
+                    hm_tag.insert(tag, a);
+                } else {
+                    hm_tag.insert(tag, 1);
+                }
+            }
+
+            dsi.price_data.push((c.name.clone(), c.price));
+        }
+
+        hm_tag.remove_entry(&String::from("main"));
+
+        for (k, v) in hm_cmc {
+            dsi.cmc_data.push((k.clone(), v));
+        }
+        // for (k, v) in hm_price {
+        //     dsi.price_data.push((k.clone(), v));
+        // }
+        for (k, v) in hm_type {
+            dsi.type_data.push((k.clone(), v));
+        }
+        for (k, v) in hm_tag {
+            dsi.tag_data.push((k.clone(), v));
+        }
+
+        dsi.cmc_data.sort_by(|a, b| a.0.cmp(&b.0));
+        dsi.price_data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        dsi.type_data.sort_by(|a, b| a.0.cmp(&b.0));
+        dsi.tag_data.sort_by(|a, b| b.1.cmp(&a.1));
+
+        dsi
+    }
+
+    // pub fn get_deck_stats(&self) -> DeckStatScreen {
+    //     DeckStatScreen::from(&self.dsi)
+    // }
 }
 
 fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut AppState) -> Result<()> {
@@ -554,6 +622,26 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                     .split(f.size())
             }
             Screen::Settings => { Vec::new() }
+            Screen::DeckStat => {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .margin(4)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(f.size());
+
+                let mut top_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(chunks[0]);
+
+                let mut bottom_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(chunks[1]);
+
+                top_chunks.append(&mut bottom_chunks);
+                top_chunks
+            }
         };        
             
         match state.mode {
@@ -630,7 +718,31 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 ds.focus_lc(state.mode);
                 f.render_widget(ds.omni, chunks[0]);
                 f.render_stateful_widget(ds.lc, chunks[1], &mut state.sldc.state.clone());
-                f.render_widget(ds.fc, chunks[2]);}
+                f.render_widget(ds.fc, chunks[2]);
+            }
+            Screen::DeckStat => {
+                let dsi = state.generate_dss_info();
+                
+                let cmc_data: Vec<(&str, u64)> = dsi.cmc_data.iter()
+                    .map(|(k, v)| (k.as_str(), *v))
+                    .collect();
+                let type_data: Vec<(&str, u64)> = dsi.type_data.iter()
+                    .map(|(k, v)| (k.as_str(), *v))
+                    .collect();
+                let tag_data: Vec<ListItem> = dsi.tag_data.iter()
+                    .map(|(k, v)| ListItem::new(format!("{}: {}", k, v)))
+                    .collect(); 
+                // let price_data = dsi.price_data.iter()
+                //     .map(|(n, v)| Row::new(vec![n.as_str(), v.to_string().as_str()]))
+                //     .collect();
+
+                let dss = DeckStatScreen::from(&cmc_data, &dsi.price_data, &type_data, tag_data);
+
+                f.render_widget(dss.mana_curve, chunks[0]);
+                f.render_widget(dss.prices, chunks[1]);
+                f.render_widget(dss.type_breakdown, chunks[2]);
+                f.render_widget(dss.tag_list, chunks[3]);
+            }
         }
     })?;
     Ok(())

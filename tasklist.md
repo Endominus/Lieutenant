@@ -13,9 +13,9 @@ https://docs.magicthegathering.io/
   - Modify deck table to include basic lands somehow.
 - Manipulate cards in a deck.
   - ~~Add and remove cards.~~
-  - Automatically add the other half of split or transform cards.
+  - ~~Automatically add the other half of split or transform cards.~~
   - ~~Add and remove tags from cards.~~
-  - Jump from a card to its related card.
+  - ~~Jump from a card to its related card.~~
 - Browse and filter cards in database.
   - Filter by; 
     - ~~name,~~
@@ -37,7 +37,7 @@ https://docs.magicthegathering.io/
 - Add setting to automatically load into most recent deck.
 - Get deck pricing. (see Scryfall?). Include as property of Deck struct with date retrieved.
 
-Test rcfn
+tags should be applied to castable spells only (i.e. not transformed)?
 
 ana
 ana te:and ty:creature+legendary st:cleric cmc:1-3 c:wr c:wb ci

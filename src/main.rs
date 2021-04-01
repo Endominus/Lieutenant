@@ -20,7 +20,7 @@ extern crate lazy_static;
 use json::object::Object;
 use network::rcostfcn;
 use rusqlite::Connection;
-use std::{collections::HashMap, fs::File};
+use std::{collections::HashMap, fs::File, io::BufRead};
 use std::io::BufReader;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -168,10 +168,7 @@ pub struct Card {
     pub text: String,
     pub toughness: String,
     pub types: String,
-    pub lo: Layout, //TODO: Use this, instead of the below. Problem, since this isn't how the json is structured.
-    // pub layout : String,
-    // pub related_cards: Option<Relation>,
-    // pub side: Option<char>,
+    pub lo: Layout,
     //TODO: Add rarity and sets
 }
 
@@ -189,6 +186,16 @@ impl ToString for Legalities {
 
         vs.join("|")
     }
+}
+
+pub struct CardStat {
+    pub cmc: u8,
+    pub color_identity: Vec<String>,
+    pub mana_cost: String,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub types: String,
+    pub price: f64,
 }
 
 fn zero() -> String { String::from("0") }
@@ -280,7 +287,7 @@ pub enum Command {
     FullPull,
     UpdateDB,
     Draw,
-    ImportCards(usize, String),
+    ImportCards(String, String, String),
 }
 
 pub fn run(command: Command) -> Result<()> {
@@ -317,8 +324,16 @@ pub fn run(command: Command) -> Result<()> {
             let _a = ui::run();
             // Ok(()) 
         },
-        Command::ImportCards(_did, _filename) => {
-            // db::import_deck(filename, did)?;
+        Command::ImportCards(deck_name, com_name, filename) => {
+            let conn = Connection::open("lieutenant.db")?;
+            let file =  File::open(filename).unwrap();
+            let buf = BufReader::new(file);
+            let mut cards = Vec::new();
+            for a in buf.lines() {
+                cards.push(a.unwrap());
+            }
+
+            db::import_deck(&conn, deck_name, com_name, cards)?;
             // Ok(())
         }
     }
@@ -352,15 +367,21 @@ fn main() {
             SubCommand::with_name("import")
                 .about("Imports cards from a file into a deck")
                 .arg(
-                    Arg::with_name("deck_id")
-                        .help("Deck ID number")
+                    Arg::with_name("deck_name")
+                        .help("Desired name of the deck")
                         .index(1)
                         .required(true),
                 )
                 .arg(
+                    Arg::with_name("com_name")
+                        .help("Name of the commander")
+                        .index(2)
+                        .required(true)
+                )
+                .arg(
                     Arg::with_name("filename")
                        .help("Name of the file to import from")
-                       .index(2)
+                       .index(3)
                        .required(true),
                 ),
             SubCommand::with_name("update")
@@ -388,12 +409,14 @@ fn main() {
 
         }
         ("import", Some(sub_m)) => {
-            println!("Inserting all cards from {} into deck with ID {}", 
-            sub_m.value_of("filename").unwrap(), 
-            sub_m.value_of("deck_id").unwrap());
-            // let _a = run(Command::ImportCards(
-                //     sub_m.value_of("deck_id").unwrap().parse().unwrap(),
-                //     sub_m.value_of("filename").unwrap().to_string()));
+            println!("Creating deck {} with commander {}. Adding all cards from {}.",
+                sub_m.value_of("deck_name").unwrap(),
+                sub_m.value_of("com_name").unwrap(),
+                sub_m.value_of("filename").unwrap()); 
+            let _a = run(Command::ImportCards(
+                    sub_m.value_of("deck_name").unwrap().to_string(),
+                    sub_m.value_of("com_name").unwrap().to_string(),
+                    sub_m.value_of("filename").unwrap().to_string()));
             }
         ("update", Some(_sub_m)) => {
             println!("Updating the database");

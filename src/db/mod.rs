@@ -2,7 +2,7 @@ extern crate rusqlite;
 extern crate regex;
 extern crate tokio;
 
-use crate::{JsonCard, Layout, Legalities};
+use crate::{CardStat, JsonCard, Layout, Legalities};
 use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
 use crate::{Deck, Card, Relation};
 use std::{collections::HashMap, convert::TryInto, fs};
@@ -15,7 +15,7 @@ use std::sync::Arc;
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 use std::{thread, time};
 
-use futures::prelude::*;
+use futures::{io::BufReader, prelude::*};
 // use tokio::prelude::*;
 
 // pub struct DbContext<'a> {
@@ -84,17 +84,20 @@ impl<'a> CardFilter<'a> {
                 / color_identity(hm) 
                 / power(hm) 
                 / toughness(hm) 
+                / sort(hm)
                 / name(hm)
                 )
 
                 rule cmc(hm: &mut std::collections::HashMap<&str, String>)
                 = "cmc:" value:$number_range() { hm.insert("cmc", String::from(value)); }
+                rule tag(hm: &mut HashMap<&str, String>)
+                = tag_alias() ":" value:word() { hm.insert("tag", value); }
                 rule name(hm: &mut HashMap<&str, String>)
                 = name_alias()? value:ss_values() { hm.insert("name", value); }
                 rule text(hm: &mut HashMap<&str, String>)
                 = text_alias() ":" value:text_group() ** or_separator() { if value[0] != String::default() { hm.insert("text", value.join("|")); }}
-                rule tag(hm: &mut HashMap<&str, String>)
-                = tag_alias() ":" value:ss_values() { hm.insert("tag", value); }
+                rule sort(hm: &mut HashMap<&str, String>)
+                = "sort:" value:$(['+' | '-'] ("name" / "cmc")) { hm.insert("sort", String::from(value)); }
                 rule color(hm: &mut HashMap<&str, String>)
                 = color_alias() ":" value:$(colors()+) ** or_separator() { if !value.is_empty() { hm.insert("color", value.join("|")); }}
                 rule ctype(hm: &mut HashMap<&str, String>)
@@ -124,7 +127,7 @@ impl<'a> CardFilter<'a> {
                 rule tag_alias() = ("tag" / "tags")
 
                 rule word() -> String
-                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '\'' | '.']+) { String::from(s) }
+                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '\'' | '.' | '_'| '\'']+) { String::from(s) }
                 rule phrase() -> String
                 =s:$("!"? "\"" (word() / " " / "+" / ":" / "/")+ "\"" ) {String::from(s) }
                 // rule exp_types() -> String
@@ -181,11 +184,13 @@ ON cards.name = deck_contents.card_name
 WHERE deck_contents.deck = {}", self.did) }
         };
         
+        let mut order = String::from("ASC");
+        let mut sort_on = String::from("name");
         let mut vs = Vec::from([initial]);
 
         for (key, value) in self.fi.clone() {
             match key {
-                "name" => { vs.push(format!("AND (cards.name LIKE \'%{}%\')", value.trim_matches('\"'))); }
+                "name" => { vs.push(format!("AND (cards.name LIKE \"%{}%\")", value.trim_matches('\"'))); }
                 "tag" => { vs.push(format!(r#"AND tags IS NOT NULL AND tags REGEXP '\|?{}(?:$|\|)'"#, value))}
                 "text" => { 
                     let tegs = value.split("|"); 
@@ -308,12 +313,22 @@ WHERE deck_contents.deck = {}", self.did) }
                         None => {}
                     }
                 }
+                "sort" => {
+                    match value.get(0..1) {
+                        Some("+") => { order = String::from("ASC"); }
+                        Some("-") => { order = String::from("DESC"); }
+                        Some(_) => {}
+                        None => {}
+                    }
+                    sort_on = String::from(value.get(1..).unwrap());
+                }
                 //TODO: Add later. Not critical right now, and will be annoying due to the string->integer translation.
                 // "strength" => {}
                 // "toughness" => {}
                 _ => {}
             }
         }
+        vs.push(format!("ORDER BY {} {};", sort_on, order));
 
         vs.join("\n")
     }
@@ -551,10 +566,41 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
 //     stmt.execute_named(named_params!{":code": s.code, ":name": s.name} )?;
 //     Ok(())
 // }
-pub fn icntodc(conn: &Connection, c: &String, did: i32) -> Result<()> {
+pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
+    let mut r = Vec::new();
     let mut stmt = conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?;
-    stmt.execute_named(named_params!{":card_name": c, ":deck_id": did as u32} )?;
-    Ok(())
+    stmt.execute_named(named_params!{":card_name": c.name, ":deck_id": did as u32} )?;
+    r.push(rcfn(conn, &c.name).unwrap());
+    
+    match &c.lo {
+        crate::Layout::Flip(_, n) | 
+        crate::Layout::Split(_, n) | 
+        crate::Layout::ModalDfc(_, n) | 
+        crate::Layout::Aftermath(_, n) | 
+        crate::Layout::Adventure(_, n) | 
+        crate::Layout::Transform(_, n) => { 
+            stmt.execute_named(named_params!{":card_name": n, ":deck_id": did as u32} )?;
+            r.push(rcfn(conn, &c.name).unwrap());
+        }
+        crate::Layout::Meld(s, n, m) => { 
+            if s == &'b' {  
+                stmt.execute_named(named_params!{":card_name": n, ":deck_id": did as u32} )?;
+                r.push(rcfn(conn, &c.name).unwrap()); 
+                stmt.execute_named(named_params!{":card_name": m, ":deck_id": did as u32} )?;
+                r.push(rcfn(conn, &c.name).unwrap());
+            } else {
+                let names: Vec<String> =  rvcfdid(conn, did).unwrap().iter().map(|c| c.to_string()).collect();
+                if names.contains(&n) {  
+                    stmt.execute_named(named_params!{":card_name": m, ":deck_id": did as u32} )?;
+                    r.push(rcfn(conn, &c.name).unwrap());
+                }
+            }
+        }
+        _ => {}
+    }
+
+
+    Ok(r)
 }
 
 pub fn dcntodc(conn: &Connection, c: &String, did: i32) -> Result<()> {
@@ -579,26 +625,39 @@ pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<Card
     Some(card)
 }
 
-pub fn ideck(conn: &Connection, n: String, c: String, t: &str) -> Result<i32> {
-    // let s = format!("INSERT INTO decks (name, commander, deck_type) VALUES ({}, {}, {});", n, c, t);
-    // let mut stmt = conn.prepare(s.as_str())?;
+pub fn ideck(conn: &Connection, n: &String, c: &String, t: &str) -> Result<i32> {
     let mut stmt = conn.prepare(
         "INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);").unwrap();
-    // let rid = stmt.insert(NO_PARAMS)?;
-    // conn.query_row(sql, params, f)
     stmt.execute_named(named_params!{":name": n, ":commander": c,":deck_type": t} ).unwrap();
     let rid = conn.last_insert_rowid();
-    println!("Row ID is {}", rid);
-    icntodc(conn, &c, rid.try_into().unwrap()).unwrap();
+    // println!("Row ID is {}", rid);
+    let com = rcfn(conn, &c).unwrap();
+    ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
     Ok(rid.try_into().unwrap())
 }
 
-pub fn import_deck(conn: &Connection, vc: Vec<String>, deck_id: i32) -> Result<()> {
-    conn.execute_batch("BEGIN TRANSACTION;")?;
-    for c in vc {
-        icntodc(conn, &c, deck_id)?;
-    }
-    conn.execute_batch("COMMIT TRANSACTION;")?;
+pub fn import_deck(conn: &Connection, deck_name: String, com_name: String, cards: Vec<String>) -> Result<()> {
+    let mut num = 0;
+    if let Ok(_) = rcfn(conn, &com_name) {
+        println!("Commander name is valid! Now creating deck...");
+        if let Ok(deck_id) = ideck(conn, &deck_name, &com_name, "Commander") {
+            println!("Deck created successfully! Now adding cards...");
+            conn.execute_batch("BEGIN TRANSACTION;")?;
+            for c in cards {
+                println!("Adding {}", c);
+                let card = if let Some(i) = c.find(" // ") {
+                    let c = c.get(0..i).unwrap();
+                    rcfn(conn, &c.to_string()).unwrap()
+                } else {
+                    rcfn(conn, &c).unwrap()
+                };
+                ictodc(conn, &card, deck_id)?;
+                num += 1;
+            }
+            conn.execute_batch("COMMIT TRANSACTION;")?;
+        };
+    };
+    println!("Added {} cards to deck {}", num, deck_name);
 
     Ok(())
 }
@@ -687,8 +746,7 @@ pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<Ca
     let qs = format!("
         SELECT {}
         FROM `cards`
-        {}
-        ORDER BY name;", fields, cf.make_filter(conn, general));
+        {}", fields, cf.make_filter(conn, general));
 
     // println!("Preparing query:\n{}", qs);
 
@@ -767,11 +825,7 @@ fn cfr(row:& Row) -> Result<Card> {
         // println!("In tags!");
         match row.get::<usize, String>(13) {
             Ok(a) => {
-                if !a.is_empty() {
-                    a.split("|").map(|s| s.to_string()).collect()
-                } else {
-                    Vec::new()
-                }
+                stovs(a)
             }
             Err(_) => { Vec::new() }
         } 
@@ -793,6 +847,31 @@ fn cfr(row:& Row) -> Result<Card> {
     })
 }
 
+pub fn rvmcfd(conn: &Connection, did: i32) -> Result<Vec<CardStat>> {
+    let mut stmt = conn.prepare(r#"SELECT
+        cmc, color_identity, mana_cost, name, tags, types, price
+        FROM cards
+        INNER JOIN deck_contents
+        ON cards.name = deck_contents.card_name
+        WHERE deck_contents.deck = :did
+        AND (side != 'b' OR layout == 'split' OR layout == 'modal_dfc')
+        AND tags IS NOT NULL 
+        AND tags REGEXP '\|?main(?:$|\|)';"#).unwrap();
+    let a = stmt.query_map_named(named_params!{":did": did}, |row| {
+            Ok( CardStat {
+                cmc: row.get::<usize, f64>(0)? as u8,
+                color_identity: stovs(row.get(1)?),
+                mana_cost: row.get(2)?,
+                name: row.get(3)?,
+                tags: stovs(row.get(4)?),
+                types: row.get(5)?,
+                price: row.get(6)?,
+            })
+        }
+    )?.collect();
+    a
+}
+
 pub fn ucfd(conn: &Connection, did: i32) -> Result<()> {
     let mut stmt = conn.prepare(r#"
         SELECT name, layout, related_cards, side, date_price_retrieved, tags
@@ -801,7 +880,7 @@ pub fn ucfd(conn: &Connection, did: i32) -> Result<()> {
         ON cards.name = deck_contents.card_name
         WHERE deck_contents.deck = :did
         AND side != 'b'
-        AND date_price_retrieved < date()
+        AND (date_price_retrieved ISNULL OR date_price_retrieved < date('now','-6 day'))
         AND tags IS NOT NULL 
         AND tags REGEXP '\|?main(?:$|\|)';"#).unwrap();
     let delay = time::Duration::from_millis(100);
@@ -816,15 +895,13 @@ pub fn ucfd(conn: &Connection, did: i32) -> Result<()> {
     date_price_retrieved = date()
     WHERE name = :name;").unwrap();
     // a
-    let mut num = 0;
+    // let mut num = 0;
     for (name, price) in a.unwrap() {
-        num += stmt.execute_named(named_params!{":price": price, ":name": name}).unwrap();
+        stmt.execute_named(named_params!{":price": price, ":name": name}).unwrap();
     }
-    println!("{} total prices updated.", num);
+    // println!("{} total prices updated.", num);
     Ok(())
 }
-
-//clarity courteous
 
 pub fn rpfdc(row: &Row) -> Result<f64> {
     let layout: String = row.get(1)?;
@@ -840,7 +917,7 @@ pub fn rpfdc(row: &Row) -> Result<f64> {
     let future = rcostfcn(&s);
     let res = rt.block_on(future).unwrap();
 
-    println!("{} has a price of {}", s, res);
+    // println!("{} has a price of {}", s, res);
 
     Ok(res)
 }

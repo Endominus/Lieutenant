@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use crossterm::event::KeyCode;
 use regex::Regex;
-use tui::{text::{Span, Spans}, widgets::{List, ListItem, ListState, Paragraph, Block, Borders, Wrap}};
+use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Wrap}};
 use tui::style::{Color, Modifier, Style};
 
-use crate::db;
+use crate::{CardStat, db};
 
 #[derive(Copy, Clone)]
 pub enum Screen {
@@ -15,7 +17,7 @@ pub enum Screen {
     DeckCard,
     DbFilter,
     DbCards,
-    // DeckStat,
+    DeckStat,
     Error(&'static str),
 }
 
@@ -211,7 +213,7 @@ impl Omnitext {
     }
 
     pub fn rt(&self) -> Option<String> {
-        let re = Regex::new(r"\+tag:(\w+)").unwrap();
+        let re = Regex::new(r"/tag:(\w*)").unwrap();
         if let Some(cap) = re.captures(self.text.as_str()) { return Some(String::from(&cap[1])) }
         None
     }
@@ -354,4 +356,80 @@ impl<'a> DeckScreen<'a> {
     }
 }
 
-// fn focus_border
+pub struct DeckStatScreen<'a> {
+    pub mana_curve: BarChart<'a>,
+    pub prices: Table<'a>,
+    pub type_breakdown: BarChart<'a>,
+    pub tag_list: List<'a>,
+}
+
+#[derive(Default, Clone)]
+pub struct DeckStatInfo {
+    pub cmc_data: Vec<(String, u64)>,
+    pub price_data: Vec<(String, f64)>,
+    pub type_data: Vec<(String, u64)>,
+    pub tag_data: Vec<(String, u64)>,
+}
+
+impl<'a> DeckStatScreen<'a> {
+    pub fn from(
+        cmc_data: &'a Vec<(&'a str, u64)>, 
+        price_data: &'a Vec<(String, f64)>, 
+        type_data: &'a Vec<(&'a str, u64)>,
+        tag_data: Vec<ListItem<'a>>) -> DeckStatScreen<'a> {
+        
+
+        let mana_curve = BarChart::default()
+            .block(Block::default().title("Converted Mana Costs").borders(Borders::ALL))
+            .bar_width(3)
+            .bar_gap(1)
+            .bar_style(Style::default().fg(Color::White).bg(Color::Black))
+            .value_style(Style::default().fg(Color::Black).add_modifier(Modifier::BOLD))
+            .label_style(Style::default().fg(Color::Cyan))
+            .data(cmc_data.as_slice());
+
+        let type_breakdown = BarChart::default()
+            .block(Block::default().title("Type Breakdown").borders(Borders::ALL))
+            .bar_width(3)
+            .bar_gap(1)
+            .bar_style(Style::default().fg(Color::White).bg(Color::Black))
+            .value_style(Style::default().fg(Color::Black).add_modifier(Modifier::BOLD))
+            .label_style(Style::default().fg(Color::Cyan))
+            .data(type_data.as_slice());
+
+        let mut prices = Vec::new();
+        let mut total = 0.0;
+        for (n, v) in price_data {
+            total += v;
+            let r = Row::new(vec![Cell::from(n.as_str()), Cell::from(v.to_string())]);
+            prices.push(r);
+        }
+        prices.insert(0, Row::new(vec![Cell::from("Total"), Cell::from(total.to_string())])
+            .style(Style::default().add_modifier(Modifier::BOLD)));
+
+        let prices = Table::new(prices)
+        // You can set the style of the entire Table.
+        .style(Style::default().fg(Color::White))
+        // It has an optional header, which is simply a Row always visible at the top.
+        .header(
+            Row::new(vec!["Card", "Price"])
+                .style(Style::default().fg(Color::Yellow)))
+        .block(Block::default().title("Card Prices").borders(Borders::ALL))
+        // Columns widths are constrained in the same way as Layout...
+        .widths(&[Constraint::Length(20), Constraint::Length(6)])
+        .column_spacing(1);
+
+        let tag_list = List::new(tag_data)
+            .block(Block::default().title("List").borders(Borders::ALL))
+            .style(Style::default().fg(Color::White))
+            .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
+            .highlight_symbol(">>");
+
+        DeckStatScreen {
+            mana_curve,
+            prices,
+            type_breakdown,
+            tag_list,
+        }
+    }
+}
