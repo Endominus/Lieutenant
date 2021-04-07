@@ -1,47 +1,50 @@
 -- -- SQLite
 -- SELECT 
 --     name, 
---     -- card_text, 
---     -- mana_cost,
---     -- layout, 
---     types, 
---     -- supertypes, 
---     -- subtypes, 
---     color_identity, 
---     -- related_cards, 
---     -- power, 
---     -- toughness, 
---     cmc
--- FROM `cards`
--- INNER JOIN deck_contents
--- ON cards.name = deck_contents.card_name
--- WHERE deck_contents.deck = 1
--- -- AND power LIKE '%*%'
--- -- AND (cards.name LIKE '%ana%' OR cards.name LIKE '%wis%')
--- -- AND types LIKE '%artifact%' 
--- -- OR types LIKE '%land%'
--- -- AND cmc > 4
--- -- AND card_text LIKE '%you control%'
--- -- AND instr(mana_cost, 'R') = 0
--- -- AND instr(mana_cost, 'G') = 0 
--- -- AND instr(mana_cost, 'W') = 0 
--- ORDER BY name;
-
--- SELECT 
-    -- name,
-    -- legalities,
     -- card_text, 
     -- mana_cost,
-    -- layout, 
+    -- layout,
+    -- side, 
     -- types, 
+    -- supertypes, 
+    -- subtypes, 
     -- color_identity, 
     -- related_cards, 
     -- power, 
     -- toughness, 
     -- cmc
-    -- *
+--     tags,
+--     price
+-- FROM `cards`
+-- INNER JOIN deck_contents
+-- ON cards.name = deck_contents.card_name
+-- WHERE deck_contents.deck = 6
+-- AND power LIKE '%*%'
+-- AND (cards.name LIKE '%ana%' OR cards.name LIKE '%wis%')
+-- AND layout = 'modal_dfc' 
+-- OR types LIKE '%land%'
+-- AND cmc > 4
+-- AND card_text LIKE '%you control%'
+-- AND instr(mana_cost, 'R') = 0
+-- AND instr(mana_cost, 'G') = 0 
+-- AND instr(mana_cost, 'W') = 0 
+-- ORDER BY name;
+
+-- SELECT 
+--     name,
+--     legalities,
+--     card_text, 
+--     mana_cost,
+--     layout, 
+--     types, 
+--     color_identity, 
+--     related_cards, 
+--     power, 
+--     toughness, 
+--     cmc
+--     -- *
 -- FROM cards
--- WHERE 1=1
+-- WHERE name LIKE "%Hunter's%";
 -- AND legalities = "";
 -- AND instr(color_identity, 'U') = 0 
 -- AND instr(color_identity, 'B') = 0 
@@ -78,6 +81,14 @@
 --             foreign key (deck) references decks(id),
 --             unique (deck, card_name) on conflict ignore);
 
+-- -- SELECT *
+-- DELETE
+-- FROM decks
+-- WHERE id = 3;
+-- DELETE
+-- FROM deck_contents
+-- WHERE deck = 3;
+
 -- UPDATE cards 
 -- SET related_cards = "Bruna, the Fading Light|Gisela, the Broken Blade" 
 -- WHERE name = "Brisela, Voice of Nightmares";
@@ -96,7 +107,7 @@
 
 -- UPDATE deck_contents SET tags = NULL WHERE tags = "";
 
--- SELECT * FROM deck_contents WHERE tags IS NOT NULL;
+-- SELECT * FROM deck_contents WHERE tags LIKE "%|";
 
 -- SELECT name,card_text,side,layout,related_cards,types 
 -- FROM cards 
@@ -107,3 +118,36 @@
 
 -- ALTER TABLE cards ADD COLUMN price REAL;
 -- ALTER TABLE cards ADD COLUMN date_price_retrieved TEXT;
+-- ALTER TABLE cards ADD COLUMN rarity TEXT;
+
+-- SELECT name, layout, related_cards, side, date_price_retrieved, tags
+--         FROM cards
+--         INNER JOIN deck_contents
+--         ON cards.name = deck_contents.card_name
+--         WHERE deck_contents.deck = 1
+--         AND layout != 'normal'
+--         AND side != 'b';
+
+-- UPDATE cards
+-- SET price = 0.0,
+-- date_price_retrieved = date('now','-2 day')
+-- WHERE name = "Chulane, Teller of Tales";
+
+-- SELECT name, price, date_price_retrieved
+-- FROM cards
+-- WHERE price != "";
+-- WHERE date_price_retrieved < date();
+-- WHERE name = "Raging Goblin";
+
+-- SELECT name, layout, side
+-- FROM cards
+-- WHERE layout == 'modal_dfc';
+
+-- SELECT name, layout, related_cards, side, date_price_retrieved, tags
+--         FROM cards
+--         INNER JOIN deck_contents
+--         ON cards.name = deck_contents.card_name
+--         WHERE deck_contents.deck = 1
+--         AND side != 'b'
+--         AND (date_price_retrieved ISNULL OR date_price_retrieved < date())
+--         AND tags IS NOT NULL 

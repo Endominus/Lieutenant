@@ -91,7 +91,7 @@ impl<'a> CardFilter<'a> {
                 rule cmc(hm: &mut std::collections::HashMap<&str, String>)
                 = "cmc:" value:$number_range() { hm.insert("cmc", String::from(value)); }
                 rule tag(hm: &mut HashMap<&str, String>)
-                = tag_alias() ":" value:word() { hm.insert("tag", value); }
+                = tag_alias() ":" value:text_group() ** and_separator() { hm.insert("tag", value.join("|")); }
                 rule name(hm: &mut HashMap<&str, String>)
                 = name_alias()? value:ss_values() { hm.insert("name", value); }
                 rule text(hm: &mut HashMap<&str, String>)
@@ -191,7 +191,13 @@ WHERE deck_contents.deck = {}", self.did) }
         for (key, value) in self.fi.clone() {
             match key {
                 "name" => { vs.push(format!("AND (cards.name LIKE \"%{}%\")", value.trim_matches('\"'))); }
-                "tag" => { vs.push(format!(r#"AND tags IS NOT NULL AND tags REGEXP '\|?{}(?:$|\|)'"#, value))}
+                "tag" => { 
+                    vs.push(format!(r#"AND tags IS NOT NULL"#));
+                    let tags = value.split("&");
+                    for tag in tags {
+                        vs.push(format!(r#"AND tags REGEXP '\|?{}(?:$|\|)'"#, tag));
+                    }
+                }
                 "text" => { 
                     let tegs = value.split("|"); 
                     let mut vteg = Vec::new();
@@ -305,9 +311,12 @@ WHERE deck_contents.deck = {}", self.did) }
                             match value.find("-") {
                                 Some(i) => {
                                     let (min, max) = value.split_at(i);
-                                    vs.push(format!("AND (cmc >= {} AND cmc <= {}", min, max.get(1..).unwrap()));
+                                    let max = if let Some(i) = max.get(1..) { i } else { "1000" };
+                                    vs.push(format!("AND (cmc >= {} AND cmc <= {})", min, max));
                                 }
-                                None => {}
+                                None => {
+                                    vs.push(format!("AND cmc = {}", value));
+                                }
                             }
                         }
                         None => {}
@@ -798,7 +807,7 @@ fn cfr(row:& Row) -> Result<Card> {
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
                     Layout::Meld(side, face, transform)
                 }
-                "modaldfc" => {
+                "modal_dfc" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
                     Layout::ModalDfc(side, rel)    
@@ -865,7 +874,11 @@ pub fn rvmcfd(conn: &Connection, did: i32) -> Result<Vec<CardStat>> {
                 name: row.get(3)?,
                 tags: stovs(row.get(4)?),
                 types: row.get(5)?,
-                price: row.get(6)?,
+                price: if let Ok(i) = row.get(6) {
+                    i
+                } else {
+                    0.0
+                }
             })
         }
     )?.collect();

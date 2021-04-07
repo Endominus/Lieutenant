@@ -1,14 +1,16 @@
-// extern crate anyhow;
-
-use tui::widgets::{Clear, ListItem, Paragraph, Row};
-use tui::layout::Rect;
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::time::Duration; 
+use std::io::stdout;
+use std::thread;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, read, KeyEvent},
+    event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, read, KeyEvent, poll},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use tui::widgets::{Clear, ListItem, Paragraph, Row};
+use tui::layout::Rect;
 use rusqlite::Connection;
-use std::{collections::HashMap, convert::TryInto, io::stdout};
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
@@ -17,12 +19,9 @@ use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
 use crate::{Card, Deck, db::rcfndid};
 use crate::db;
-// use crate::db::DbContext;
 
 mod util;
-use util::{StatefulList, MainMenuItem, Screen, DeckScreen, MakeDeckScreen, MakeDeckContents, Omnitext};
-
-use self::util::{DeckStatInfo, DeckStatScreen, MakeDeckFocus};
+use util::{StatefulList, MainMenuItem, Screen, DeckScreen, MakeDeckScreen, MakeDeckContents, Omnitext, DeckStatInfo, DeckStatScreen, MakeDeckFocus};
 
 struct AppState {
     mode: Screen,
@@ -510,7 +509,6 @@ impl AppState {
 
     pub fn generate_dss_info(& self) -> DeckStatInfo {
         let mut dsi = DeckStatInfo::default();
-        db::ucfd(&self.dbc, self.deck_id).unwrap();
         let vc = db::rvmcfd(&self.dbc, self.deck_id).unwrap();
         let types = vec!["Legendary", "Land", "Creature", "Planeswalker", "Enchantment", "Instant", "Sorcery", "Artifact"];
         let mut hm_type: HashMap<String, u64> = HashMap::new();
@@ -788,11 +786,26 @@ pub fn run() -> Result<()> {
     let mut state = AppState::new();
 
     loop {
-        // terminal.hide_cursor()?;
         draw(&mut terminal, &mut state)?;
 
-        if let Event::Key(KeyEvent { code, .. }) = read()? {
-            let _a = state.handle_input(code);
+        if state.mode != Screen::DeckStat {
+            if let Event::Key(KeyEvent { code, .. }) = read()? {
+                let _a = state.handle_input(code);
+                if state.mode == Screen::DeckStat {
+                    let did = state.deck_id.clone();
+                    let child = thread::spawn(move || {
+                        let conn = Connection::open("lieutenant.db").unwrap();
+                        db::add_regexp_function(&conn).unwrap();
+                        db::ucfd(&conn, did).unwrap();
+                    });
+                }
+            }
+        } else {
+            if poll(Duration::from_millis(100))? {
+                if let Event::Key(KeyEvent { code, .. }) = read()? {
+                    let _a = state.handle_input(code);
+                }
+            }
         }
 
         if state.quit {

@@ -7,7 +7,7 @@ use tui::style::{Color, Modifier, Style};
 
 use crate::{CardStat, db};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Screen {
     MainMenu,
     MakeDeck,
@@ -408,16 +408,13 @@ impl<'a> DeckStatScreen<'a> {
             .style(Style::default().add_modifier(Modifier::BOLD)));
 
         let prices = Table::new(prices)
-        // You can set the style of the entire Table.
-        .style(Style::default().fg(Color::White))
-        // It has an optional header, which is simply a Row always visible at the top.
-        .header(
-            Row::new(vec!["Card", "Price"])
-                .style(Style::default().fg(Color::Yellow)))
-        .block(Block::default().title("Card Prices").borders(Borders::ALL))
-        // Columns widths are constrained in the same way as Layout...
-        .widths(&[Constraint::Length(20), Constraint::Length(6)])
-        .column_spacing(1);
+            .style(Style::default().fg(Color::White))
+            .header(
+                Row::new(vec!["Card", "Price"])
+                    .style(Style::default().fg(Color::Yellow)))
+            .block(Block::default().title("Card Prices").borders(Borders::ALL))
+            .widths(&[Constraint::Length(20), Constraint::Length(6)])
+            .column_spacing(1);
 
         let tag_list = List::new(tag_data)
             .block(Block::default().title("List").borders(Borders::ALL))
