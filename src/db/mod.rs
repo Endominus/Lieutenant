@@ -250,8 +250,8 @@ WHERE deck_contents.deck = {}", self.did) }
                             let f = match ci { //TODO: Speed test instr vs regex
                                 'w' => { format!("instr(color_identity, 'W') {} 0", include) }
                                 'u' => { format!("instr(color_identity, 'U') {} 0", include) }
-                                'b' => { format!("instr(color_identity, 'R') {} 0", include) }
-                                'r' => { format!("instr(color_identity, 'B') {} 0", include) }
+                                'b' => { format!("instr(color_identity, 'B') {} 0", include) }
+                                'r' => { format!("instr(color_identity, 'R') {} 0", include) }
                                 'g' => { format!("instr(color_identity, 'G') {} 0", include) }
                                 'c' => { format!("color_identity REGEXP \'^[^WUBRG]*$\'") }
                                 '!' => { include = "="; continue;}
@@ -311,7 +311,9 @@ WHERE deck_contents.deck = {}", self.did) }
                             match value.find("-") {
                                 Some(i) => {
                                     let (min, max) = value.split_at(i);
-                                    let max = if let Some(i) = max.get(1..) { i } else { "1000" };
+                                    // let max = if let Some("") = max.get(1..) { i } else { "1000" };
+                                    let max_raw = max.get(1..).unwrap();
+                                    let max = if "" == max_raw { "1000" } else { max_raw };
                                     vs.push(format!("AND (cmc >= {} AND cmc <= {})", min, max));
                                 }
                                 None => {

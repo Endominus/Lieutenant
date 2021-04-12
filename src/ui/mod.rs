@@ -793,7 +793,7 @@ pub fn run() -> Result<()> {
                 let _a = state.handle_input(code);
                 if state.mode == Screen::DeckStat {
                     let did = state.deck_id.clone();
-                    let child = thread::spawn(move || {
+                    thread::spawn(move || {
                         let conn = Connection::open("lieutenant.db").unwrap();
                         db::add_regexp_function(&conn).unwrap();
                         db::ucfd(&conn, did).unwrap();

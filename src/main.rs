@@ -458,6 +458,7 @@ fn main() {
             // println!("{:?}", CardFilter::parse_omni("cmc:<10"));
             // println!("{:?}", CardFilter::parse_omni("cmc:>10"));
             // println!("{:?}", CardFilter::parse_omni("ci:wb"));
+            // println!("{:?}", CardFilter::parse_omni("ci:wr"));
             // println!("{:?}", CardFilter::parse_omni("coloridentity:w/b"));
             // println!("{:?}", CardFilter::parse_omni("color_identity:b|g|w"));
             // println!("{:?}", CardFilter::parse_omni("p:0-4"));
@@ -487,8 +488,9 @@ fn main() {
             
             // let omni = String::from("n:\"kor sky\" ty:artifact cmc:>4 te:w|");
             // let omni = String::from("ty:artifact cmc:>4 color:w|");
-            // let cf = CardFilter::from(2, & omni);
-            // println!("{}", cf.make_filter(&conn, false));
+            let omni = String::from("ty:artifact ci:wr cmc:2-");
+            let cf = CardFilter::from(5, & omni);
+            println!("{}", cf.make_filter(&conn, false));
             // let omni = String::from("ty: cmc:>4");
             // let cf = CardFilter::from(1, & omni);
             // println!("{}", cf.make_filter(&conn, false));
@@ -543,7 +545,7 @@ fn main() {
             //     .unwrap()
             //     .block_on(future);
             // res
-            let _a = db::ucfd(&conn, 2);
+            // let _a = db::ucfd(&conn, 2);
 
 
         }
