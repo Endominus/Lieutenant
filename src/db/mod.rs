@@ -172,12 +172,19 @@ impl<'a> CardFilter<'a> {
     pub fn make_filter(&self, conn: &Connection, general: bool) -> String {
         let initial = match general {
             true => { 
-                let com = rcomfdid(conn, self.did).unwrap();
+                let com = rcomfdid(conn, self.did, false).unwrap();
                 let mut colors = String::from("WUBRG");
                 for ci in com.color_identity {
                     colors = colors.replace(&ci, "");
                 }
-                format!("WHERE color_identity REGEXP \'^[^{}]*$\'", colors) }
+
+                if let Ok(com) = rcomfdid(conn, self.did, true) {
+                    for ci in com.color_identity {
+                        colors = colors.replace(&ci, "");
+                    }
+                }
+                format!("WHERE color_identity REGEXP \'^[^{}]*$\'", colors) 
+            }
             false => { format!("
 INNER JOIN deck_contents
 ON cards.name = deck_contents.card_name
@@ -408,7 +415,7 @@ pub fn initdb(conn: &Connection) -> Result<()> {
     )?;
     
     conn.execute(
-        "create table if not exists decks2 (
+        "create table if not exists decks (
             id integer primary key,
             name text not null,
             commander text not null,
@@ -421,12 +428,12 @@ pub fn initdb(conn: &Connection) -> Result<()> {
         )?;
 
     conn.execute(
-        "create table if not exists deck_contents (
+        "create table if not exists deck_contents2 (
             id integer primary key,
             card_name text not null,
             deck integer not null,
             tags text,
-            foreign key (deck) references decks(id),
+            foreign key (deck) references decks(id) ON DELETE CASCADE,
             unique (deck, card_name) on conflict ignore)"
             , NO_PARAMS,
     )?;
@@ -597,21 +604,36 @@ pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<Card
     Some(card)
 }
 
-pub fn ideck(conn: &Connection, n: &String, c: &String, c2: &String, t: &str) -> Result<i32> {
-    let mut stmt = conn.prepare(
-        "INSERT INTO decks (name, commander, commander2, deck_type) VALUES (:name, :commander, :commander2, :deck_type);").unwrap();
-    stmt.execute_named(named_params!{":name": n, ":commander": c, ":commander2": c2, ":deck_type": t} ).unwrap();
-    let rid = conn.last_insert_rowid();
-    // println!("Row ID is {}", rid);
-    let com = rcfn(conn, &c).unwrap();
-    ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<&String>, t: &str) -> Result<i32> {
+    // if c2 == &String::new() { let c2 = None; }
+    // let c2 = c2.unwrap_or(rusqlite::types::Null);
+    match c2 {
+        Some(c2) => {
+            let mut stmt = conn.prepare(
+                "INSERT INTO decks (name, commander, commander2, deck_type) VALUES (:name, :commander, :commander2, :deck_type);").unwrap();
+            stmt.execute_named(named_params!{":name": n, ":commander": c, ":commander2": c2, ":deck_type": t} ).unwrap();
+            let rid = conn.last_insert_rowid();
+            let com = rcfn(conn, &c).unwrap();
+            ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+        
+            let com = rcfn(conn, &c2).unwrap();
+            ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
 
-    if c2.len() > 0 {
-        let com = rcfn(conn, &c2).unwrap();
-        ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+            Ok(rid.try_into().unwrap())
+            
+        }
+        None => {
+            let mut stmt = conn.prepare(
+                "INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);").unwrap();
+            stmt.execute_named(named_params!{":name": n, ":commander": c, ":deck_type": t} ).unwrap();
+            let rid = conn.last_insert_rowid();
+            let com = rcfn(conn, &c).unwrap();
+            ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+
+            Ok(rid.try_into().unwrap())
+        }
     }
-
-    Ok(rid.try_into().unwrap())
+    // println!("Row ID is {}", rid);
 }
 
 pub fn import_deck(conn: &Connection, deck_name: String, com_name: String, cards: Vec<String>) -> Result<()> {
@@ -620,7 +642,7 @@ pub fn import_deck(conn: &Connection, deck_name: String, com_name: String, cards
         println!("Commander name is valid! Now creating deck...");
         //TODO: Add support for multi-commander decks
         //TODO: Check that the given string is an actual commander's name
-        if let Ok(deck_id) = ideck(conn, &deck_name, &com_name, &String::new(), "Commander") {
+        if let Ok(deck_id) = ideck(conn, &deck_name, &com_name, None, "Commander") {
             println!("Deck created successfully! Now adding cards...");
             conn.execute_batch("BEGIN TRANSACTION;")?;
             for c in cards {
@@ -664,14 +686,25 @@ pub fn rcfndid(conn: &Connection, name: &String, did: i32) -> Result<Card> {
     })
 }
 
-pub fn rcomfdid(conn: &Connection, did: i32) -> Result<Card> {
+pub fn rcomfdid(conn: &Connection, did: i32, secondary: bool) -> Result<Card> {
     // let mut stmt = conn.prepare("SELECT commander FROM decks WHERE id = ?;")?;
 
-    let name = conn.query_row("SELECT commander FROM decks WHERE id = ?;",
-    params![did], 
-    |row|{
-        Ok(row.get(0)?)
-    })?;// .query_row(params![did], |row| {
+    let name = if secondary { 
+        conn.query_row("SELECT commander2 FROM decks WHERE id = ?;",
+        params![did], 
+        |row|{
+            match row.get::<usize, _>(0) {
+                Ok(i) => { Ok(i) }
+                Err(a) => { return Err(a); }
+            }
+        })?
+    } else {
+        conn.query_row("SELECT commander FROM decks WHERE id = ?;",
+        params![did], 
+        |row|{
+            Ok(row.get(0)?)
+        })?
+    };
 
     rcfn(conn, &name)
 }

@@ -81,13 +81,13 @@
 --             foreign key (deck) references decks(id),
 --             unique (deck, card_name) on conflict ignore);
 
--- SELECT *
+SELECT *
 -- DELETE
--- FROM decks;
--- WHERE id = 4;
+-- FROM decks
+-- WHERE id > 5;
 -- DELETE
--- FROM deck_contents;
--- WHERE deck = 4;
+FROM deck_contents
+WHERE deck = 1;
 -- SELECT name, layout, related_cards, side, price, date_price_retrieved, tags
 --         FROM cards
 --         INNER JOIN deck_contents
@@ -161,9 +161,9 @@
 --         AND (date_price_retrieved ISNULL OR date_price_retrieved < date())
 --         AND tags IS NOT NULL 
 
-SELECT name
-        FROM cards
-        WHERE name LIKE '%Rowan%'
-        AND types LIKE 'Legendary%'
-        AND (types LIKE '%Creature%' OR card_text LIKE '%can be your commander%')
-        ORDER BY name ASC;
+-- SELECT name
+--         FROM cards
+--         WHERE name LIKE '%Avacyn%'
+--         AND types LIKE 'Legendary%'
+--         AND (types LIKE '%Creature%' OR card_text LIKE '%can be your commander%')
+--         ORDER BY name ASC;

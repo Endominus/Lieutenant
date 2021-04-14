@@ -201,7 +201,6 @@ impl AppState {
                     _ => {}
                 }
             }
-
             Screen::DbFilter => {
                 match c {
                     KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
@@ -266,13 +265,14 @@ impl AppState {
                                         Ok(card) => {
                                             if card.text.contains("Partner") {
                                                 self.mdc.commander = name.clone();
+                                                self.mdc.commander_names.clear();
                                                 self.mdc.focus = MakeDeckFocus::SecondaryCommander;
                                             } else {
                                                 self.deck_id = db::ideck(
                                                     &self.dbc, 
                                                     &self.mdc.title, 
                                                     &name, 
-                                                    &String::new(),
+                                                    None,
                                                     "Commander").unwrap();
                                                 self.mdc = MakeDeckContents::default();
                                                 self.init_deck_view();
@@ -294,7 +294,7 @@ impl AppState {
                                                 &self.dbc, 
                                                 &self.mdc.title, 
                                                 &self.mdc.commander, 
-                                                name,
+                                                Some(name),
                                                 "Commander").unwrap();
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view();
@@ -304,12 +304,21 @@ impl AppState {
                                                 &self.dbc, 
                                                 &self.mdc.title, 
                                                 &self.mdc.commander, 
-                                                &String::new(),
+                                                None,
                                                 "Commander").unwrap();
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view();
                                         }
                                     }
+                                } else {
+                                    self.deck_id = db::ideck(
+                                        &self.dbc, 
+                                        &self.mdc.title, 
+                                        &self.mdc.commander, 
+                                        None,
+                                        "Commander").unwrap();
+                                    self.mdc = MakeDeckContents::default();
+                                    self.init_deck_view();
                                 }
                             }
                         }
@@ -402,6 +411,7 @@ impl AppState {
         self.omnitext = Omnitext::default();
         self.dbftext = Omnitext::default();
         self.contents = None;
+        self.mdc = MakeDeckContents::default();
         self.sldc = StatefulList::new();
         self.sldbc = StatefulList::new();
         self.dirty_deck = true;

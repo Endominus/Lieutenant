@@ -9,8 +9,9 @@ https://docs.magicthegathering.io/
 - Add, edit, and remove decks.
   - ~~Implement Create Deck screen.~~
   - Takes Deck Name, Commander, and optionally a file to import.
-  - Import needs to handle the '//' case of split cards, and automatically adding the other half of cards.
-  - Modify deck table to include basic lands somehow.
+  - View list of commanders as the user types. Can go up and down to select the specific one.
+  - List of potential commanders must include all potential commanders, including planeswalkers and partners.
+  - ~~Import needs to handle the '//' case of split cards, and automatically adding the other half of cards.~~
 - Manipulate cards in a deck.
   - ~~Add and remove cards.~~
   - ~~Automatically add the other half of split or transform cards.~~
@@ -24,12 +25,13 @@ https://docs.magicthegathering.io/
     - ~~cmc,~~
     - ~~color,~~
     - ~~color identity,~~
-    - ~~tag~~
+    - ~~tag,~~
+    - rarity,
     - power, 
     - toughness,
   - Sort by name and cmc, ascending and descending
 - View deck info.
-  - Include mana curve, color groups, type breakdowns
+  - Include ~~mana curve~~, color groups, ~~type breakdowns~~
   - Determine the number of "real" cards in deck and warn if that is too high.
 
 1.1 Features
