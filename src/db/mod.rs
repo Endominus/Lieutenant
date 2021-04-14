@@ -345,41 +345,6 @@ WHERE deck_contents.deck = {}", self.did) }
     }
 }
 
-//TODO: Write public function to retrieve all cards. Remove layouts scheme, planar, and vanguard
-
-// impl<'a> DbContext<'a> {
-//     pub fn new(dbfile: &str) -> Result<DbContext> {
-//         let conn = Connection::open(dbfile)?;
-//         DbContext::add_regexp_function(&conn);
-//         let stmts = HashMap::new();
-
-        // stmts.insert("ic", 
-        // conn.prepare("INSERT INTO cards (
-        //     name, mana_cost, cmc, types, card_text, power, toughness, color_identity, related_cards, layout, side, legalities
-        //     VALUES (
-        //         :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :color_identity, :related_cards, :layout, :side, :legalities
-        //     )")?);
-        // stmts.insert("iset", conn.prepare("INSERT INTO sets (code, name) VALUES (:code, :name);")?);
-        // stmts.insert("icntodc", conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?);
-        // stmts.insert("ideck", conn.prepare("INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);")?);
-        // stmts.insert("rcfn", 
-        // conn.prepare("SELECT cmc, color_identity, legalities, mana_cost, name, power, text, toughness, types, layout, related_cards, side
-        //     FROM cards WHERE name = :name;")?);
-        // stmts.insert("rvcfdid", 
-        // conn.prepare("SELECT 
-        //     cmc, color_identity, legalities, mana_cost, name, power, text, toughness, types, layout, related_cards, side
-        //     FROM cards 
-        //     INNER JOIN deck_contents
-        //     ON cards.name = deck_contents.card_name
-        //     WHERE deck_contents.deck = :did;")?);
-        // stmts.insert("rvd", conn.prepare("SELECT * FROM decks;")?);
-        // stmts.insert("rdfdid", conn.prepare("SELECT * FROM decks WHERE id = ?;")?);
-            
-    //     Ok(DbContext { conn, stmts })
-    // }
-
-// }
-
 pub fn add_regexp_function(db: &Connection) -> Result<()> {
     db.create_scalar_function(
         "regexp",
@@ -443,13 +408,15 @@ pub fn initdb(conn: &Connection) -> Result<()> {
     )?;
     
     conn.execute(
-        "create table if not exists decks (
+        "create table if not exists decks2 (
             id integer primary key,
             name text not null,
             commander text not null,
+            commander2 text,
             deck_type text not null,
             notes text,
-            foreign key (commander) references cards(name))"
+            foreign key (commander) references cards(name),
+            foreign key (commander2) references cards(name))"
             , NO_PARAMS,
         )?;
 
@@ -571,12 +538,6 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
     Ok((success, failure))
 }
 
-// // TODO: is, icntodc, and ideck can all be collapsed into one function.
-// pub fn iset (conn: Connection, s: Set) -> Result<()> {
-//     let mut stmt = stmts.get("iset").unwrap();
-//     stmt.execute_named(named_params!{":code": s.code, ":name": s.name} )?;
-//     Ok(())
-// }
 pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
     let mut r = Vec::new();
     let mut stmt = conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?;
@@ -636,14 +597,20 @@ pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<Card
     Some(card)
 }
 
-pub fn ideck(conn: &Connection, n: &String, c: &String, t: &str) -> Result<i32> {
+pub fn ideck(conn: &Connection, n: &String, c: &String, c2: &String, t: &str) -> Result<i32> {
     let mut stmt = conn.prepare(
-        "INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);").unwrap();
-    stmt.execute_named(named_params!{":name": n, ":commander": c,":deck_type": t} ).unwrap();
+        "INSERT INTO decks (name, commander, commander2, deck_type) VALUES (:name, :commander, :commander2, :deck_type);").unwrap();
+    stmt.execute_named(named_params!{":name": n, ":commander": c, ":commander2": c2, ":deck_type": t} ).unwrap();
     let rid = conn.last_insert_rowid();
     // println!("Row ID is {}", rid);
     let com = rcfn(conn, &c).unwrap();
     ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+
+    if c2.len() > 0 {
+        let com = rcfn(conn, &c2).unwrap();
+        ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+    }
+
     Ok(rid.try_into().unwrap())
 }
 
@@ -651,7 +618,9 @@ pub fn import_deck(conn: &Connection, deck_name: String, com_name: String, cards
     let mut num = 0;
     if let Ok(_) = rcfn(conn, &com_name) {
         println!("Commander name is valid! Now creating deck...");
-        if let Ok(deck_id) = ideck(conn, &deck_name, &com_name, "Commander") {
+        //TODO: Add support for multi-commander decks
+        //TODO: Check that the given string is an actual commander's name
+        if let Ok(deck_id) = ideck(conn, &deck_name, &com_name, &String::new(), "Commander") {
             println!("Deck created successfully! Now adding cards...");
             conn.execute_batch("BEGIN TRANSACTION;")?;
             for c in cards {
@@ -772,6 +741,44 @@ pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<Ca
     cards
 }
 
+pub fn rvcnfn(conn: &Connection, n: &String) -> Result<Vec<String>> {
+    let query = format!("
+        SELECT name
+        FROM cards
+        WHERE name LIKE \'%{}%\'
+        AND types LIKE \'Legendary%\'
+        AND (types LIKE \'%Creature%\' OR card_text LIKE \'%can be your commander%\')
+        ORDER BY name ASC;", n);
+    let mut stmt = conn.prepare(query.as_str())?;
+
+    let a = stmt.query_map(
+        NO_PARAMS, 
+        |row| { 
+            row.get(0)
+        }
+    )?;
+    a.collect()
+}
+
+pub fn rvcnfnp(conn: &Connection, n: &String) -> Result<Vec<String>> {
+    let query = format!("
+        SELECT name
+        FROM cards
+        WHERE name LIKE '%{}%'
+        AND types LIKE 'Legendary%'
+        AND card_text LIKE '%Partner%'
+        AND (types LIKE '%Creature%' OR card_text LIKE '%can be your commander%')
+        ORDER BY name ASC;", n);
+    let mut stmt = conn.prepare(query.as_str())?;
+
+    let a = stmt.query_map(
+        NO_PARAMS, 
+        |row| { 
+            row.get(0)
+        }
+    )?;
+    a.collect()
+}
 
 fn stovs(ss: String) -> Vec<String> {
     let mut vs = Vec::new();

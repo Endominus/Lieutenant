@@ -236,6 +236,7 @@ impl ToString for MainMenuItem { fn to_string(&self) -> String { self.text.clone
 pub enum MakeDeckFocus {
     Title,
     Commander,
+    SecondaryCommander,
     // Type
 }
 
@@ -246,25 +247,30 @@ pub struct MakeDeckContents {
     pub focus: MakeDeckFocus,
     pub title: String,
     pub commander: String,
+    pub commander2: String,
+    pub commander_names: Vec<String>,
 }
 
 // impl MakeDeckContents {}
 pub struct MakeDeckScreen<'a> {
     pub title_entry: Paragraph<'a>,
     pub commander_entry: Paragraph<'a>,
+    pub commander2_entry: Paragraph<'a>,
+    pub potential_commanders: StatefulList<String>,
 }
 
 impl<'a> MakeDeckScreen<'a> {
     pub fn new(mdc: &MakeDeckContents) -> MakeDeckScreen<'a> {
-        let (te, ce) = match mdc.focus {
+        let (te, ce, ce2) = match mdc.focus {
             MakeDeckFocus::Title => {
                 (Paragraph::new(mdc.title.clone())
                     .style(Style::default())
                     .block(Block::default().borders(Borders::ALL).title("Deck Name")
                         .style(Style::default().fg(Color::Yellow))),
                 Paragraph::new(mdc.commander.clone())
-                .style(Style::default())
-                .block(Block::default().borders(Borders::ALL).title("Commander")))
+                    .style(Style::default())
+                    .block(Block::default().borders(Borders::ALL).title("Commander")),
+                Paragraph::new(""))
             }
             MakeDeckFocus::Commander => {
                 (Paragraph::new(mdc.title.clone())
@@ -274,13 +280,32 @@ impl<'a> MakeDeckScreen<'a> {
                 Paragraph::new(mdc.commander.clone())
                     .style(Style::default())
                     .block(Block::default().borders(Borders::ALL).title("Commander"))
+                        .style(Style::default().fg(Color::Yellow)), 
+                Paragraph::new(""))
+            }
+            MakeDeckFocus::SecondaryCommander => {
+                (Paragraph::new(mdc.title.clone())
+                    .style(Style::default())
+                    .block(Block::default().borders(Borders::ALL).title("Deck Name")
+                        .style(Style::default().fg(Color::Cyan))),
+                Paragraph::new(mdc.commander.clone())
+                    .style(Style::default())
+                    .block(Block::default().borders(Borders::ALL).title("Commander"))
+                        .style(Style::default().fg(Color::Cyan)), 
+                Paragraph::new(mdc.commander2.clone())
+                    .style(Style::default())
+                    .block(Block::default().borders(Borders::ALL).title("Second Commander"))
                         .style(Style::default().fg(Color::Yellow)))
             }
         };
 
+        let list = StatefulList::with_items(mdc.commander_names.clone());
+
         MakeDeckScreen {
             title_entry: te,
             commander_entry: ce,
+            commander2_entry: ce2,
+            potential_commanders: list
         }
     }
 }

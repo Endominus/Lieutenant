@@ -81,13 +81,22 @@
 --             foreign key (deck) references decks(id),
 --             unique (deck, card_name) on conflict ignore);
 
--- -- SELECT *
+-- SELECT *
 -- DELETE
--- FROM decks
--- WHERE id = 3;
+-- FROM decks;
+-- WHERE id = 4;
 -- DELETE
--- FROM deck_contents
--- WHERE deck = 3;
+-- FROM deck_contents;
+-- WHERE deck = 4;
+-- SELECT name, layout, related_cards, side, price, date_price_retrieved, tags
+--         FROM cards
+--         INNER JOIN deck_contents
+--         ON cards.name = deck_contents.card_name
+--         WHERE deck_contents.deck = 4
+--         AND side != 'b'
+--         -- AND (date_price_retrieved ISNULL OR date_price_retrieved < date('now','-6 day'))
+--         AND tags IS NOT NULL 
+--         AND tags LIKE '%main%';
 
 -- UPDATE cards 
 -- SET related_cards = "Bruna, the Fading Light|Gisela, the Broken Blade" 
@@ -151,3 +160,10 @@
 --         AND side != 'b'
 --         AND (date_price_retrieved ISNULL OR date_price_retrieved < date())
 --         AND tags IS NOT NULL 
+
+SELECT name
+        FROM cards
+        WHERE name LIKE '%Rowan%'
+        AND types LIKE 'Legendary%'
+        AND (types LIKE '%Creature%' OR card_text LIKE '%can be your commander%')
+        ORDER BY name ASC;

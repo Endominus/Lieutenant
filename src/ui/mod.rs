@@ -260,19 +260,55 @@ impl AppState {
                         match self.mdc.focus {
                             MakeDeckFocus::Title => { self.mdc.focus = MakeDeckFocus::Commander; }
                             MakeDeckFocus::Commander => { 
-                                match db::rcfn(&self.dbc, &self.mdc.commander) {
-                                    Ok(_) => {
-                                        self.deck_id = db::ideck(
-                                            &self.dbc, 
-                                            &self.mdc.title, 
-                                            &self.mdc.commander, 
-                                            "Commander").unwrap();
-                                        self.mdc = MakeDeckContents::default();
-                                        self.init_deck_view();
+                                //TODO: Test against empty string
+                                if let Some(name) = self.mdc.commander_names.get(0) {
+                                    match db::rcfn(&self.dbc, &name) {
+                                        Ok(card) => {
+                                            if card.text.contains("Partner") {
+                                                self.mdc.commander = name.clone();
+                                                self.mdc.focus = MakeDeckFocus::SecondaryCommander;
+                                            } else {
+                                                self.deck_id = db::ideck(
+                                                    &self.dbc, 
+                                                    &self.mdc.title, 
+                                                    &name, 
+                                                    &String::new(),
+                                                    "Commander").unwrap();
+                                                self.mdc = MakeDeckContents::default();
+                                                self.init_deck_view();
+                                            }
+                                        }
+                                        Err(_) => {
+                                            self.mode_p = self.mode;
+                                            self.mode = Screen::Error("Commander name not found in database.\nPlease check spelling and try again.\nPress Enter to continue.");
+                                        }
                                     }
-                                    Err(_) => {
-                                        self.mode_p = self.mode;
-                                        self.mode = Screen::Error("Commander name not found in database.\nPlease check spelling and try again.\nPress Enter to continue.");
+                                }
+                                
+                            }
+                            MakeDeckFocus::SecondaryCommander => {
+                                if let Some(name) = self.mdc.commander_names.get(0) {
+                                    match db::rcfn(&self.dbc, &name) {
+                                        Ok(_) => {
+                                            self.deck_id = db::ideck(
+                                                &self.dbc, 
+                                                &self.mdc.title, 
+                                                &self.mdc.commander, 
+                                                name,
+                                                "Commander").unwrap();
+                                            self.mdc = MakeDeckContents::default();
+                                            self.init_deck_view();
+                                        }
+                                        Err(_) => {
+                                            self.deck_id = db::ideck(
+                                                &self.dbc, 
+                                                &self.mdc.title, 
+                                                &self.mdc.commander, 
+                                                &String::new(),
+                                                "Commander").unwrap();
+                                            self.mdc = MakeDeckContents::default();
+                                            self.init_deck_view();
+                                        }
                                     }
                                 }
                             }
@@ -281,13 +317,27 @@ impl AppState {
                     KeyCode::Backspace => { 
                         match self.mdc.focus {
                             MakeDeckFocus::Title => { self.mdc.title.pop(); }
-                            MakeDeckFocus::Commander => { self.mdc.commander.pop(); }
+                            MakeDeckFocus::Commander => { 
+                                self.mdc.commander.pop(); 
+                                self.mdc.commander_names = db::rvcnfn(&self.dbc, &self.mdc.commander).unwrap();
+                            }
+                            MakeDeckFocus::SecondaryCommander => { 
+                                self.mdc.commander2.pop(); 
+                                self.mdc.commander_names = db::rvcnfnp(&self.dbc, &self.mdc.commander2).unwrap();
+                            }
                         }
                     }
                     KeyCode::Char(ch) => {
                         match self.mdc.focus {
                             MakeDeckFocus::Title => { self.mdc.title.push(ch); }
-                            MakeDeckFocus::Commander => { self.mdc.commander.push(ch); }
+                            MakeDeckFocus::Commander => { 
+                                self.mdc.commander.push(ch); 
+                                self.mdc.commander_names = db::rvcnfn(&self.dbc, &self.mdc.commander).unwrap();
+                            }
+                            MakeDeckFocus::SecondaryCommander => { 
+                                self.mdc.commander2.push(ch); 
+                                self.mdc.commander_names = db::rvcnfnp(&self.dbc, &self.mdc.commander2).unwrap();
+                            }
                         }
                     }
                     _ => {}
@@ -596,11 +646,11 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             Screen::DeckOmni | Screen::DbFilter | Screen::DbCards | Screen::DeckCard => { 
                 let mut vrct = Vec::new();
                 let cut = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(3), Constraint::Min(5)].as_ref())
-                    .split(f.size());
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(3), Constraint::Min(5)].as_ref())
+                .split(f.size());
                 vrct.push(cut[0]);
-
+                
                 vrct.append(&mut Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Length(26),Constraint::Min(18)].as_ref())
@@ -608,10 +658,24 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 vrct
             }
             Screen::MakeDeck => { 
-                Layout::default()
+                let mut vrct = Vec::new();
+                let cut = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([Constraint::Length(3), Constraint::Length(3)])
-                    .split(f.size())
+                    .split(f.size());
+                vrct.push(cut[0]);
+
+                let cut = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Length(26), Constraint::Min(18)])
+                    .split(cut[1]);
+                vrct.push(cut[1]);
+
+                vrct.append(&mut Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Length(3)].as_ref())
+                    .split(cut[0]));
+                vrct
             }
             Screen::Error(_) => { 
                 Layout::default()
@@ -692,8 +756,14 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
             }
             Screen::MakeDeck => {
                 let mds = MakeDeckScreen::new(&state.mdc);
+                let list = List::new(mds.potential_commanders.rvli())
+                    .block(Block::default().title("Open Deck").borders(Borders::ALL))
+                    .style(Style::default().fg(Color::White))
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
                 f.render_widget(mds.title_entry, chunks[0]);
-                f.render_widget(mds.commander_entry, chunks[1]);
+                f.render_stateful_widget(list, chunks[1], &mut mds.potential_commanders.state.clone());
+                f.render_widget(mds.commander_entry, chunks[2]);
+                f.render_widget(mds.commander2_entry, chunks[3]);
             }
             Screen::DbCards => {
                 let text = state.get_card_info();
