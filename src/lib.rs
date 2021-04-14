@@ -1,18 +1,10 @@
 #![allow(dead_code)]
 #![feature(str_split_once)]
-// #[macro_use]
-// extern crate serde_derive;
-// extern crate serde_json;
-// extern crate serde;
-// extern crate reqwest;
-// extern crate crossterm;
-// extern crate tui;
-// extern crate structopt;
-
-// use self::serde::{Deserialize};
-
-// mod network;
-// mod db;
-// mod ui;
 
 
+
+
+pub mod network;
+pub mod db;
+pub mod ui;
+pub mod util;

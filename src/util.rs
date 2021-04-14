@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+// use std::collections::HashMap;
 
-use crossterm::event::KeyCode;
+// use crossterm::event::KeyCode;
 use regex::Regex;
 use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Wrap}};
 use tui::style::{Color, Modifier, Style};
 
-use crate::{CardStat, db};
+// use crate::db;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Screen {
@@ -137,7 +137,7 @@ impl<T: ToString> StatefulList<T> {
         self.items.iter().map(|f| ListItem::new(f.to_string())).collect()
     }
 
-    pub fn rvlis(& self,  pl: Vec<crate::Card>) -> Vec<ListItem> {
+    pub fn rvlis(& self,  pl: Vec<Card>) -> Vec<ListItem> {
         let vs: Vec<String> = pl.iter().map(|f| f.to_string()).collect();
 
         self.items.iter().map(|f| 
@@ -455,3 +455,132 @@ impl<'a> DeckStatScreen<'a> {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Card {
+    pub cmc: f64,
+    pub color_identity: Vec<String>,
+    // pub legalities: Legalities,
+    pub loyalty: String,
+    pub mana_cost: String,
+    pub name: String,
+    pub power: String,
+    pub tags: Vec<String>,
+    pub text: String,
+    pub toughness: String,
+    pub types: String,
+    pub lo: Layout,
+    //TODO: Add rarity and sets
+}
+
+impl ToString for Card { fn to_string(& self) -> String { self.name.clone() } }
+impl Card {
+    pub fn ri(&self) -> Vec<String> {
+        let mut v = vec![
+            self.name.clone(),
+            format!("{}, ({})", self.mana_cost, self.cmc),
+            self.types.clone(),
+            String::new(),
+        ];
+            
+        let t = self.text.split("\n");
+        for l in t {
+            v.push(l.to_string());
+        }
+
+        if self.power.len() > 0 {
+            v.push(format!("Power/Toughness: {}/{}", self.power, self.toughness));
+        } else if self.loyalty.len() > 0 {
+            v.push(format!("Loyalty: {}", self.loyalty.clone()));
+        }
+
+        v.push(String::new());
+
+        match &self.lo {
+            Layout::Adventure(side, rel) => { 
+                match side { 
+                    'a' => { v.push(format!("Also has Adventure: {}", rel)); } 
+                    'b' => { v.push(format!("Adventure of: {}", rel)); } 
+                    _ => {} 
+                }
+            }
+            Layout::Aftermath(side, rel) => { 
+                match side { 
+                    'a' => { v.push(format!("Also has Aftermath: {}", rel)); } 
+                    'b' => { v.push(format!("Aftermath of: {}", rel)); } 
+                    _ => {} 
+                }
+            }
+            Layout::Flip(side, rel) => { 
+                match side { 
+                    'a' => { v.push(format!("Also has Flip side: {}", rel)); } 
+                    'b' => { v.push(format!("Flip side of: {}", rel)); } 
+                    _ => {} 
+                }
+            }
+            Layout::ModalDfc(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
+            Layout::Split(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
+            Layout::Transform(side, rel) => { 
+                match side { 
+                    'a' => { v.push(format!("Transforms into: {}", rel)); } 
+                    'b' => { v.push(format!("Transforms from: {}", rel)); } 
+                    _ => {} 
+                }
+            }
+            Layout::Meld(side, face, meld) => { 
+                match side { 
+                    'a' => { v.push(format!("Melds with {} to form {}", face, meld)); } 
+                    'b' => { v.push(format!("Melds from {} and {}", face, meld)); } 
+                    _ => {} 
+                }
+            }
+            _ => {}
+        }
+        
+        v.push(String::new());
+
+
+        if self.tags.len() > 0 {
+            v.push(format!("Tags: {}", self.tags.join(" ")));
+        }
+        v
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Layout {
+    Adventure(char, String),
+    Aftermath(char, String),
+    Flip(char, String),
+    Leveler,
+    Meld(char, String, String),
+    ModalDfc(char, String),
+    Normal,
+    Saga,
+    Split(char, String),
+    Transform(char, String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Relation {
+    Single(String),
+    Meld {face: String, transform: String },
+}
+
+pub struct CardStat {
+    pub cmc: u8,
+    pub color_identity: Vec<String>,
+    pub mana_cost: String,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub types: String,
+    pub price: f64,
+}
+
+pub struct Deck {
+    pub name: String,
+    pub commander: Card,
+    pub id: i32,
+}
+
+impl ToString for Deck { fn to_string(& self) -> String { self.name.clone() } }

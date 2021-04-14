@@ -1,19 +1,10 @@
+// use crate::util::Card;
 
-
-// use reqwest::Client;
-// use reqwest::Error;
-// use reqwest::blocking::get;
-use std::{thread, time};
-// use serde::Deserialize;
-// use serde::de::{self, Deserialize};
-use reqwest::Response;
+// use std::{thread, time};
+// use reqwest::Response;
 use reqwest::get;
-// use std::io::Read;
-
-// use self::serde_json::Value;
 use anyhow::Result;
 use serde_json::Value;
-use crate::{Card, db::Set, JsonCard};
 
 
 fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {

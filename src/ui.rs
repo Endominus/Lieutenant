@@ -8,7 +8,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tui::widgets::{Clear, ListItem, Paragraph, Row};
+use tui::widgets::{Clear, ListItem, Paragraph};
 use tui::layout::Rect;
 use rusqlite::Connection;
 use tui::backend::CrosstermBackend;
@@ -17,11 +17,14 @@ use tui::style::{Color, Modifier, Style};
 use tui::Terminal;
 use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
-use crate::{Card, Deck, db::rcfndid};
+// use crate::{Card, Deck, db::rcfndid};
 use crate::db;
-
-mod util;
-use util::{StatefulList, MainMenuItem, Screen, DeckScreen, MakeDeckScreen, MakeDeckContents, Omnitext, DeckStatInfo, DeckStatScreen, MakeDeckFocus};
+// use util::*;
+// mod util;
+use crate::util::{StatefulList, MainMenuItem, Screen, 
+    DeckScreen, MakeDeckScreen, MakeDeckContents, 
+    Omnitext, DeckStatInfo, DeckStatScreen, 
+    MakeDeckFocus, Card, Deck};
 
 struct AppState {
     mode: Screen,
@@ -371,16 +374,16 @@ impl AppState {
     fn remove_from_deck(&mut self) {
         let card = self.sldc.get().unwrap().clone();
         match &card.lo {
-            crate::Layout::Flip(_, n) | 
-            crate::Layout::Split(_, n) | 
-            crate::Layout::ModalDfc(_, n) | 
-            crate::Layout::Aftermath(_, n) | 
-            crate::Layout::Adventure(_, n) | 
-            crate::Layout::Transform(_, n) => { 
+            crate::util::Layout::Flip(_, n) | 
+            crate::util::Layout::Split(_, n) | 
+            crate::util::Layout::ModalDfc(_, n) | 
+            crate::util::Layout::Aftermath(_, n) | 
+            crate::util::Layout::Adventure(_, n) | 
+            crate::util::Layout::Transform(_, n) => { 
                 self.sldc.remove_named(&n); 
                 db::dcntodc(&self.dbc, &n, self.deck_id).unwrap();
             }
-            crate::Layout::Meld(s, n, m) => { 
+            crate::util::Layout::Meld(s, n, m) => { 
                 self.sldc.remove_named(&m);
                 // This should be the only database call that could result in an error.
                 let _a = db::dcntodc(&self.dbc, &m, self.deck_id);
@@ -482,13 +485,13 @@ impl AppState {
         let mut side = &'a';
         if let Some(card) = &self.ac {
             match &card.lo {
-                crate::Layout::Flip(_, n) | 
-                crate::Layout::Split(_, n) | 
-                crate::Layout::ModalDfc(_, n) | 
-                crate::Layout::Aftermath(_, n) | 
-                crate::Layout::Adventure(_, n) | 
-                crate::Layout::Transform(_, n) => { rel = n.clone() }
-                crate::Layout::Meld(s, n, m) => { side = s; rel = n.clone(); rel2 = m.clone(); }
+                crate::util::Layout::Flip(_, n) | 
+                crate::util::Layout::Split(_, n) | 
+                crate::util::Layout::ModalDfc(_, n) | 
+                crate::util::Layout::Aftermath(_, n) | 
+                crate::util::Layout::Adventure(_, n) | 
+                crate::util::Layout::Transform(_, n) => { rel = n.clone() }
+                crate::util::Layout::Meld(s, n, m) => { side = s; rel = n.clone(); rel2 = m.clone(); }
                 _ => { return; }
             }
         }
@@ -497,7 +500,7 @@ impl AppState {
             if side == &'a' {
                 let meld = db::rcfn(&self.dbc, &rel2).unwrap();
                 match meld.lo {
-                    crate::Layout::Meld(_, face, _) => {
+                    crate::util::Layout::Meld(_, face, _) => {
                         if face.clone() == rel {
                             rel = rel2;
                         }

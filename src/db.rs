@@ -2,11 +2,11 @@ extern crate rusqlite;
 extern crate regex;
 extern crate tokio;
 
-use crate::{CardStat, JsonCard, Layout, Legalities};
+use crate::util::{Layout, CardStat, Card, Deck};
+
 use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
-use crate::{Deck, Card, Relation};
-use std::{collections::HashMap, convert::TryInto, fs};
-use rusqlite::{Row, Statement, named_params};
+use std::{collections::HashMap, convert::TryInto};
+use rusqlite::{Row, named_params};
 use serde::Deserialize;
 use regex::Regex;
 use serde_json::Value;
@@ -15,7 +15,7 @@ use std::sync::Arc;
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 use std::{thread, time};
 
-use futures::{io::BufReader, prelude::*};
+// use futures::{io::BufReader, prelude::*};
 // use tokio::prelude::*;
 
 // pub struct DbContext<'a> {
@@ -552,16 +552,16 @@ pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
     r.push(rcfn(conn, &c.name).unwrap());
     
     match &c.lo {
-        crate::Layout::Flip(_, n) | 
-        crate::Layout::Split(_, n) | 
-        crate::Layout::ModalDfc(_, n) | 
-        crate::Layout::Aftermath(_, n) | 
-        crate::Layout::Adventure(_, n) | 
-        crate::Layout::Transform(_, n) => { 
+        Layout::Flip(_, n) | 
+        Layout::Split(_, n) | 
+        Layout::ModalDfc(_, n) | 
+        Layout::Aftermath(_, n) | 
+        Layout::Adventure(_, n) | 
+        Layout::Transform(_, n) => { 
             stmt.execute_named(named_params!{":card_name": n, ":deck_id": did as u32} )?;
             r.push(rcfn(conn, &c.name).unwrap());
         }
-        crate::Layout::Meld(s, n, m) => { 
+        Layout::Meld(s, n, m) => { 
             if s == &'b' {  
                 stmt.execute_named(named_params!{":card_name": n, ":deck_id": did as u32} )?;
                 r.push(rcfn(conn, &c.name).unwrap()); 
@@ -885,7 +885,7 @@ fn cfr(row:& Row) -> Result<Card> {
     Ok( Card {
         cmc: row.get(0)?,
         color_identity: stovs(row.get(1)?),
-        legalities: Legalities::from(row.get(2)?),
+        // legalities: Legalities::from(row.get(2)?),
         loyalty: row.get(3)?,
         mana_cost: row.get(4)?,
         name: row.get(5)?,
@@ -975,4 +975,104 @@ pub fn rpfdc(row: &Row) -> Result<f64> {
     // println!("{} has a price of {}", s, res);
 
     Ok(res)
+}
+
+//TODO: Add a JsonCard struct to facilitate import from json.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsonCard {
+    #[serde(rename = "convertedManaCost")]
+    pub cmc: f64,
+    pub color_identity: Vec<String>,
+    pub legalities: Legalities,
+    #[serde(default)]
+    pub loyalty: String,
+    #[serde(default = "zero")]
+    pub mana_cost: String,
+    pub name: String,
+    #[serde(default)]
+    pub power: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub toughness: String,
+    #[serde(rename = "type")]
+    pub types: String,
+    pub layout : String,
+    // pub related_cards: Option<Relation>,
+    pub side: Option<char>,
+    //TODO: Add rarity and sets
+}
+
+fn zero() -> String { String::from("0") }
+
+impl JsonCard {
+    pub fn convert(&self) -> Card { todo!(); }
+}
+
+
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct Legalities {
+    #[serde(default)]
+    brawl: String,
+    #[serde(default)]
+    commander: String,
+    #[serde(default)]
+    duel: String,
+    #[serde(default)]
+    future: String,
+    #[serde(default)]
+    frontier: String,
+    #[serde(default)]
+    historic: String,
+    #[serde(default)]
+    legacy: String,
+    #[serde(default)]
+    modern: String,
+    #[serde(default)]
+    pauper: String,
+    #[serde(default)]
+    penny: String,
+    #[serde(default)]
+    pioneer: String,
+    #[serde(default)]
+    standard: String,
+    #[serde(default)]
+    vintage: String,
+}
+
+impl Legalities {
+    fn to_vec(map: serde_json::Value) -> Vec<String> {
+        let legalities = match map {
+            serde_json::Value::Object(i) => { i }
+            _ => { return Vec::new() }
+        };
+
+        legalities.keys().cloned().collect()
+    }
+
+    fn from(s: String) -> Legalities {
+        let mut l = Legalities::default();
+
+        if let Some(_) = s.find("commander") { l.commander = String::from("Allowed"); }
+
+        l
+    }
+}
+
+impl ToString for Legalities { 
+    fn to_string(& self) -> String {
+        let mut vs = Vec::new();
+        let b = vec![String::default(), String::from("Banned")];
+
+        if !b.contains(&self.brawl) { vs.push("brawl"); }
+        if !b.contains(&self.commander) { vs.push("commander"); }
+        if !b.contains(&self.modern) { vs.push("modern"); }
+        if !b.contains(&self.standard) { vs.push("standard"); }
+
+        vs.join("|")
+    }
 }

@@ -81,13 +81,13 @@
 --             foreign key (deck) references decks(id),
 --             unique (deck, card_name) on conflict ignore);
 
-SELECT *
 -- DELETE
 -- FROM decks
 -- WHERE id > 5;
+-- SELECT *
 -- DELETE
-FROM deck_contents
-WHERE deck = 1;
+-- FROM deck_contents
+-- WHERE deck > 5;
 -- SELECT name, layout, related_cards, side, price, date_price_retrieved, tags
 --         FROM cards
 --         INNER JOIN deck_contents

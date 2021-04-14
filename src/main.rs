@@ -1,6 +1,3 @@
-#![allow(unused_imports)]
-#![feature(str_split_once)]
-
 #![allow(dead_code)]
 extern crate reqwest;
 extern crate rusqlite;
@@ -12,18 +9,22 @@ extern crate serde;
 extern crate crossterm;
 extern crate tui;
 extern crate serde_json;
-#[macro_use]
+// #[macro_use]
 extern crate peg;
 #[macro_use]
 extern crate lazy_static;
 
-use json::object::Object;
-use network::rcostfcn;
+// use lieutenant::network::rcostfcn;
+use lieutenant::db;
+use lieutenant::ui;
+// use lieutenant::db::CardFilter;
+
+// use json::object::Object;
 use rusqlite::Connection;
-use std::{collections::HashMap, fs::File, io::BufRead};
+use std::{fs::File, io::BufRead};
 use std::io::BufReader;
-use std::path::Path;
-use std::time::{Duration, Instant};
+// use std::path::Path;
+// use std::time::{Duration, Instant};
 // #[macro_use]
 
 // mod res;
@@ -36,13 +37,8 @@ use std::sync::RwLock;
 use config::Config;
 use clap::{App, Arg, SubCommand};
 use anyhow::Result;
-use db::{CardFilter};
-use serde::Deserialize;
+// use serde::Deserialize;
 // use serde::de::Deserialize;
-
-mod network;
-mod db;
-mod ui;
 
 lazy_static! {
     static ref SETTINGS: RwLock<Config> = RwLock::new({
@@ -53,233 +49,7 @@ lazy_static! {
     });
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct Legalities {
-    #[serde(default)]
-    brawl: String,
-    #[serde(default)]
-    commander: String,
-    #[serde(default)]
-    duel: String,
-    #[serde(default)]
-    future: String,
-    #[serde(default)]
-    frontier: String,
-    #[serde(default)]
-    historic: String,
-    #[serde(default)]
-    legacy: String,
-    #[serde(default)]
-    modern: String,
-    #[serde(default)]
-    pauper: String,
-    #[serde(default)]
-    penny: String,
-    #[serde(default)]
-    pioneer: String,
-    #[serde(default)]
-    standard: String,
-    #[serde(default)]
-    vintage: String,
-}
 
-impl Legalities {
-    fn to_vec(map: serde_json::Value) -> Vec<String> {
-        let legalities = match map {
-            serde_json::Value::Object(i) => { i }
-            _ => { return Vec::new() }
-        };
-
-        legalities.keys().cloned().collect()
-    }
-
-    fn from(s: String) -> Legalities {
-        let mut l = Legalities::default();
-
-        if let Some(_) = s.find("commander") { l.commander = String::from("Allowed"); }
-
-        l
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub enum Relation {
-    Single(String),
-    Meld {face: String, transform: String },
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub enum Layout {
-    Adventure(char, String),
-    Aftermath(char, String),
-    Flip(char, String),
-    Leveler,
-    Meld(char, String, String),
-    ModalDfc(char, String),
-    Normal,
-    Saga,
-    Split(char, String),
-    Transform(char, String),
-}
-
-//TODO: Add a JsonCard struct to facilitate import from json.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JsonCard {
-    #[serde(rename = "convertedManaCost")]
-    pub cmc: f64,
-    pub color_identity: Vec<String>,
-    pub legalities: Legalities,
-    #[serde(default)]
-    pub loyalty: String,
-    #[serde(default = "zero")]
-    pub mana_cost: String,
-    pub name: String,
-    #[serde(default)]
-    pub power: String,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub text: String,
-    #[serde(default)]
-    pub toughness: String,
-    #[serde(rename = "type")]
-    pub types: String,
-    pub layout : String,
-    pub related_cards: Option<Relation>,
-    pub side: Option<char>,
-    //TODO: Add rarity and sets
-}
-
-impl JsonCard {
-    pub fn convert(&self) -> Card { todo!(); }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Card {
-    pub cmc: f64,
-    pub color_identity: Vec<String>,
-    pub legalities: Legalities,
-    pub loyalty: String,
-    pub mana_cost: String,
-    pub name: String,
-    pub power: String,
-    pub tags: Vec<String>,
-    pub text: String,
-    pub toughness: String,
-    pub types: String,
-    pub lo: Layout,
-    //TODO: Add rarity and sets
-}
-
-impl ToString for Card { fn to_string(& self) -> String { self.name.clone() } }
-
-impl ToString for Legalities { 
-    fn to_string(& self) -> String {
-        let mut vs = Vec::new();
-        let b = vec![String::default(), String::from("Banned")];
-
-        if !b.contains(&self.brawl) { vs.push("brawl"); }
-        if !b.contains(&self.commander) { vs.push("commander"); }
-        if !b.contains(&self.modern) { vs.push("modern"); }
-        if !b.contains(&self.standard) { vs.push("standard"); }
-
-        vs.join("|")
-    }
-}
-
-pub struct CardStat {
-    pub cmc: u8,
-    pub color_identity: Vec<String>,
-    pub mana_cost: String,
-    pub name: String,
-    pub tags: Vec<String>,
-    pub types: String,
-    pub price: f64,
-}
-
-fn zero() -> String { String::from("0") }
-
-pub struct Deck {
-    pub name: String,
-    pub commander: Card,
-    pub id: i32,
-}
-
-impl ToString for Deck { fn to_string(& self) -> String { self.name.clone() } }
-
-impl Card {
-    pub fn ri(&self) -> Vec<String> {
-        let mut v = vec![
-            self.name.clone(),
-            format!("{}, ({})", self.mana_cost, self.cmc),
-            self.types.clone(),
-            String::new(),
-        ];
-            
-        let t = self.text.split("\n");
-        for l in t {
-            v.push(l.to_string());
-        }
-
-        if self.power.len() > 0 {
-            v.push(format!("Power/Toughness: {}/{}", self.power, self.toughness));
-        } else if self.loyalty.len() > 0 {
-            v.push(format!("Loyalty: {}", self.loyalty.clone()));
-        }
-
-        v.push(String::new());
-
-        match &self.lo {
-            Layout::Adventure(side, rel) => { 
-                match side { 
-                    'a' => { v.push(format!("Also has Adventure: {}", rel)); } 
-                    'b' => { v.push(format!("Adventure of: {}", rel)); } 
-                    _ => {} 
-                }
-            }
-            Layout::Aftermath(side, rel) => { 
-                match side { 
-                    'a' => { v.push(format!("Also has Aftermath: {}", rel)); } 
-                    'b' => { v.push(format!("Aftermath of: {}", rel)); } 
-                    _ => {} 
-                }
-            }
-            Layout::Flip(side, rel) => { 
-                match side { 
-                    'a' => { v.push(format!("Also has Flip side: {}", rel)); } 
-                    'b' => { v.push(format!("Flip side of: {}", rel)); } 
-                    _ => {} 
-                }
-            }
-            Layout::ModalDfc(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
-            Layout::Split(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
-            Layout::Transform(side, rel) => { 
-                match side { 
-                    'a' => { v.push(format!("Transforms into: {}", rel)); } 
-                    'b' => { v.push(format!("Transforms from: {}", rel)); } 
-                    _ => {} 
-                }
-            }
-            Layout::Meld(side, face, meld) => { 
-                match side { 
-                    'a' => { v.push(format!("Melds with {} to form {}", face, meld)); } 
-                    'b' => { v.push(format!("Melds from {} and {}", face, meld)); } 
-                    _ => {} 
-                }
-            }
-            _ => {}
-        }
-        
-        v.push(String::new());
-
-
-        if self.tags.len() > 0 {
-            v.push(format!("Tags: {}", self.tags.join(" ")));
-        }
-        v
-    }
-}
 
 pub enum Command {
     RetrieveCardOnline(String),
@@ -488,9 +258,9 @@ fn main() {
             
             // let omni = String::from("n:\"kor sky\" ty:artifact cmc:>4 te:w|");
             // let omni = String::from("ty:artifact cmc:>4 color:w|");
-            let omni = String::from("ty:artifact ci:wr cmc:2-");
-            let cf = CardFilter::from(5, & omni);
-            println!("{}", cf.make_filter(&conn, false));
+            // let omni = String::from("ty:artifact ci:wr cmc:2-");
+            // let cf = CardFilter::from(5, & omni);
+            // println!("{}", cf.make_filter(&conn, false));
             // let omni = String::from("ty: cmc:>4");
             // let cf = CardFilter::from(1, & omni);
             // println!("{}", cf.make_filter(&conn, false));
