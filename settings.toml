@@ -1,1 +1,18 @@
-test = 50
+[global]
+tags = [
+    "main", 
+    "draw", 
+    "board_wipe", 
+    "removal",
+    "ramp"
+]
+ordering = "name"
+default_filter = "name"
+
+[decks]
+
+    [decks.1]
+    tags = ["recursion"]
+
+    [decks.2]
+    ordering = "cmc"

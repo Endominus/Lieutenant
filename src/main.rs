@@ -19,37 +19,61 @@ use lieutenant::db;
 use lieutenant::ui;
 // use lieutenant::db::CardFilter;
 
-// use json::object::Object;
 use rusqlite::Connection;
-use std::{fs::File, io::BufRead};
+use std::{collections::HashMap, fs::File, io::BufRead};
 use std::io::BufReader;
+// use std::collections::HashMap;
 // use std::path::Path;
 // use std::time::{Duration, Instant};
-// #[macro_use]
 
-// mod res;
-// use res::{Command, run};
 
-// use serde::{Deserialize};
+use serde::Deserialize;
 
-// use std::collections::HashMap;
 use std::sync::RwLock;
-use config::Config;
+use config::{Config, ConfigError};
 use clap::{App, Arg, SubCommand};
 use anyhow::Result;
-// use serde::Deserialize;
-// use serde::de::Deserialize;
 
-lazy_static! {
-    static ref SETTINGS: RwLock<Config> = RwLock::new({
-        let mut settings = Config::default();
-        settings.merge(config::File::with_name("settings.toml")).unwrap();
-
-        settings
-    });
+#[derive(Debug, Deserialize)]
+struct SettingsGroup {
+    tags: Option<Vec<String>>,
+    ordering: Option<String>,
+    default_filter: Option<String>
 }
 
+#[derive(Debug, Deserialize)]
+struct Settings {
+    global: SettingsGroup,
+    decks: HashMap<usize, SettingsGroup>
+}
 
+impl Settings {
+    pub fn new() -> Result<Self, ConfigError> {
+        let mut s = Config::default();
+        s.merge(config::File::with_name("settings.toml")).unwrap();
+
+        s.try_into()
+    }
+
+    pub fn get_tags(&self) -> Vec<String> {
+        self.global.tags.as_ref().unwrap().clone()
+    }
+
+    pub fn get_tags_deck(&self, deck: usize) -> Vec<String> {
+        let mut r = Vec::new();
+        if let Some(s) = self.decks.get(&deck) {
+            if let Some(t) = &s.tags {
+                r.append(&mut t.clone());
+            };
+        };
+        r.append(&mut self.global.tags.as_ref().unwrap().clone());
+        r
+    }
+}
+
+lazy_static! {
+    static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::new().unwrap());
+}
 
 pub enum Command {
     RetrieveCardOnline(String),
@@ -114,7 +138,7 @@ pub fn run(command: Command) -> Result<()> {
 
 fn main() {
     let matches = App::new("Lieutenant")
-        .version("0.3")
+        .version("0.5")
         .about("Helps you manage your commander decks")
         .author("Endominus")
         .subcommands( vec![
@@ -161,11 +185,6 @@ fn main() {
         ])
         .get_matches();
 
-    // TODO if settings file doesn't exist, create it with default values.
-
-    // println!("{:?}", SETTINGS.read().unwrap().clone().try_into::<HashMap<String, String>>().unwrap());
-    // SETTINGS.write().unwrap().set("recent", 1).unwrap();
-    // println!("{:?}", SETTINGS.read().unwrap().clone().try_into::<HashMap<String, String>>().unwrap());
 
     match matches.subcommand() {
         ("get", Some(sub_m)) => {
@@ -198,6 +217,22 @@ fn main() {
         ("debug", Some(_sub_m)) => {
             let conn = Connection::open("lieutenant.db").unwrap();
             db::add_regexp_function(&conn).unwrap();
+
+
+            // let mut s = Config::default();
+            // s.merge(config::File::with_name("settings.toml")).unwrap();
+            // println!("{:?}", s);
+
+
+    // TODO if settings file doesn't exist, create it with default values.
+
+            // println!("{:?}", SETTINGS.read().unwrap().clone().try_into::<HashMap<String, Settings>>().unwrap());
+            println!("{:?}", SETTINGS.read().unwrap().get_tags());
+            println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(1));
+            println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(2));
+            println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(3));
+            // SETTINGS.write().unwrap().set("recent", 1).unwrap();
+            // println!("{:?}", SETTINGS.read().unwrap().clone().try_into::<HashMap<String, String>>().unwrap());
 
             // let a = network::rcs(& db::Set { code: String::from("TPH1"), name: String::from("Theros Path of Heroes") });
             // let cf = db::CardFilter::new(1).text(String::from("ana"));
