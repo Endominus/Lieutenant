@@ -536,7 +536,7 @@ impl AppState {
             )}
             _ => { panic!(); }
         };
-        let cf = db::CardFilter::from(self.deck_id, & ss);
+        let cf = db::CardFilter::from(&self.deck.as_ref().unwrap(), & ss);
         let vcr = db::rvcfcf(&self.dbc, cf, general);
         let vc = match vcr {
             Ok(vc) => { vc }

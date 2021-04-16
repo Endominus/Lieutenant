@@ -456,10 +456,10 @@ impl<'a> DeckStatScreen<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Card {
     pub cmc: f64,
-    pub color_identity: Vec<String>,
+    pub color_identity: Vec<char>,
     // pub legalities: Legalities,
     pub loyalty: String,
     pub mana_cost: String,
@@ -561,6 +561,12 @@ pub enum Layout {
     Transform(char, String),
 }
 
+impl Default for Layout {
+    fn default() -> Self {
+        Layout::Normal
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Relation {
     Single(String),
@@ -580,6 +586,8 @@ pub struct CardStat {
 pub struct Deck {
     pub name: String,
     pub commander: Card,
+    pub commander2: Option<Card>,
+    pub color: String,
     pub id: i32,
 }
 

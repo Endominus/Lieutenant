@@ -36,6 +36,7 @@ pub struct Set {
 #[derive(Default)]
 pub struct CardFilter<'a> {
     did: i32,
+    color: String,
     fi: HashMap<&'a str, String>
 }
 
@@ -51,10 +52,11 @@ impl<'a> CardFilter<'a> {
         CardFilter::default()
     }
 
-    pub fn from(did: i32, omni: &'a String) -> CardFilter<'a> {
+    pub fn from(deck: &Deck, omni: &'a String) -> CardFilter<'a> {
         let mut cf = CardFilter::default();
 
-        cf.did = did;
+        cf.did = deck.id;
+        cf.color = deck.color.clone();
         if omni.len() > 0 { 
             cf.fi = CardFilter::parse_omni(omni.as_str()); 
         } else {
@@ -169,19 +171,22 @@ impl<'a> CardFilter<'a> {
         hm
     }
 
-    pub fn make_filter(&self, conn: &Connection, general: bool) -> String {
+    pub fn make_filter(&self, general: bool) -> String {
         let initial = match general {
             true => { 
-                let com = rcomfdid(conn, self.did, false).unwrap();
+                // let com = rcomfdid(conn, self.did, false).unwrap();
                 let mut colors = String::from("WUBRG");
-                for ci in com.color_identity {
-                    colors = colors.replace(&ci, "");
-                }
+                // for ci in com.color_identity {
+                //     colors = colors.replace(&ci, "");
+                // }
 
-                if let Ok(com) = rcomfdid(conn, self.did, true) {
-                    for ci in com.color_identity {
-                        colors = colors.replace(&ci, "");
-                    }
+                // if let Ok(com) = rcomfdid(conn, self.did, true) {
+                //     for ci in com.color_identity {
+                //         colors = colors.replace(&ci, "");
+                //     }
+                // }
+                for c in self.color.chars() {
+                    colors = colors.replace(c, "");
                 }
                 format!("WHERE color_identity REGEXP \'^[^{}]*$\'", colors) 
             }
@@ -713,10 +718,31 @@ pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
     let mut stmt = conn.prepare("SELECT * FROM decks;")?;
 
     let a = stmt.query_map(NO_PARAMS, |row| {
+        let mut color = String::new();
+        let com = rcfn(conn, &row.get(2)?)?;
+        let mut com2_colors = Vec::new();
+        let com2 = match row.get::<usize, String>(3) {
+            Ok(com) => { 
+                let b = rcfn(conn, &com)?; 
+                com2_colors = b.color_identity.clone(); 
+                Some(b) 
+            }
+            Err(_) => { None }
+        };
+
+        for c in "WUBRG".chars() {
+            if com.color_identity.contains(&c)
+                | com2_colors.contains(&c) {
+                color.push(c);
+            }
+        }
+
         Ok(Deck {
             id: row.get(0)?,
             name: row.get(1)?,
-            commander: rcfn(conn, &row.get(2)?)?,
+            commander: com,
+            commander2: com2,
+            color
         })
     })?;
     a.collect()
@@ -728,10 +754,31 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
     let mut stmt = conn.prepare("SELECT * FROM decks WHERE id = ?;")?;
 
     stmt.query_row(params![id], |row| {
+        let mut color = String::new();
+        let com = rcfn(conn, &row.get(2)?)?;
+        let mut com2_colors = Vec::new();
+        let com2 = match row.get::<usize, String>(3) {
+            Ok(com) => { 
+                let b = rcfn(conn, &com)?; 
+                com2_colors = b.color_identity.clone(); 
+                Some(b) 
+            }
+            Err(_) => { None }
+        };
+
+        for c in "WUBRG".chars() {
+            if com.color_identity.contains(&c)
+                | com2_colors.contains(&c) {
+                color.push(c);
+            }
+        }
+
         Ok( Deck {
-            name: row.get(1)?,
-            commander: rcfn(conn, &row.get(2)?)?,
             id: row.get(0)?,
+            name: row.get(1)?,
+            commander: com,
+            commander2: com2,
+            color
         })
     })
 
@@ -759,7 +806,7 @@ pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<Ca
     let qs = format!("
         SELECT {}
         FROM `cards`
-        {}", fields, cf.make_filter(conn, general));
+        {}", fields, cf.make_filter(general));
 
     // println!("Preparing query:\n{}", qs);
 
@@ -820,6 +867,16 @@ fn stovs(ss: String) -> Vec<String> {
         vs.push(String::from(s));
     }
     vs
+}
+
+fn stovch(sch: String) -> Vec<char> {
+    let mut vch = Vec::new();
+
+    for ch in sch.split("|") {
+        vch.push(ch.chars().next().unwrap_or_default());
+        // println!("{:?}", vch);
+    }
+    vch
 }
 
 fn cfr(row:& Row) -> Result<Card> {
@@ -884,7 +941,7 @@ fn cfr(row:& Row) -> Result<Card> {
 
     Ok( Card {
         cmc: row.get(0)?,
-        color_identity: stovs(row.get(1)?),
+        color_identity: stovch(row.get(1)?),
         // legalities: Legalities::from(row.get(2)?),
         loyalty: row.get(3)?,
         mana_cost: row.get(4)?,

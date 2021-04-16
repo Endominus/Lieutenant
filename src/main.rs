@@ -217,6 +217,11 @@ fn main() {
         ("debug", Some(_sub_m)) => {
             let conn = Connection::open("lieutenant.db").unwrap();
             db::add_regexp_function(&conn).unwrap();
+            let deck = db::rdfdid(&conn, 1).unwrap();
+            let omni = String::new();
+            let cf = db::CardFilter::from(&deck, &omni);
+            println!("Cardfilter produces: {}", cf.make_filter(true));
+
 
 
             // let mut s = Config::default();
@@ -227,10 +232,10 @@ fn main() {
     // TODO if settings file doesn't exist, create it with default values.
 
             // println!("{:?}", SETTINGS.read().unwrap().clone().try_into::<HashMap<String, Settings>>().unwrap());
-            println!("{:?}", SETTINGS.read().unwrap().get_tags());
-            println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(1));
-            println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(2));
-            println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(3));
+            // println!("{:?}", SETTINGS.read().unwrap().get_tags());
+            // println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(1));
+            // println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(2));
+            // println!("{:?}", SETTINGS.read().unwrap().get_tags_deck(3));
             // SETTINGS.write().unwrap().set("recent", 1).unwrap();
             // println!("{:?}", SETTINGS.read().unwrap().clone().try_into::<HashMap<String, String>>().unwrap());
 
