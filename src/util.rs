@@ -2,7 +2,8 @@
 
 // use crossterm::event::KeyCode;
 use regex::Regex;
-use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Wrap}};
+use rusqlite::Connection;
+use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap}};
 use tui::style::{Color, Modifier, Style};
 
 // use crate::db;
@@ -21,7 +22,12 @@ pub enum Screen {
     Error(&'static str),
 }
 
+// pub enum WidgetState {
+//     Lis
+// }
+
 pub struct StatefulList<T: ToString> {
+    // pub state: ListState,
     pub state: ListState,
     pub items: Vec<T>,
 }
@@ -150,6 +156,105 @@ impl<T: ToString> StatefulList<T> {
         ).collect()
     }
 
+}
+
+#[derive(Default)]
+pub struct OpenDeckTable {
+    decks: Vec<Deck>,
+    pub state: TableState
+}
+
+impl OpenDeckTable {
+    pub fn init(&mut self, conn: &Connection) {
+        let decks = crate::db::rvd(conn).unwrap();
+        if decks.len() > 0 {
+            self.state.select(Some(0));
+        }
+        self.decks = decks;
+    }
+    
+    //TODO: Could cause issues when using a new db; test!
+    pub fn rdt(&self) -> Table {
+        let decks = self.decks.clone();
+        let headers = Row::new(vec![
+            Cell::from("Deck Name"),
+            Cell::from("Commander(s)"),
+            Cell::from("Color"),
+        ])
+        .style(Style::default()
+            .add_modifier(Modifier::BOLD)
+            .fg(Color::Cyan));
+        let mut rows = Vec::new();
+        // rows.push(headers);
+
+        for deck in decks {
+            let (height, com2) = match deck.commander2 {
+                Some(c) => { (2, c.name) }
+                None => { (1, String::new()) }
+            };
+
+            let r = Row::new(vec![
+                Cell::from(deck.name),
+                Cell::from(format!("{}\n{}", deck.commander.name, com2)),
+                Cell::from(deck.color)
+                ])
+                .height(height)
+                .style(Style::default());
+
+            rows.push(r);
+        }
+
+        let table = Table::new(rows)
+            .header(headers)
+            .block(Block::default().title("Open Deck")
+                .borders(Borders::ALL))
+            .widths(&[Constraint::Percentage(40), Constraint::Percentage(40), Constraint::Length(7)])
+            .column_spacing(1)
+            .highlight_style(Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::ITALIC));
+
+        table
+    }
+
+    pub fn next(&mut self) {
+        if self.decks.len() > 0 {
+            let i = match self.state.selected() {
+                Some(i) => {
+                    if i >= self.decks.len() - 1 {
+                        0
+                    } else {
+                        i + 1
+                    }
+                }
+                None => 0,
+            };
+            self.state.select(Some(i));
+        }
+    }
+
+    //TODO: Never going to apply, but check for len here as well?
+    pub fn previous(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.decks.len() - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+
+    pub fn get(&self) -> Option<&Deck> {
+        if let Some(i) = self.state.selected() {
+            self.decks.get(i)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Default)]
@@ -456,6 +561,10 @@ impl<'a> DeckStatScreen<'a> {
     }
 }
 
+// pub fn rdt(conn: &Connection) -> Table {
+    
+// }
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Card {
     pub cmc: f64,
@@ -583,6 +692,7 @@ pub struct CardStat {
     pub price: f64,
 }
 
+#[derive(Clone)]
 pub struct Deck {
     pub name: String,
     pub commander: Card,

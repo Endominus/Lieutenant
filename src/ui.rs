@@ -8,7 +8,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tui::widgets::{Clear, ListItem, Paragraph};
+use tui::widgets::{Clear, ListItem, Paragraph, Table};
 use tui::layout::Rect;
 use rusqlite::Connection;
 use tui::backend::CrosstermBackend;
@@ -24,7 +24,8 @@ use crate::db;
 use crate::util::{StatefulList, MainMenuItem, Screen, 
     DeckScreen, MakeDeckScreen, MakeDeckContents, 
     Omnitext, DeckStatInfo, DeckStatScreen, 
-    MakeDeckFocus, Card, Deck};
+    MakeDeckFocus, Card, Deck,
+    OpenDeckTable};
 
 struct AppState {
     mode: Screen,
@@ -37,7 +38,7 @@ struct AppState {
     dbftext: Omnitext,
     sldc: StatefulList<Card>,
     slmm: StatefulList<MainMenuItem>,
-    slod: StatefulList<Deck>,
+    slod: OpenDeckTable,
     sldbc: StatefulList<Card>,
     ac: Option<Card>,
     tag: String,
@@ -47,9 +48,12 @@ struct AppState {
     dirty_dbf: bool,
     dirty_cards: Vec<Card>,
     dbc: Connection,
-    quit: bool,
+    quit: bool
 }
 
+struct WidgetOwner<'a> {
+    odt: Option<Table<'a>>
+}
 
 impl AppState {
     fn new() -> AppState {
@@ -64,7 +68,7 @@ impl AppState {
             contents: None,
             sldc: StatefulList::new(),
             slmm: StatefulList::new(),
-            slod: StatefulList::new(),
+            slod: OpenDeckTable::default(),
             sldbc: StatefulList::new(),
             ac: None,
             tag: String::default(),
@@ -108,7 +112,6 @@ impl AppState {
                     KeyCode::Enter => { 
                         // TODO: Assign correct deck ID to config
                         self.deck_id = self.slod.get().unwrap().id;
-                        self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
                         self.dirty_deck = true;
                         self.init_deck_view();
                     }
@@ -437,10 +440,6 @@ impl AppState {
     fn init_create_view(&mut self) {}
 
     fn init_deck_view(&mut self) {
-
-        // self.deck_id = 1;
-        // self.omnitext = String::new();
-        
         if self.dirty_deck {
             self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
             self.dirty_deck = false;
@@ -448,6 +447,8 @@ impl AppState {
             self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
             self.sldc.next();
         }
+
+        self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
 
         if let Some(c) = self.sldc.get_string() {
             self.ac = Some(db::rcfndid(&self.dbc, &c, self.deck_id).unwrap());
@@ -462,9 +463,10 @@ impl AppState {
     
     fn init_open_view(&mut self) {
         self.mode = Screen::OpenDeck;
-        let vd = db::rvd(&self.dbc).unwrap();
-        self.slod = StatefulList::with_items(vd);
-        self.slod.next();
+        self.slod.init(&self.dbc);
+        // let vd = db::rvd(&self.dbc).unwrap();
+        // self.slod = StatefulList::with_items(vd);
+        // self.slod.next();
     }
 
     fn init_main_menu(&mut self) {
@@ -551,7 +553,7 @@ impl AppState {
             Screen::DbCards | Screen::DbFilter => { self.sldbc.rvli() }
             Screen::DeckCard | Screen::DeckOmni => { self.sldc.rvli() }
             Screen::MainMenu => { self.slmm.rvli() }
-            Screen::OpenDeck => { self.slod.rvli() }
+            // Screen::OpenDeck => { self.slod.rvli() }
             _ => { Vec::new() }
         }
     }
@@ -644,12 +646,23 @@ impl AppState {
         dsi
     }
 
-    // pub fn get_deck_stats(&self) -> DeckStatScreen {
-    //     DeckStatScreen::from(&self.dsi)
-    // }
+    pub fn generate_deck_table(&mut self) -> Table {
+        self.slod.rdt()
+    }
 }
 
-fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut AppState) -> Result<()> {
+impl<'a> WidgetOwner<'a> {
+
+    pub fn new() -> WidgetOwner<'a> {
+        WidgetOwner {
+            odt: None
+        }
+    }
+}
+
+fn draw<'a>(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, 
+    state: &mut AppState,) -> Result<()> {
     let _a = terminal.draw(|f| {
 
         let chunks = match state.mode {
@@ -753,12 +766,18 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, state: &mut 
                 f.render_widget(ds.fc, chunks[2]);
             }
             Screen::OpenDeck => {
-                let list = List::new(state.rvli())
-                    .block(Block::default().title("Open Deck").borders(Borders::ALL))
-                    .style(Style::default().fg(Color::White))
-                    .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
-                
-                f.render_stateful_widget(list, chunks[0], &mut state.slod.state.clone());}
+                // let list = List::new(state.rvli())
+                //     .block(Block::default().title("Open Deck").borders(Borders::ALL))
+                //     .style(Style::default().fg(Color::White))
+                //     .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
+                // if widgets.odt == None {
+                //     widgets.odt = Some(state.generate_deck_table());
+                // }
+                let mut ts = state.slod.state.clone();
+                let table = state.generate_deck_table();
+                    
+                f.render_stateful_widget(table, chunks[0], &mut ts);
+            }
             Screen::Settings => {}
             Screen::Error(s) => {
                 let err_message = Paragraph::new(s)
@@ -867,6 +886,7 @@ pub fn run() -> Result<()> {
     terminal.clear()?;
 
     let mut state = AppState::new();
+    // let mut widgets = WidgetOwner::new();
 
     loop {
         draw(&mut terminal, &mut state)?;
