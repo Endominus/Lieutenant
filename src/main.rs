@@ -11,69 +11,25 @@ extern crate tui;
 extern crate serde_json;
 // #[macro_use]
 extern crate peg;
-#[macro_use]
 extern crate lazy_static;
-
 // use lieutenant::network::rcostfcn;
 use lieutenant::db;
 use lieutenant::ui;
 // use lieutenant::db::CardFilter;
 
 use rusqlite::Connection;
-use std::{collections::HashMap, fs::File, io::BufRead};
+use std::{fs::File, io::BufRead};
 use std::io::BufReader;
 // use std::collections::HashMap;
 // use std::path::Path;
 // use std::time::{Duration, Instant};
 
 
-use serde::Deserialize;
 
-use std::sync::RwLock;
-use config::{Config, ConfigError};
 use clap::{App, Arg, SubCommand};
 use anyhow::Result;
 
-#[derive(Debug, Deserialize)]
-struct SettingsGroup {
-    tags: Option<Vec<String>>,
-    ordering: Option<String>,
-    default_filter: Option<String>
-}
 
-#[derive(Debug, Deserialize)]
-struct Settings {
-    global: SettingsGroup,
-    decks: HashMap<usize, SettingsGroup>
-}
-
-impl Settings {
-    pub fn new() -> Result<Self, ConfigError> {
-        let mut s = Config::default();
-        s.merge(config::File::with_name("settings.toml")).unwrap();
-
-        s.try_into()
-    }
-
-    pub fn get_tags(&self) -> Vec<String> {
-        self.global.tags.as_ref().unwrap().clone()
-    }
-
-    pub fn get_tags_deck(&self, deck: usize) -> Vec<String> {
-        let mut r = Vec::new();
-        if let Some(s) = self.decks.get(&deck) {
-            if let Some(t) = &s.tags {
-                r.append(&mut t.clone());
-            };
-        };
-        r.append(&mut self.global.tags.as_ref().unwrap().clone());
-        r
-    }
-}
-
-lazy_static! {
-    static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::new().unwrap());
-}
 
 pub enum Command {
     RetrieveCardOnline(String),
@@ -221,6 +177,7 @@ fn main() {
             let omni = String::new();
             let cf = db::CardFilter::from(&deck, &omni);
             println!("Cardfilter produces: {}", cf.make_filter(true));
+            // let a = SETTINGS;
 
 
 

@@ -188,7 +188,10 @@ impl<'a> CardFilter<'a> {
                 for c in self.color.chars() {
                     colors = colors.replace(c, "");
                 }
-                format!("WHERE color_identity REGEXP \'^[^{}]*$\'", colors) 
+                format!("
+LEFT OUTER JOIN deck_contents
+ON cards.name = deck_contents.card_name
+WHERE color_identity REGEXP \'^[^{}]*$\'", colors) 
             }
             false => { format!("
 INNER JOIN deck_contents
@@ -609,6 +612,16 @@ pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<Card
     Some(card)
 }
 
+pub fn cindid(conn: &Connection, c: &String, did: i32) -> bool {
+    let a = conn.query_row("SELECT card_name FROM deck_contents WHERE card_name = ? AND deck = ?;", 
+    params![c, did], |_| Ok(0));
+
+    match a {
+        Ok(_) => { true }
+        Err(_) => { false }
+    }
+}
+
 pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<&String>, t: &str) -> Result<i32> {
     // if c2 == &String::new() { let c2 = None; }
     // let c2 = c2.unwrap_or(rusqlite::types::Null);
@@ -671,8 +684,11 @@ pub fn import_deck(conn: &Connection, deck_name: String, com_name: String, cards
 
 pub fn rcfn(conn: &Connection, name: &String) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
-        FROM cards WHERE name = :name;")?;
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
+        FROM cards 
+        LEFT OUTER JOIN deck_contents
+        ON cards.name = deck_contents.card_name
+        WHERE name = :name;")?;
     stmt.query_row_named(named_params!{":name": name}, |row| {
         cfr(row)
     })
@@ -798,11 +814,12 @@ pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<Card>> {
 }
 
 pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<Card>> {
-    let fields = if general {
-        "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side"
-    } else {
-        "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags"
-    };
+    // let fields = if general {
+    //     "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side"
+    // } else {
+    //     "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags"
+    // };
+    let fields = "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags";
     let qs = format!("
         SELECT {}
         FROM `cards`

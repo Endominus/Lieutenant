@@ -1,12 +1,59 @@
 // use std::collections::HashMap;
 
 // use crossterm::event::KeyCode;
+
 use regex::Regex;
 use rusqlite::Connection;
 use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap}};
 use tui::style::{Color, Modifier, Style};
+use lazy_static::lazy_static;
 
-// use crate::db;
+use std::collections::HashMap;
+use serde::Deserialize;
+use std::sync::RwLock;
+use config::{Config, ConfigError};
+
+#[derive(Debug, Deserialize)]
+struct SettingsGroup {
+    tags: Option<Vec<String>>,
+    ordering: Option<String>,
+    default_filter: Option<String>
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Settings {
+    global: SettingsGroup,
+    decks: HashMap<usize, SettingsGroup>
+}
+
+impl Settings {
+    pub fn new() -> Result<Self, ConfigError> {
+        let mut s = Config::default();
+        s.merge(config::File::with_name("settings.toml")).unwrap();
+
+        s.try_into()
+    }
+
+    pub fn get_tags(&self) -> Vec<String> {
+        self.global.tags.as_ref().unwrap().clone()
+    }
+
+    pub fn get_tags_deck(&self, deck: usize) -> Vec<String> {
+        let mut r = Vec::new();
+        r.append(&mut self.global.tags.as_ref().unwrap().clone());
+        if let Some(s) = self.decks.get(&deck) {
+            if let Some(t) = &s.tags {
+                r.append(&mut t.clone());
+            };
+        };
+        r
+    }
+}
+
+lazy_static! {
+    static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::new().unwrap());
+}
+
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Screen {
@@ -417,13 +464,19 @@ impl<'a> MakeDeckScreen<'a> {
 
 pub struct DeckScreen<'a> {
     pub omni: Paragraph<'a>,
+    pub tags: Paragraph<'a>,
     pub lc: List<'a>,
     pub fc: Paragraph<'a>,
     len: usize,
 }
 
 impl<'a> DeckScreen<'a> {
-    pub fn new(omnitext: Spans<'a>, vli: Vec<ListItem<'a>>, cardtext: String, mode: Screen) -> DeckScreen<'a> {
+    pub fn new(
+        omnitext: Spans<'a>, 
+        tag: &StatefulList<String>,
+        vli: Vec<ListItem<'a>>, 
+        cardtext: String, 
+        mode: Screen) -> DeckScreen<'a> {
         let (omni_title, list_title) = match mode {
             Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", "Card List") }
             Screen::DbFilter | Screen::DbCards => { ("Filter Database", "Database") }
@@ -432,6 +485,9 @@ impl<'a> DeckScreen<'a> {
         
         let len = vli.len();
         let input = Paragraph::new(omnitext)
+            .style(Style::default())
+            .block(Block::default().borders(Borders::ALL).title(omni_title));
+        let tag = Paragraph::new(Span::from(tag.get().unwrap().clone()))
             .style(Style::default())
             .block(Block::default().borders(Borders::ALL).title(omni_title));
         let list = List::new(vli)
@@ -445,6 +501,7 @@ impl<'a> DeckScreen<'a> {
             
         DeckScreen {
             omni: input,
+            tags: tag,
             lc: list,
             fc: card,
             len
