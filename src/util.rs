@@ -114,7 +114,6 @@ impl<T: ToString> StatefulList<T> {
         }
     }
 
-    //TODO: Never going to apply, but check for len here as well?
     pub fn previous(&mut self) -> String {
         let i = match self.state.selected() {
             Some(i) => {
@@ -280,7 +279,6 @@ impl OpenDeckTable {
         }
     }
 
-    //TODO: Never going to apply, but check for len here as well?
     pub fn previous(&mut self) {
         let i = match self.state.selected() {
             Some(i) => {
@@ -301,6 +299,17 @@ impl OpenDeckTable {
         } else {
             None
         }
+    }
+
+    pub fn remove(&mut self) -> Option<Deck> {
+        let a = self.state.selected().unwrap();
+        if self.decks.len() > 0 {
+            if a+1 == self.decks.len() { self.state.select(Some(a-1)); }
+            // else { self.state.select(Some(a+1)); }
+        } else {
+            self.state = TableState::default();
+        }
+        Some(self.decks.remove(a))
     }
 }
 
@@ -660,7 +669,7 @@ impl Card {
             v.push(format!("Loyalty: {}", self.loyalty.clone()));
         }
 
-        v.push(String::new());
+        // v.push(String::new());
 
         match &self.lo {
             Layout::Adventure(side, rel) => { 

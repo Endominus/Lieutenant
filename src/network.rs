@@ -2,7 +2,8 @@
 
 // use std::{thread, time};
 // use reqwest::Response;
-use reqwest::get;
+use reqwest::blocking::get;
+// use reqwest::get;
 use anyhow::Result;
 use serde_json::Value;
 
@@ -75,10 +76,11 @@ fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
 //     // todo!()
 // }
 
-pub async fn rcostfcn(cn: &String) -> Result<f64> {
+pub fn rcostfcn(cn: &String) -> Result<f64> {
     let api = format!("https://api.scryfall.com/cards/search?q=name=%22{}%22", cn);
-    let res = get(api).await?.text().await?;
-    let res_json: Value = serde_json::from_str(res.as_str())?;
+    // let res = get(api).await?.text().await?;
+    // let res_json: Value = serde_json::from_str(res.as_str())?;
+    let res_json: Value = get(api).unwrap().json().unwrap();
     // println!("{:?}", res_json);
     let price: f64 = match &res_json["data"] {
         Value::Array(vc) => {

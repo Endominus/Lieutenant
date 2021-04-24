@@ -70,7 +70,6 @@ pub fn run(command: Command) -> Result<()> {
         },
         Command::UpdateDB => {unimplemented!()},
         Command::Draw => { 
-            //TODO Make general
             let _a = ui::run();
             // Ok(()) 
         },

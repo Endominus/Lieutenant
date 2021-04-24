@@ -1,6 +1,6 @@
 extern crate rusqlite;
 extern crate regex;
-extern crate tokio;
+// extern crate tokio;
 
 use crate::util::{Layout, CardStat, Card, Deck};
 
@@ -279,9 +279,6 @@ WHERE deck_contents.deck = {}", self.did) }
                     vs.push(format!("AND ({})", vcig.join(" OR ")));
                 }
                 "type" => {
-                    //TODO: Add expansion for supertypes and types
-                    // rule types() = ['l' | 'e' | 'p' | 'i' | 's' | 'c' | 'a']
-
                     let tygs = value.split("|"); 
                     let mut vtyg = Vec::new();
                     for tyg in tygs {
@@ -351,6 +348,7 @@ WHERE deck_contents.deck = {}", self.did) }
                 //TODO: Add later. Not critical right now, and will be annoying due to the string->integer translation.
                 // "strength" => {}
                 // "toughness" => {}
+                // "rarity" => {}
                 _ => {}
             }
         }
@@ -753,6 +751,10 @@ pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
             }
         }
 
+        if color.len() == 0 {
+            color = String::from("C");
+        }
+
         Ok(Deck {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -1032,6 +1034,11 @@ pub fn ucfd(conn: &Connection, did: i32) -> Result<()> {
     Ok(())
 }
 
+pub fn dd(conn: &Connection, did: i32) -> Result<()> {
+    conn.execute_named("DELETE FROM decks WHERE id = :did", named_params!{":did": did})?;
+    Ok(())
+}
+
 pub fn rpfdc(row: &Row) -> Result<f64> {
     let layout: String = row.get(1)?;
     let related_cards: String = row.get(2)?;
@@ -1042,16 +1049,15 @@ pub fn rpfdc(row: &Row) -> Result<f64> {
         row.get::<usize, String>(0)?
     };
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let future = rcostfcn(&s);
-    let res = rt.block_on(future).unwrap();
-
+    // let rt = tokio::runtime::Runtime::new().unwrap();
+    // let future = rcostfcn(&s);
+    // let res = rt.block_on(future).unwrap();
+    let res = rcostfcn(&s).unwrap();
     // println!("{} has a price of {}", s, res);
 
     Ok(res)
 }
 
-//TODO: Add a JsonCard struct to facilitate import from json.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsonCard {

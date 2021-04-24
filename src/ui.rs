@@ -20,13 +20,13 @@ use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
 // use crate::{Card, Deck, db::rcfndid};
 use crate::db;
-// use util::*;
+use crate::util::*;
 // mod util;
-use crate::util::{StatefulList, MainMenuItem, Screen, 
-    DeckScreen, MakeDeckScreen, MakeDeckContents, 
-    Omnitext, DeckStatInfo, DeckStatScreen, 
-    MakeDeckFocus, Card, Deck,
-    OpenDeckTable, Settings};
+// use crate::util::{StatefulList, MainMenuItem, Screen, 
+//     DeckScreen, MakeDeckScreen, MakeDeckContents, 
+//     Omnitext, DeckStatInfo, DeckStatScreen, 
+//     MakeDeckFocus, Card, Deck,
+//     OpenDeckTable, Settings};
 
 struct AppState {
     mode: Screen,
@@ -120,6 +120,9 @@ impl AppState {
                         self.deck_id = self.stod.get().unwrap().id;
                         self.dirty_deck = true;
                         self.init_deck_view();
+                    }
+                    KeyCode::Delete => {
+                        db::dd(&self.dbc, self.stod.remove().unwrap().id).unwrap();
                     }
                     _ => {}
                 }
@@ -264,7 +267,6 @@ impl AppState {
                     KeyCode::Tab => { self.mode = Screen::DbFilter; }
                     KeyCode::Enter => {
                         let card = self.sldbc.get().unwrap().clone();
-                        //TODO: Explore adding tags from the DbCards screen. Requires change in db call?
                         if db::cindid(&self.dbc, &card.name, self.deck_id) {
                             if let Some(card) = db::ttindc(
                                 &self.dbc, 
