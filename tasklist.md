@@ -10,7 +10,7 @@ https://docs.magicthegathering.io/
   - ~~Implement Create Deck screen.~~
   - Takes Deck Name, Commander, and optionally a file to import.
   - View list of commanders as the user types. Can go up and down to select the specific one.
-  - List of potential commanders must include all potential commanders, including planeswalkers and partners.
+  - ~~List of potential commanders must include all potential commanders, including planeswalkers and partners.~~
   - ~~Import needs to handle the '//' case of split cards, and automatically adding the other half of cards.~~
 - Manipulate cards in a deck.
   - ~~Add and remove cards.~~
@@ -30,14 +30,26 @@ https://docs.magicthegathering.io/
     - power, 
     - toughness,
   - Sort by name and cmc, ascending and descending
+  - Automatically filter by ~~deck color~~ and commander legality(?).
 - View deck info.
   - Include ~~mana curve~~, color groups, ~~type breakdowns~~
-  - Determine the number of "real" cards in deck and warn if that is too high.
+  - Determine the number of "real" cards in deck and warn if that is too high or low.
+  - Warn the user of any illegal cards(?)
+- Update the card database with new sets
+- 
 
-1.1 Features
+# 1.1 Feature List
 - In DbView, highlight cards already in deck.
 - Add setting to automatically load into most recent deck.
-- Get deck pricing. (see Scryfall?). Include as property of Deck struct with date retrieved.
+- ~~Get deck pricing. (see Scryfall?). Include as property of Card row with date retrieved.~~
+  - Do this in the background.
+- ~~Quick change tags~~
+- Resize DeckStat for different form factors.
+- "Basics" list for each color combo.
+- Filter history, same as with a shell.
+
+# 2.0 Feature List
+- Deck notes?
 
 tags should be applied to castable spells only (i.e. not transformed)?
 

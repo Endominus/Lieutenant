@@ -5,7 +5,7 @@ extern crate regex;
 use crate::util::{Layout, CardStat, Card, Deck};
 
 use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
-use std::{collections::HashMap, convert::TryInto};
+use std::{collections::HashMap, convert::TryInto, sync::Mutex};
 use rusqlite::{Row, named_params};
 use serde::Deserialize;
 use regex::Regex;
@@ -1003,34 +1003,39 @@ pub fn rvmcfd(conn: &Connection, did: i32) -> Result<Vec<CardStat>> {
     a
 }
 
-pub fn ucfd(conn: &Connection, did: i32) -> Result<()> {
-    let mut stmt = conn.prepare(r#"
-        SELECT name, layout, related_cards, side, date_price_retrieved, tags
-        FROM cards
-        INNER JOIN deck_contents
-        ON cards.name = deck_contents.card_name
-        WHERE deck_contents.deck = :did
-        AND side != 'b'
-        AND (date_price_retrieved ISNULL OR date_price_retrieved < date('now','-6 day'))
-        AND tags IS NOT NULL 
-        AND tags REGEXP '\|?main(?:$|\|)';"#).unwrap();
-    let delay = time::Duration::from_millis(100);
-    let a: Result<Vec<(String, f64)>> = stmt.query_map_named(named_params!{":did": did}, |row| {
-            thread::sleep(delay);
-            Ok((row.get::<usize, String>(0)?, rpfdc(row)?))
-        }
-    )?.collect();
+pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
+        let unpriced: Result<Vec<(String, String, String)>> = {
+            let conn = rwl_conn.lock().unwrap();
+            let mut stmt = conn.prepare(r#"
+                SELECT name, layout, related_cards
+                FROM cards
+                INNER JOIN deck_contents
+                ON cards.name = deck_contents.card_name
+                WHERE deck_contents.deck = :did
+                AND side != 'b'
+                AND (date_price_retrieved ISNULL OR date_price_retrieved < date('now','-6 day'))
+                AND tags IS NOT NULL 
+                AND tags REGEXP '\|?main(?:$|\|)';"#).unwrap();
+            let a = stmt.query_map_named(
+                named_params!{":did": did}, 
+                |row| {
+                    Ok((row.get::<usize, String>(0)?, row.get::<usize, String>(1)?, row.get::<usize, String>(2)?))
+            })?.collect();
 
-    stmt = conn.prepare("UPDATE cards 
-    SET price = :price, 
-    date_price_retrieved = date()
-    WHERE name = :name;").unwrap();
-    // a
-    // let mut num = 0;
-    for (name, price) in a.unwrap() {
-        stmt.execute_named(named_params!{":price": price, ":name": name}).unwrap();
-    }
-    // println!("{} total prices updated.", num);
+            a
+        };
+            
+        let delay = time::Duration::from_millis(100);
+        for (name, layout, related) in unpriced.unwrap() {
+            thread::sleep(delay);
+            let price = rpfdc(&name, &layout, &related).unwrap();
+            rwl_conn.lock().unwrap().execute_named("UPDATE cards 
+                SET price = :price, 
+                date_price_retrieved = date()
+                WHERE name = :name;", 
+                named_params!{":price": price, ":name": name})?;
+        }
+    
     Ok(())
 }
 
@@ -1039,14 +1044,12 @@ pub fn dd(conn: &Connection, did: i32) -> Result<()> {
     Ok(())
 }
 
-pub fn rpfdc(row: &Row) -> Result<f64> {
-    let layout: String = row.get(1)?;
-    let related_cards: String = row.get(2)?;
-    let s = if related_cards.len() > 0 
-        && layout != String::from("meld") {
-        format!("{} // {}", row.get::<usize, String>(0)?, row.get::<usize, String>(2)?)
+pub fn rpfdc(name: &String, layout: &String, related: &String) -> Result<f64> {
+    let s = if related.len() > 0 
+        && layout != &String::from("meld") {
+        format!("{} // {}", name, related)
     } else {
-        row.get::<usize, String>(0)?
+        name.clone()
     };
 
     // let rt = tokio::runtime::Runtime::new().unwrap();

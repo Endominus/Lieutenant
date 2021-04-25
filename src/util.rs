@@ -498,7 +498,7 @@ impl<'a> DeckScreen<'a> {
             .block(Block::default().borders(Borders::ALL).title(omni_title));
         let tag = Paragraph::new(Span::from(tag.get().unwrap().clone()))
             .style(Style::default())
-            .block(Block::default().borders(Borders::ALL).title(omni_title));
+            .block(Block::default().borders(Borders::ALL).title("Tags"));
         let list = List::new(vli)
             .block(Block::default().title(list_title).borders(Borders::ALL))
             .style(Style::default().fg(Color::White))
