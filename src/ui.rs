@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use std::time::Duration; 
 use std::io::stdout;
 use std::thread;
+use std::sync::{Arc, RwLock};
 // use config::Config;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, read, KeyEvent, poll},
@@ -50,6 +51,7 @@ struct AppState {
     dirty_dbf: bool,
     dirty_cards: Vec<Card>,
     dbc: Connection,
+    dbc_mutex: Arc<RwLock<Connection>>,
     config: Settings,
     quit: bool
 }
@@ -61,6 +63,7 @@ struct WidgetOwner<'a> {
 impl AppState {
     fn new() -> AppState {
         let conn = Connection::open("lieutenant.db").unwrap();
+        let conn2 = Connection::open("lieutenant.db").unwrap();
         db::add_regexp_function(&conn).unwrap();
         let config = Settings::new().unwrap();
         let mut app = AppState {
@@ -86,6 +89,7 @@ impl AppState {
             dirty_dbf: true,
             dirty_cards: Vec::new(),
             dbc: conn,
+            dbc_mutex: Arc::new(RwLock::new(conn2)),
             config
             // dsod: DeckScreen,
             // dsdb: DeckScreen,
@@ -122,7 +126,8 @@ impl AppState {
                         self.init_deck_view();
                     }
                     KeyCode::Delete => {
-                        db::dd(&self.dbc, self.stod.remove().unwrap().id).unwrap();
+                        // db::dd(&self.dbc, self.stod.remove().unwrap().id).unwrap();
+                        db::dd(&self.dbc_mutex.read().unwrap(), self.stod.remove().unwrap().id).unwrap();
                     }
                     _ => {}
                 }
@@ -149,12 +154,14 @@ impl AppState {
                     KeyCode::Tab => {
                         self.mode = Screen::DbFilter;
                         if self.dirty_deck {
-                            self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+                            // self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+                            self.contents = Some(db::rvcfdid(&self.dbc_mutex.read().unwrap(), self.deck_id).unwrap());
                             self.dirty_deck = false;
                             self.dirty_cards = Vec::new();
                         }
                         if let Some(c) = self.sldbc.get_string() {
-                            self.ac = Some(db::rcfn(&self.dbc, &c).unwrap());
+                            // self.ac = Some(db::rcfn(&self.dbc, &c).unwrap());
+                            self.ac = Some(db::rcfn(&self.dbc_mutex.read().unwrap(), &c).unwrap());
                         } else {
                             self.ac = None;
                         }
@@ -174,7 +181,8 @@ impl AppState {
                             self.uslvc(); 
                             if let Some(s) = self.sldc.get_string() {
                                 self.ac = Some(db::rcfndid(
-                                    &self.dbc, 
+                                    // &self.dbc, 
+                                    &self.dbc_mutex.read().unwrap(), 
                                     &s, 
                                     self.deck_id).unwrap());
                             } else {
@@ -190,13 +198,15 @@ impl AppState {
                     KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
                     KeyCode::Up => { 
                         self.ac = Some(db::rcfndid(
-                            &self.dbc, 
+                            // &self.dbc, 
+                            &self.dbc_mutex.read().unwrap(), 
                             &self.sldc.previous(), 
                             self.deck_id).unwrap()); 
                     }
                     KeyCode::Down => { 
                         self.ac = Some(db::rcfndid(
-                            &self.dbc, 
+                            // &self.dbc, 
+                            &self.dbc_mutex.read().unwrap(), 
                             &self.sldc.next().unwrap(), 
                             self.deck_id).unwrap());  
                     }
@@ -205,7 +215,8 @@ impl AppState {
                     KeyCode::Delete => { self.remove_from_deck(); }
                     KeyCode::Enter => {
                         if let Some(card) = db::ttindc(
-                            &self.dbc, 
+                            // &self.dbc, 
+                            &self.dbc_mutex.read().unwrap(), 
                             self.sldc.get().unwrap().name.clone(), 
                             &self.slt.get().unwrap(), 
                             self.deck_id) {
@@ -232,7 +243,8 @@ impl AppState {
                         }
                         if self.sldbc.items.len() > 0 {
                             self.mode = Screen::DbCards;
-                            self.ac = Some(db::rcfn(&self.dbc, &self.sldbc.get_string().unwrap()).unwrap());
+                            // self.ac = Some(db::rcfn(&self.dbc, &self.sldbc.get_string().unwrap()).unwrap());
+                            self.ac = Some(db::rcfn(&self.dbc_mutex.read().unwrap(), &self.sldbc.get_string().unwrap()).unwrap());
                         }
                     }
                     KeyCode::Tab => {
@@ -250,7 +262,8 @@ impl AppState {
                     KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
                     KeyCode::Up => { 
                         self.ac = Some(db::rcfn(
-                            &self.dbc, 
+                            // &self.dbc, 
+                            &self.dbc_mutex.read().unwrap(), 
                             &self.sldbc.previous()).unwrap());  
                         //TODO: Move to the below model instead
                         // self.sldbc.previous();
@@ -258,7 +271,8 @@ impl AppState {
                     }
                     KeyCode::Down => { 
                         self.ac = Some(db::rcfn(
-                            &self.dbc, 
+                            // &self.dbc, 
+                            &self.dbc_mutex.read().unwrap(), 
                             &self.sldbc.next().unwrap()).unwrap()); 
                         //TODO: Move to the below model instead
                         // self.sldbc.next();
@@ -267,9 +281,11 @@ impl AppState {
                     KeyCode::Tab => { self.mode = Screen::DbFilter; }
                     KeyCode::Enter => {
                         let card = self.sldbc.get().unwrap().clone();
-                        if db::cindid(&self.dbc, &card.name, self.deck_id) {
+                        // if db::cindid(&self.dbc, &card.name, self.deck_id) {
+                        if db::cindid(&self.dbc_mutex.read().unwrap(), &card.name, self.deck_id) {
                             if let Some(card) = db::ttindc(
-                                &self.dbc, 
+                                // &self.dbc, 
+                                &self.dbc_mutex.read().unwrap(), 
                                 self.sldbc.get().unwrap().name.clone(), 
                                 &self.slt.get().unwrap(), 
                                 self.deck_id) {
@@ -277,7 +293,8 @@ impl AppState {
                                     self.ac = Some(card);
                             };
                         } else {
-                            let mut dc = db::ictodc(&self.dbc, &card, self.deck_id.try_into().unwrap()).unwrap();
+                            // let mut dc = db::ictodc(&self.dbc, &card, self.deck_id.try_into().unwrap()).unwrap();
+                            let mut dc = db::ictodc(&self.dbc_mutex.read().unwrap(), &card, self.deck_id.try_into().unwrap()).unwrap();
                             self.dirty_deck = true;
                             self.dirty_cards.append(&mut dc);
                         }
@@ -298,7 +315,9 @@ impl AppState {
                             MakeDeckFocus::Commander => { 
                                 //TODO: Test against empty string
                                 if let Some(name) = self.mdc.commander_names.get(0) {
-                                    match db::rcfn(&self.dbc, &name) {
+                                    // match db::rcfn(&self.dbc, &name) {
+                                    let c = self.dbc_mutex.read().unwrap();
+                                    match db::rcfn(&c, &name) {
                                         Ok(card) => {
                                             if card.text.contains("Partner") {
                                                 self.mdc.commander = name.clone();
@@ -306,7 +325,8 @@ impl AppState {
                                                 self.mdc.focus = MakeDeckFocus::SecondaryCommander;
                                             } else {
                                                 self.deck_id = db::ideck(
-                                                    &self.dbc, 
+                                                    // &self.dbc, 
+                                                    &self.dbc_mutex.read().unwrap(), 
                                                     &self.mdc.title, 
                                                     &name, 
                                                     None,
@@ -325,10 +345,12 @@ impl AppState {
                             }
                             MakeDeckFocus::SecondaryCommander => {
                                 if let Some(name) = self.mdc.commander_names.get(0) {
-                                    match db::rcfn(&self.dbc, &name) {
+                                    // match db::rcfn(&self.dbc, &name) {
+                                    match db::rcfn(&self.dbc_mutex.read().unwrap(), &name) {
                                         Ok(_) => {
                                             self.deck_id = db::ideck(
-                                                &self.dbc, 
+                                                // &self.dbc, 
+                                                &self.dbc_mutex.read().unwrap(), 
                                                 &self.mdc.title, 
                                                 &self.mdc.commander, 
                                                 Some(name),
@@ -338,7 +360,8 @@ impl AppState {
                                         }
                                         Err(_) => {
                                             self.deck_id = db::ideck(
-                                                &self.dbc, 
+                                                // &self.dbc, 
+                                                &self.dbc_mutex.read().unwrap(), 
                                                 &self.mdc.title, 
                                                 &self.mdc.commander, 
                                                 None,
@@ -349,7 +372,8 @@ impl AppState {
                                     }
                                 } else {
                                     self.deck_id = db::ideck(
-                                        &self.dbc, 
+                                        // &self.dbc, 
+                                        &self.dbc_mutex.read().unwrap(), 
                                         &self.mdc.title, 
                                         &self.mdc.commander, 
                                         None,
@@ -365,11 +389,13 @@ impl AppState {
                             MakeDeckFocus::Title => { self.mdc.title.pop(); }
                             MakeDeckFocus::Commander => { 
                                 self.mdc.commander.pop(); 
-                                self.mdc.commander_names = db::rvcnfn(&self.dbc, &self.mdc.commander).unwrap();
+                                // self.mdc.commander_names = db::rvcnfn(&self.dbc, &self.mdc.commander).unwrap();
+                                self.mdc.commander_names = db::rvcnfn(&self.dbc_mutex.read().unwrap(), &self.mdc.commander).unwrap();
                             }
                             MakeDeckFocus::SecondaryCommander => { 
                                 self.mdc.commander2.pop(); 
-                                self.mdc.commander_names = db::rvcnfnp(&self.dbc, &self.mdc.commander2).unwrap();
+                                // self.mdc.commander_names = db::rvcnfnp(&self.dbc, &self.mdc.commander2).unwrap();
+                                self.mdc.commander_names = db::rvcnfnp(&self.dbc_mutex.read().unwrap(), &self.mdc.commander2).unwrap();
                             }
                         }
                     }
@@ -378,11 +404,13 @@ impl AppState {
                             MakeDeckFocus::Title => { self.mdc.title.push(ch); }
                             MakeDeckFocus::Commander => { 
                                 self.mdc.commander.push(ch); 
-                                self.mdc.commander_names = db::rvcnfn(&self.dbc, &self.mdc.commander).unwrap();
+                                // self.mdc.commander_names = db::rvcnfn(&self.dbc, &self.mdc.commander).unwrap();
+                                self.mdc.commander_names = db::rvcnfn(&self.dbc_mutex.read().unwrap(), &self.mdc.commander).unwrap();
                             }
                             MakeDeckFocus::SecondaryCommander => { 
                                 self.mdc.commander2.push(ch); 
-                                self.mdc.commander_names = db::rvcnfnp(&self.dbc, &self.mdc.commander2).unwrap();
+                                // self.mdc.commander_names = db::rvcnfnp(&self.dbc, &self.mdc.commander2).unwrap();
+                                self.mdc.commander_names = db::rvcnfnp(&self.dbc_mutex.read().unwrap(), &self.mdc.commander2).unwrap();
                             }
                         }
                     }
@@ -486,19 +514,22 @@ impl AppState {
 
     fn init_deck_view(&mut self) {
         if self.dirty_deck {
-            self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+            // self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
+            self.contents = Some(db::rvcfdid(&self.dbc_mutex.read().unwrap(), self.deck_id).unwrap());
             self.dirty_deck = false;
             self.dirty_cards = Vec::new();
             self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
             self.sldc.next();
         }
 
-        self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
+        // self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
+        self.deck = Some(db::rdfdid(&self.dbc_mutex.read().unwrap(), self.deck_id).unwrap());
         self.slt = StatefulList::with_items(self.config.get_tags_deck(self.deck_id as usize));
         self.slt.next();
 
         if let Some(c) = self.sldc.get_string() {
-            self.ac = Some(db::rcfndid(&self.dbc, &c, self.deck_id).unwrap());
+            // self.ac = Some(db::rcfndid(&self.dbc, &c, self.deck_id).unwrap());
+            self.ac = Some(db::rcfndid(&self.dbc_mutex.read().unwrap(), &c, self.deck_id).unwrap());
         } else {
             self.ac = None;
         }
@@ -547,7 +578,8 @@ impl AppState {
         
         if rel2 != String::new() {
             if side == &'a' {
-                let meld = db::rcfn(&self.dbc, &rel2).unwrap();
+                // let meld = db::rcfn(&self.dbc, &rel2).unwrap();
+                let meld = db::rcfn(&self.dbc_mutex.read().unwrap(), &rel2).unwrap();
                 match meld.lo {
                     crate::util::Layout::Meld(_, face, _) => {
                         if face.clone() == rel {
@@ -559,12 +591,15 @@ impl AppState {
             }
         }
         if general {
-            self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
+            // self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
+            self.ac = Some(db::rcfn(&self.dbc_mutex.read().unwrap(), &rel).unwrap());
         } else {
-            if let Ok(c) = db::rcfndid(&self.dbc, &rel, self.deck_id) {
+            // if let Ok(c) = db::rcfndid(&self.dbc, &rel, self.deck_id) {
+            if let Ok(c) = db::rcfndid(&self.dbc_mutex.read().unwrap(), &rel, self.deck_id) {
                 self.ac = Some(c);
             } else {
-                self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
+                // self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
+                self.ac = Some(db::rcfn(&self.dbc_mutex.read().unwrap(), &rel).unwrap());
             }
         }
     }
@@ -586,7 +621,8 @@ impl AppState {
             _ => { panic!(); }
         };
         let cf = db::CardFilter::from(&self.deck.as_ref().unwrap(), & ss);
-        let vcr = db::rvcfcf(&self.dbc, cf, general);
+        // let vcr = db::rvcfcf(&self.dbc, cf, general);
+        let vcr = db::rvcfcf(&self.dbc_mutex.read().unwrap(), cf, general);
         let vc = match vcr {
             Ok(vc) => { vc }
             _ => { Vec::new() }
@@ -623,7 +659,8 @@ impl AppState {
 
     pub fn generate_dss_info(& self) -> DeckStatInfo {
         let mut dsi = DeckStatInfo::default();
-        let vc = db::rvmcfd(&self.dbc, self.deck_id).unwrap();
+        // let vc = db::rvmcfd(&self.dbc, self.deck_id).unwrap();
+        let vc = db::rvmcfd(&self.dbc_mutex.read().unwrap(), self.deck_id).unwrap();
         let types = vec!["Legendary", "Land", "Creature", "Planeswalker", "Enchantment", "Instant", "Sorcery", "Artifact"];
         let mut hm_type: HashMap<String, u64> = HashMap::new();
         let mut hm_cmc: HashMap<String, u64> = HashMap::new();
