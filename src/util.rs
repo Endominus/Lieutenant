@@ -6,9 +6,9 @@ use regex::Regex;
 use rusqlite::Connection;
 use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap}};
 use tui::style::{Color, Modifier, Style};
-use lazy_static::lazy_static;
+// use lazy_static::lazy_static;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use serde::Deserialize;
 use std::sync::RwLock;
 use config::{Config, ConfigError};
@@ -27,9 +27,9 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn new() -> Result<Self, ConfigError> {
+    pub fn new(path: &PathBuf) -> Result<Self, ConfigError> {
         let mut s = Config::default();
-        s.merge(config::File::with_name("settings.toml")).unwrap();
+        s.merge(config::File::with_name(path.to_str().unwrap())).unwrap();
 
         s.try_into()
     }
@@ -50,9 +50,9 @@ impl Settings {
     }
 }
 
-lazy_static! {
-    static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::new().unwrap());
-}
+// lazy_static! {
+//     static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::new().unwrap());
+// }
 
 
 #[derive(Copy, Clone, PartialEq)]
