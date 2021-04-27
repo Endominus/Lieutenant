@@ -4,7 +4,7 @@ extern crate regex;
 
 use crate::util::{Layout, CardStat, Card, Deck};
 
-use self::rusqlite::{params, Connection, Result, NO_PARAMS, Error};
+use self::rusqlite::{params, Connection, Result, Error};
 use std::{collections::HashMap, convert::TryInto, sync::Mutex};
 use rusqlite::{Row, named_params};
 use serde::Deserialize;
@@ -24,6 +24,7 @@ use std::{thread, time};
 // }
 
 use crate::network::rcostfcn;
+use crate::util::SortOrder;
 
 const DB_FILE: &str = "lieutenant.db";
 
@@ -171,7 +172,7 @@ impl<'a> CardFilter<'a> {
         hm
     }
 
-    pub fn make_filter(&self, general: bool) -> String {
+    pub fn make_filter(&self, general: bool, sort_order: SortOrder) -> String {
         let initial = match general {
             true => { 
                 // let com = rcomfdid(conn, self.did, false).unwrap();
@@ -189,18 +190,25 @@ impl<'a> CardFilter<'a> {
                     colors = colors.replace(c, "");
                 }
                 format!("
-LEFT OUTER JOIN deck_contents
-ON cards.name = deck_contents.card_name
-WHERE color_identity REGEXP \'^[^{}]*$\'", colors) 
+                    LEFT OUTER JOIN deck_contents
+                    ON cards.name = deck_contents.card_name
+                    WHERE color_identity REGEXP \'^[^{}]*$\'", colors) 
             }
-            false => { format!("
-INNER JOIN deck_contents
-ON cards.name = deck_contents.card_name
-WHERE deck_contents.deck = {}", self.did) }
+            false => { 
+                format!("
+                    INNER JOIN deck_contents
+                    ON cards.name = deck_contents.card_name
+                    WHERE deck_contents.deck = {}", self.did) 
+            }
         };
-        
-        let mut order = String::from("ASC");
-        let mut sort_on = String::from("name");
+
+        let (mut order, mut sort_on) = match sort_order {
+            SortOrder::NameAsc => { (String::from("ASC"), String::from("name")) }
+            SortOrder::NameDesc => { (String::from("DESC"), String::from("name")) }
+            SortOrder::CmcAsc => { (String::from("ASC"), String::from("cmc")) }
+            SortOrder::CmcDesc => { (String::from("DESC"), String::from("cmc")) }
+        };
+
         let mut vs = Vec::from([initial]);
 
         for (key, value) in self.fi.clone() {
@@ -389,14 +397,14 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             id integer primary key,
             date text not null,
             text text not null 
-        )", NO_PARAMS,)?;
+        )", [],)?;
 
     conn.execute(
         "create table if not exists sets (
             id integer primary key,
             code text not null unique, 
             name text not null unique
-        )", NO_PARAMS,
+        )", [],
     )?;
 
     conn.execute(
@@ -417,7 +425,7 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             legalities text not null,
             price real,
             date_price_retrieved text
-        )", NO_PARAMS,
+        )", [],
     )?;
     
     conn.execute(
@@ -430,7 +438,7 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             notes text,
             foreign key (commander) references cards(name),
             foreign key (commander2) references cards(name))"
-            , NO_PARAMS,
+            , [],
         )?;
 
     conn.execute(
@@ -440,9 +448,7 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             deck integer not null,
             tags text,
             foreign key (deck) references decks(id) ON DELETE CASCADE,
-            unique (deck, card_name) on conflict ignore)"
-            , NO_PARAMS,
-    )?;
+            unique (deck, card_name) on conflict ignore)", [])?;
 
     Ok(())
 }
@@ -510,7 +516,7 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
 
         let c = c.clone();
 
-        match stmt.execute_named(named_params!{
+        match stmt.execute(named_params!{
             ":name": name,
             ":mana_cost": c.mana_cost,
             ":cmc": c.cmc,
@@ -538,7 +544,7 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
     
     let _a = conn.execute("DELETE
         FROM cards
-        WHERE legalities = \"\"", NO_PARAMS)?;
+        WHERE legalities = \"\"", [])?;
     
     println!("Deleted illegal cards.");
     
@@ -554,7 +560,7 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
 pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
     let mut r = Vec::new();
     let mut stmt = conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?;
-    stmt.execute_named(named_params!{":card_name": c.name, ":deck_id": did as u32} )?;
+    stmt.execute(named_params!{":card_name": c.name, ":deck_id": did as u32} )?;
     r.push(rcfn(conn, &c.name).unwrap());
     
     match &c.lo {
@@ -564,19 +570,19 @@ pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
         Layout::Aftermath(_, n) | 
         Layout::Adventure(_, n) | 
         Layout::Transform(_, n) => { 
-            stmt.execute_named(named_params!{":card_name": n, ":deck_id": did as u32} )?;
+            stmt.execute(named_params!{":card_name": n, ":deck_id": did as u32} )?;
             r.push(rcfn(conn, &c.name).unwrap());
         }
         Layout::Meld(s, n, m) => { 
             if s == &'b' {  
-                stmt.execute_named(named_params!{":card_name": n, ":deck_id": did as u32} )?;
+                stmt.execute(named_params!{":card_name": n, ":deck_id": did as u32} )?;
                 r.push(rcfn(conn, &c.name).unwrap()); 
-                stmt.execute_named(named_params!{":card_name": m, ":deck_id": did as u32} )?;
+                stmt.execute(named_params!{":card_name": m, ":deck_id": did as u32} )?;
                 r.push(rcfn(conn, &c.name).unwrap());
             } else {
-                let names: Vec<String> =  rvcfdid(conn, did).unwrap().iter().map(|c| c.to_string()).collect();
+                let names: Vec<String> =  rvcfdid(conn, did, SortOrder::NameAsc).unwrap().iter().map(|c| c.to_string()).collect();
                 if names.contains(&n) {  
-                    stmt.execute_named(named_params!{":card_name": m, ":deck_id": did as u32} )?;
+                    stmt.execute(named_params!{":card_name": m, ":deck_id": did as u32} )?;
                     r.push(rcfn(conn, &c.name).unwrap());
                 }
             }
@@ -590,7 +596,7 @@ pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
 
 pub fn dcntodc(conn: &Connection, c: &String, did: i32) -> Result<()> {
     let mut stmt = conn.prepare("DELETE FROM deck_contents WHERE card_name = :card_name AND deck = :deck_id")?;
-    stmt.execute_named(named_params!{":card_name": c, ":deck_id": did as u32} )?;
+    stmt.execute(named_params!{":card_name": c, ":deck_id": did as u32} )?;
     Ok(())
 }
 
@@ -602,7 +608,7 @@ pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<Card
     } else {
         card.tags.push(t.clone());
     }
-    conn.execute_named("UPDATE deck_contents 
+    conn.execute("UPDATE deck_contents 
         SET tags = :tags
         WHERE card_name = :name
         AND deck = :did;", named_params!{":tags": card.tags.join("|"), ":name": c, ":did": did})
@@ -627,7 +633,7 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<&String>, t: 
         Some(c2) => {
             let mut stmt = conn.prepare(
                 "INSERT INTO decks (name, commander, commander2, deck_type) VALUES (:name, :commander, :commander2, :deck_type);").unwrap();
-            stmt.execute_named(named_params!{":name": n, ":commander": c, ":commander2": c2, ":deck_type": t} ).unwrap();
+            stmt.execute(named_params!{":name": n, ":commander": c, ":commander2": c2, ":deck_type": t} ).unwrap();
             let rid = conn.last_insert_rowid();
             let com = rcfn(conn, &c).unwrap();
             ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
@@ -641,7 +647,7 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<&String>, t: 
         None => {
             let mut stmt = conn.prepare(
                 "INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);").unwrap();
-            stmt.execute_named(named_params!{":name": n, ":commander": c, ":deck_type": t} ).unwrap();
+            stmt.execute(named_params!{":name": n, ":commander": c, ":deck_type": t} ).unwrap();
             let rid = conn.last_insert_rowid();
             let com = rcfn(conn, &c).unwrap();
             ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
@@ -687,7 +693,7 @@ pub fn rcfn(conn: &Connection, name: &String) -> Result<Card> {
         LEFT OUTER JOIN deck_contents
         ON cards.name = deck_contents.card_name
         WHERE name = :name;")?;
-    stmt.query_row_named(named_params!{":name": name}, |row| {
+    stmt.query_row(named_params!{":name": name}, |row| {
         cfr(row)
     })
 }
@@ -700,7 +706,7 @@ pub fn rcfndid(conn: &Connection, name: &String, did: i32) -> Result<Card> {
         ON cards.name = deck_contents.card_name
         WHERE cards.name = :name
         AND deck_contents.deck = :did;")?;
-    stmt.query_row_named(named_params!{":name": name, ":did": did}, |row| {
+    stmt.query_row(named_params!{":name": name, ":did": did}, |row| {
         cfr(row)
     })
 }
@@ -731,7 +737,7 @@ pub fn rcomfdid(conn: &Connection, did: i32, secondary: bool) -> Result<Card> {
 pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
     let mut stmt = conn.prepare("SELECT * FROM decks;")?;
 
-    let a = stmt.query_map(NO_PARAMS, |row| {
+    let a = stmt.query_map([], |row| {
         let mut color = String::new();
         let com = rcfn(conn, &row.get(2)?)?;
         let mut com2_colors = Vec::new();
@@ -803,35 +809,40 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
     // let a = stmt.query_row(params, f)
 }
 
-pub fn rvcfdid(conn: &Connection, did: i32) -> Result<Vec<Card>> {
-    let mut stmt = conn.prepare("SELECT 
+pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec<Card>> {
+    let (order, sort_on) = match sort_order {
+        SortOrder::NameAsc => { (String::from("ASC"), String::from("name")) }
+        SortOrder::NameDesc => { (String::from("DESC"), String::from("name")) }
+        SortOrder::CmcAsc => { (String::from("ASC"), String::from("cmc")) }
+        SortOrder::CmcDesc => { (String::from("DESC"), String::from("cmc")) }
+    };
+
+    // For some reason, sqlite doesn't like named parameters in the ORDER BY clause.
+    let s = format!("SELECT 
         cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
         FROM cards 
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
-        WHERE deck_contents.deck = :did;")?;
+        WHERE deck_contents.deck = :did
+        ORDER BY {} {};", sort_on, order);
+    
 
-    let a = stmt.query_map_named(named_params!{ ":did": did }, |row| { cfr(row) })?;
+    let mut stmt = conn.prepare(s.as_str())?;
+    
+    let a = stmt.query_map(named_params!{ ":did": did }, |row| { cfr(row) })?;
     a.collect()
 }
 
-pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool) -> Result<Vec<Card>> {
-    // let fields = if general {
-    //     "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side"
-    // } else {
-    //     "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags"
-    // };
+pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool, sort_order: SortOrder) -> Result<Vec<Card>> {
     let fields = "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags";
     let qs = format!("
         SELECT {}
         FROM `cards`
-        {}", fields, cf.make_filter(general));
-
-    // println!("Preparing query:\n{}", qs);
+        {}", fields, cf.make_filter(general, sort_order));
 
     let mut stmt = conn.prepare(& qs).unwrap();
 
-    let cards = stmt.query_map(NO_PARAMS, |row| {
+    let cards = stmt.query_map([], |row| {
         cfr(row)
     })?.collect();
 
@@ -850,8 +861,7 @@ pub fn rvcnfn(conn: &Connection, n: &String) -> Result<Vec<String>> {
         ORDER BY name ASC;", n);
     let mut stmt = conn.prepare(query.as_str())?;
 
-    let a = stmt.query_map(
-        NO_PARAMS, 
+    let a = stmt.query_map([], 
         |row| { 
             row.get(0)
         }
@@ -870,8 +880,7 @@ pub fn rvcnfnp(conn: &Connection, n: &String) -> Result<Vec<String>> {
         ORDER BY name ASC;", n);
     let mut stmt = conn.prepare(query.as_str())?;
 
-    let a = stmt.query_map(
-        NO_PARAMS, 
+    let a = stmt.query_map([], 
         |row| { 
             row.get(0)
         }
@@ -984,7 +993,7 @@ pub fn rvmcfd(conn: &Connection, did: i32) -> Result<Vec<CardStat>> {
         AND (side != 'b' OR layout == 'split' OR layout == 'modal_dfc')
         AND tags IS NOT NULL 
         AND tags REGEXP '\|?main(?:$|\|)';"#).unwrap();
-    let a = stmt.query_map_named(named_params!{":did": did}, |row| {
+    let a = stmt.query_map(named_params!{":did": did}, |row| {
             Ok( CardStat {
                 cmc: row.get::<usize, f64>(0)? as u8,
                 color_identity: stovs(row.get(1)?),
@@ -1016,7 +1025,7 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
                 AND (date_price_retrieved ISNULL OR date_price_retrieved < date('now','-6 day'))
                 AND tags IS NOT NULL 
                 AND tags REGEXP '\|?main(?:$|\|)';"#).unwrap();
-            let a = stmt.query_map_named(
+            let a = stmt.query_map(
                 named_params!{":did": did}, 
                 |row| {
                     Ok((row.get::<usize, String>(0)?, row.get::<usize, String>(1)?, row.get::<usize, String>(2)?))
@@ -1029,7 +1038,7 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
         for (name, layout, related) in unpriced.unwrap() {
             thread::sleep(delay);
             let price = rpfdc(&name, &layout, &related).unwrap();
-            rwl_conn.lock().unwrap().execute_named("UPDATE cards 
+            rwl_conn.lock().unwrap().execute("UPDATE cards 
                 SET price = :price, 
                 date_price_retrieved = date()
                 WHERE name = :name;", 
@@ -1040,7 +1049,7 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
 }
 
 pub fn dd(conn: &Connection, did: i32) -> Result<()> {
-    conn.execute_named("DELETE FROM decks WHERE id = :did", named_params!{":did": did})?;
+    conn.execute("DELETE FROM decks WHERE id = :did", named_params!{":did": did})?;
     Ok(())
 }
 

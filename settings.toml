@@ -6,13 +6,14 @@ tags = [
     "removal",
     "ramp"
 ]
-ordering = "name"
+ordering = "-name"
 default_filter = "name"
 
 [decks]
 
     [decks.1]
     tags = ["recursion"]
+    ordering = "+cmc"
 
     [decks.2]
-    ordering = "cmc"
+    ordering = "-cmc"

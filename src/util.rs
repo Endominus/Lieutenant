@@ -10,8 +10,15 @@ use tui::style::{Color, Modifier, Style};
 
 use std::{collections::HashMap, path::PathBuf};
 use serde::Deserialize;
-use std::sync::RwLock;
 use config::{Config, ConfigError};
+
+#[derive(Debug)]
+pub enum SortOrder {
+    NameAsc,
+    NameDesc,
+    CmcAsc,
+    CmcDesc,
+}
 
 #[derive(Debug, Deserialize)]
 struct SettingsGroup {
@@ -47,6 +54,32 @@ impl Settings {
             };
         };
         r
+    }
+
+    pub fn get_sort_order(&self, deck: usize) -> SortOrder {
+        if let Some(d) = self.decks.get(&deck) {
+            if let Some(o) = &d.ordering {
+                match o.as_str() {
+                    "+name" => { return SortOrder::NameAsc }
+                    "-name" => { return SortOrder::NameDesc }
+                    "+cmc" => { return SortOrder::CmcAsc }
+                    "-cmc" => { return SortOrder::CmcDesc }
+                    _ => { return SortOrder::NameAsc }
+                }
+            }
+        }
+
+        if let Some(o) = &self.global.ordering {
+            match o.as_str() {
+                "+name" => { return SortOrder::NameAsc }
+                "-name" => { return SortOrder::NameDesc }
+                "+cmc" => { return SortOrder::CmcAsc }
+                "-cmc" => { return SortOrder::CmcDesc }
+                _ => { return SortOrder::NameAsc }
+            }
+        }
+
+        SortOrder::NameAsc
     }
 }
 

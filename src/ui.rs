@@ -170,8 +170,9 @@ impl AppState {
                     KeyCode::Tab => {
                         self.mode = Screen::DbFilter;
                         if self.dirty_deck {
-                            // self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
-                            self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id).unwrap());
+                            let ord = self.config.get_sort_order(self.deck_id as usize);
+                            self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id, ord).unwrap());
+
                             self.dirty_deck = false;
                             self.dirty_cards = Vec::new();
                         }
@@ -531,8 +532,8 @@ impl AppState {
 
     fn init_deck_view(&mut self) {
         if self.dirty_deck {
-            // self.contents = Some(db::rvcfdid(&self.dbc, self.deck_id).unwrap());
-            self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id).unwrap());
+            let ord = self.config.get_sort_order(self.deck_id as usize);
+            self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id, ord).unwrap());
             self.dirty_deck = false;
             self.dirty_cards = Vec::new();
             self.sldc = StatefulList::with_items(self.contents.clone().unwrap());
@@ -638,8 +639,9 @@ impl AppState {
             _ => { panic!(); }
         };
         let cf = db::CardFilter::from(&self.deck.as_ref().unwrap(), & ss);
-        // let vcr = db::rvcfcf(&self.dbc, cf, general);
-        let vcr = db::rvcfcf(&self.dbc.lock().unwrap(), cf, general);
+        let ord = self.config.get_sort_order(self.deck_id as usize);
+        
+        let vcr = db::rvcfcf(&self.dbc.lock().unwrap(), cf, general, ord);
         let vc = match vcr {
             Ok(vc) => { vc }
             _ => { Vec::new() }

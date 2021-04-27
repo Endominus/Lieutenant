@@ -15,6 +15,7 @@ extern crate lazy_static;
 // use lieutenant::network::rcostfcn;
 use lieutenant::db;
 use lieutenant::ui;
+use lieutenant::util;
 // use lieutenant::db::CardFilter;
 
 use rusqlite::Connection;
@@ -172,10 +173,16 @@ fn main() {
         ("debug", Some(_sub_m)) => {
             let conn = Connection::open("lieutenant.db").unwrap();
             db::add_regexp_function(&conn).unwrap();
-            let deck = db::rdfdid(&conn, 1).unwrap();
-            let omni = String::new();
-            let cf = db::CardFilter::from(&deck, &omni);
-            println!("Cardfilter produces: {}", cf.make_filter(true));
+            let cards = db::rvcfdid(&conn, 2, util::SortOrder::NameAsc).unwrap();
+            println!("{}", cards.get(0).unwrap().name);
+            let cards = db::rvcfdid(&conn, 2, util::SortOrder::NameDesc).unwrap();
+            println!("{}", cards.get(0).unwrap().name);
+            let cards = db::rvcfdid(&conn, 2, util::SortOrder::CmcAsc).unwrap();
+            println!("{}", cards.get(0).unwrap().name);
+            // let deck = db::rdfdid(&conn, 1).unwrap();
+            // let omni = String::new();
+            // let cf = db::CardFilter::from(&deck, &omni);
+            // println!("Cardfilter produces: {}", cf.make_filter(true));
             // let a = SETTINGS;
 
 
