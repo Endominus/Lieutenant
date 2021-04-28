@@ -232,17 +232,16 @@ impl AppState {
                     KeyCode::Delete => { self.remove_from_deck(); }
                     KeyCode::Enter => {
                         if let Some(card) = db::ttindc(
-                            // &self.dbc, 
                             &self.dbc.lock().unwrap(), 
                             self.sldc.get().unwrap().name.clone(), 
-                            &self.slt.get().unwrap(), 
+                            &self.tag, 
                             self.deck_id) {
                                 self.sldc.replace(card.clone());
                                 self.ac = Some(card);
                         };
                     }
-                    KeyCode::Right => { self.slt.next(); }
-                    KeyCode::Left => { self.slt.previous(); }
+                    KeyCode::Right => { self.tag = self.slt.next().unwrap(); }
+                    KeyCode::Left => { self.tag = self.slt.previous(); }
                     _ => {}
                 }
             }
@@ -304,7 +303,7 @@ impl AppState {
                                 // &self.dbc, 
                                 &self.dbc.lock().unwrap(), 
                                 self.sldbc.get().unwrap().name.clone(), 
-                                &self.slt.get().unwrap(), 
+                                &self.tag, 
                                 self.deck_id) {
                                     self.sldbc.replace(card.clone());
                                     self.ac = Some(card);
@@ -318,8 +317,8 @@ impl AppState {
                     }
                     KeyCode::Delete => { self.remove_from_deck(); }
                     KeyCode::Char(' ') => { self.ac_switch(true); }
-                    KeyCode::Right => { self.slt.next(); }
-                    KeyCode::Left => { self.slt.previous(); }
+                    KeyCode::Right => { self.tag = self.slt.next().unwrap(); }
+                    KeyCode::Left => { self.tag = self.slt.previous(); }
                     _ => {}
                 }
             }

@@ -100,6 +100,22 @@ impl Settings {
         if self.global.default_filter == Some(String::from("text")) { return DefaultFilter::Text }
         else { return DefaultFilter::Name }
     }
+
+    pub fn add_tag(&mut self, deck: i32, tag: String) {
+        let vt = self.get_tags_deck(deck);
+        if !vt.contains(&tag) {
+            if let Some(d) = self.decks.get(&deck) {
+                if let Some(vt) = d.tags {
+                    vt.push(tag);
+                } else {
+                    d.tags = Some(Vec::from([tag]));
+                }
+            } else {
+                let d = SettingsGroup { tags: Some(Vec::from([tag])), ordering: None, default_filter: None };
+                self.decks.insert(deck, d);
+            }
+        }
+    }
 }
 
 // lazy_static! {

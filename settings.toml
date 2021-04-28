@@ -4,7 +4,8 @@ tags = [
     "draw", 
     "board_wipe", 
     "removal",
-    "ramp"
+    "ramp",
+    "side",
 ]
 ordering = "-name"
 default_filter = "text"
@@ -12,7 +13,16 @@ default_filter = "text"
 [decks]
 
     [decks.1]
-    tags = ["recursion"]
+    tags = [
+        "bounce",
+        "bypass",
+        "cdt",
+        "counter",
+        "delay",
+        "etb",
+        "protection",
+        "spy",
+    ]
     ordering = "+cmc"
     default_filter = "name"
 
