@@ -164,8 +164,8 @@ impl AppState {
                                 if let Some(tag) = self.omnitext.rt() {
                                     if let Some(vt) = self.config.add_tag(self.deck_id, tag.clone()) {
                                         self.slt = StatefulList::with_items(vt);
-                                        self.slt.select(&tag);
                                     };
+                                    self.slt.select(&tag);
                                     self.tag = tag;
                                 }
                             }
@@ -1044,6 +1044,11 @@ pub fn run() -> Result<()> {
             break;
         }
     }
+
+    let mut p = env::current_exe().unwrap();
+    p.pop();
+    p.push("settings.toml");
+    std::fs::write(p, state.config.to_toml()).unwrap();
 
     disable_raw_mode()?;
     execute!(

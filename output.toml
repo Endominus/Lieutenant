@@ -1,0 +1,30 @@
+[global]
+tags = [
+    "main", 
+    "draw", 
+    "board_wipe", 
+    "removal",
+    "ramp",
+    "side",
+]
+ordering = "-name"
+default_filter = "text"
+
+[decks]
+    [decks.1]
+    tags = [
+        "bounce",
+        "bypass",
+        "cdt",
+        "counter",
+        "delay",
+        "etb",
+        "protection",
+        "spy",
+    ]
+    ordering = "+cmc"
+    default_filter = "name"
+
+    [decks.2]
+    ordering = "-cmc"
+tags = ["testing", "outputs"]

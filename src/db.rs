@@ -78,6 +78,9 @@ impl<'a> CardFilter<'a> {
                 pub rule root(hm: &mut HashMap<&str, String>)
                 = (fields(hm) / " "+)+ ![_]
 
+                pub rule default() -> String
+                =s:$((word() / " " / "+" / ":" / "/")+) ** " " { s.join(" ") }
+
                 rule fields(hm: &mut HashMap<&str, String>) = (
                 text(hm) 
                 / tag(hm)
@@ -154,16 +157,23 @@ impl<'a> CardFilter<'a> {
             }
         }
 
-        match omni_parser::root(omni, &mut hm) {
-            Ok(_) => {
-                if hm.is_empty() {
-                    match default_filter {
-                        DefaultFilter::Name => { hm.insert("name", String::from(omni)); }
-                        DefaultFilter::Text => { hm.insert("text", String::from(omni)); }
-                    }
-                }
+        // match omni_parser::root(omni, &mut hm) {
+        //     Ok(_) => {}
+        //     Err(_) => {}
+        // }
+        let _a = omni_parser::root(omni, &mut hm);
+        if hm.is_empty() {
+            let mut ss = omni;
+            if let Some(i) = omni.find(" /") {
+                ss = omni.get(0..i).unwrap();
             }
-            Err(_) => {}
+            let ph = omni_parser::default(ss.trim()).unwrap();
+            match default_filter {
+                DefaultFilter::Name => { hm.insert("name", ph); }
+                DefaultFilter::Text => { hm.insert("text", ph); }
+                // DefaultFilter::Name => { hm.insert("name", String::from(omni)); }
+                // DefaultFilter::Text => { hm.insert("text", String::from(omni)); }
+            }
         }
         
         hm

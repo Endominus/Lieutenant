@@ -10,7 +10,9 @@ use tui::style::{Color, Modifier, Style};
 
 use std::{collections::HashMap, path::PathBuf};
 use serde::Deserialize;
+use serde_derive::Serialize;
 use config::{Config, ConfigError};
+use itertools::Itertools;
 
 #[derive(Debug)]
 pub enum SortOrder {
@@ -25,14 +27,14 @@ pub enum DefaultFilter {
     Text
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct SettingsGroup {
     tags: Option<Vec<String>>,
     ordering: Option<String>,
     default_filter: Option<String>
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     global: SettingsGroup,
     decks: HashMap<i32, SettingsGroup>
@@ -122,6 +124,48 @@ impl Settings {
         }
 
         None
+    }
+
+    pub fn to_toml(&self) -> String {
+        let mut vr = Vec::from([String::from("[global]")]);
+        if let Some(vt) = &self.global.tags {
+            vr.push(String::from("tags = ["));
+            for t in vt {
+                vr.push(format!("\t\"{}\",", t));
+            }
+            vr.push(String::from("]"));
+        }
+        if let Some(o) = &self.global.ordering {
+            vr.push(format!("ordering = \"{}\"", o));
+        }
+        if let Some(df) = &self.global.default_filter {
+            vr.push(format!("default_filter = \"{}\"", df));
+        }
+        vr.push(String::from("\n[decks]"));
+
+        // Explore using a BTreeMap instead to lose dependence on itertools
+        let vk = self.decks.keys().sorted();
+        
+        for k in vk {
+            let v = self.decks.get(k).unwrap();
+            vr.push(format!("\t[decks.{}]", k));
+            if let Some(vt) = &v.tags {
+                vr.push(String::from("\ttags = ["));
+                for t in vt {
+                    vr.push(format!("\t\t\"{}\",", t));
+                }
+                vr.push(String::from("\t]"));
+            }
+            if let Some(o) = &v.ordering {
+                vr.push(format!("\tordering = \"{}\"", o));
+            }
+            if let Some(df) = &v.default_filter {
+                vr.push(format!("\tdefault_filter = \"{}\"", df));
+            }
+            vr.push(String::new());
+        }
+    
+        vr.join("\n")
     }
 }
 
