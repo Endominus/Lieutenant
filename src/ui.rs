@@ -162,6 +162,10 @@ impl AppState {
                             if self.sldc.items.len() > 0 {
                                 self.mode = Screen::DeckCard;
                                 if let Some(tag) = self.omnitext.rt() {
+                                    if let Some(vt) = self.config.add_tag(self.deck_id, tag.clone()) {
+                                        self.slt = StatefulList::with_items(vt);
+                                        self.slt.select(&tag);
+                                    };
                                     self.tag = tag;
                                 }
                             }

@@ -101,20 +101,27 @@ impl Settings {
         else { return DefaultFilter::Name }
     }
 
-    pub fn add_tag(&mut self, deck: i32, tag: String) {
-        let vt = self.get_tags_deck(deck);
+    pub fn add_tag(&mut self, deck: i32, tag: String) -> Option<Vec<String>> {
+        let mut vt = self.get_tags_deck(deck);
+        let mut o = None;
+        let mut df = None;
         if !vt.contains(&tag) {
-            if let Some(d) = self.decks.get(&deck) {
-                if let Some(vt) = d.tags {
-                    vt.push(tag);
-                } else {
-                    d.tags = Some(Vec::from([tag]));
+            let mut nvt = Vec::from([tag]);
+            if let Some(d) = &mut self.decks.get(&deck) {
+                o = d.ordering.clone();
+                df = d.ordering.clone();
+                if let Some(vt) = &d.tags {
+                    nvt.append(&mut vt.clone());
+                    nvt.sort();
                 }
-            } else {
-                let d = SettingsGroup { tags: Some(Vec::from([tag])), ordering: None, default_filter: None };
-                self.decks.insert(deck, d);
             }
+            let d = SettingsGroup { tags: Some(nvt.clone()), ordering: o, default_filter: df };
+            self.decks.insert(deck, d);
+            vt.append(&mut nvt);
+            return Some(vt)
         }
+
+        None
     }
 }
 
@@ -141,13 +148,13 @@ pub enum Screen {
 //     Lis
 // }
 
-pub struct StatefulList<T: ToString> {
+pub struct StatefulList<T: ToString + PartialEq> {
     // pub state: ListState,
     pub state: ListState,
     pub items: Vec<T>,
 }
 
-impl<T: ToString> StatefulList<T> {
+impl<T: ToString + PartialEq> StatefulList<T> {
 
     pub fn new() -> StatefulList<T> {
         StatefulList {
@@ -196,7 +203,19 @@ impl<T: ToString> StatefulList<T> {
         self.state.select(Some(i));
         self.items.get(i).unwrap().to_string()
     }
-
+    
+    pub fn select(&mut self, selected: &T) {
+        let mut i = 0;
+        
+        for item in &self.items {
+            if item == selected {
+                self.state.select(Some(i));
+                break;
+            }
+            i += 1;
+        }
+    }
+    
     pub fn unselect(&mut self) {
         self.state.select(None);
     }
@@ -448,6 +467,7 @@ impl Omnitext {
     }
 }
 
+#[derive(PartialEq)]
 pub struct MainMenuItem {
     pub text: String,
     pub next: Option<Screen>,

@@ -154,11 +154,16 @@ impl<'a> CardFilter<'a> {
             }
         }
 
-        if hm.is_empty() {
-            match default_filter {
-                DefaultFilter::Name => { hm.insert("name", String::from(omni)); }
-                DefaultFilter::Text => { hm.insert("text", String::from(omni)); }
+        match omni_parser::root(omni, &mut hm) {
+            Ok(_) => {
+                if hm.is_empty() {
+                    match default_filter {
+                        DefaultFilter::Name => { hm.insert("name", String::from(omni)); }
+                        DefaultFilter::Text => { hm.insert("text", String::from(omni)); }
+                    }
+                }
             }
+            Err(_) => {}
         }
         
         hm
