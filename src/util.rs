@@ -20,6 +20,11 @@ pub enum SortOrder {
     CmcDesc,
 }
 
+pub enum DefaultFilter {
+    Name,
+    Text
+}
+
 #[derive(Debug, Deserialize)]
 struct SettingsGroup {
     tags: Option<Vec<String>>,
@@ -30,7 +35,7 @@ struct SettingsGroup {
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     global: SettingsGroup,
-    decks: HashMap<usize, SettingsGroup>
+    decks: HashMap<i32, SettingsGroup>
 }
 
 impl Settings {
@@ -45,7 +50,7 @@ impl Settings {
         self.global.tags.as_ref().unwrap().clone()
     }
 
-    pub fn get_tags_deck(&self, deck: usize) -> Vec<String> {
+    pub fn get_tags_deck(&self, deck: i32) -> Vec<String> {
         let mut r = Vec::new();
         r.append(&mut self.global.tags.as_ref().unwrap().clone());
         if let Some(s) = self.decks.get(&deck) {
@@ -56,7 +61,7 @@ impl Settings {
         r
     }
 
-    pub fn get_sort_order(&self, deck: usize) -> SortOrder {
+    pub fn get_sort_order(&self, deck: i32) -> SortOrder {
         if let Some(d) = self.decks.get(&deck) {
             if let Some(o) = &d.ordering {
                 match o.as_str() {
@@ -80,6 +85,20 @@ impl Settings {
         }
 
         SortOrder::NameAsc
+    }
+
+    pub fn get_default_filter(&self, deck: i32) -> DefaultFilter {
+        if let Some(d) = self.decks.get(&deck) {
+            if let Some(f) = &d.default_filter {
+                match f.as_str() {
+                    "text" => { return DefaultFilter::Text }
+                    _ => { return DefaultFilter::Name }
+                }
+            }
+        }
+
+        if self.global.default_filter == Some(String::from("text")) { return DefaultFilter::Text }
+        else { return DefaultFilter::Name }
     }
 }
 

@@ -24,7 +24,7 @@ use std::{thread, time};
 // }
 
 use crate::network::rcostfcn;
-use crate::util::SortOrder;
+use crate::util::{SortOrder, DefaultFilter};
 
 const DB_FILE: &str = "lieutenant.db";
 
@@ -53,13 +53,13 @@ impl<'a> CardFilter<'a> {
         CardFilter::default()
     }
 
-    pub fn from(deck: &Deck, omni: &'a String) -> CardFilter<'a> {
+    pub fn from(deck: &Deck, omni: &'a String, default_filter: DefaultFilter) -> CardFilter<'a> {
         let mut cf = CardFilter::default();
 
         cf.did = deck.id;
         cf.color = deck.color.clone();
         if omni.len() > 0 { 
-            cf.fi = CardFilter::parse_omni(omni.as_str()); 
+            cf.fi = CardFilter::parse_omni(omni.as_str(), default_filter); 
         } else {
             cf.fi = HashMap::new();
         }
@@ -67,7 +67,7 @@ impl<'a> CardFilter<'a> {
         cf
     }
 
-    pub fn parse_omni(omni: &str) -> HashMap<&str, String> {
+    pub fn parse_omni(omni: &str, default_filter: DefaultFilter) -> HashMap<&str, String> {
         let mut hm = HashMap::new();
         // hm.insert(String::from("test"), String::from("test"));
 
@@ -96,7 +96,7 @@ impl<'a> CardFilter<'a> {
                 rule tag(hm: &mut HashMap<&str, String>)
                 = tag_alias() ":" value:text_group() ** and_separator() { hm.insert("tag", value.join("|")); }
                 rule name(hm: &mut HashMap<&str, String>)
-                = name_alias()? value:ss_values() { hm.insert("name", value); }
+                = name_alias() ":" value:ss_values() { hm.insert("name", value); }
                 rule text(hm: &mut HashMap<&str, String>)
                 = text_alias() ":" value:text_group() ** or_separator() { if value[0] != String::default() { hm.insert("text", value.join("|")); }}
                 rule sort(hm: &mut HashMap<&str, String>)
@@ -120,7 +120,7 @@ impl<'a> CardFilter<'a> {
                 = and_text:$(word() / phrase()) ** and_separator() { and_text.join("&") }
                 rule number_range() = ['-' | '>' | '<'] ['0'..='9']+ / ['0'..='9']+ "-"? (['0'..='9']+)?
 
-                rule name_alias() = ("name:" / "n:")
+                rule name_alias() = ("name" / "n")
                 rule text_alias() = ("text" / "te")
                 rule type_alias() = ("type" / "ty")
                 rule color_alias() = ("color" / "c")
@@ -154,20 +154,12 @@ impl<'a> CardFilter<'a> {
             }
         }
 
-        match omni_parser::root(omni, &mut hm) {
-            Ok(_) => {}
-            Err(_) => { 
-                // println!("Attempted to run omniparser with incorrect arguments. Resultant hashmap:\n{:?}", hm); 
+        if hm.is_empty() {
+            match default_filter {
+                DefaultFilter::Name => { hm.insert("name", String::from(omni)); }
+                DefaultFilter::Text => { hm.insert("text", String::from(omni)); }
             }
         }
-
-        // for (k, v) in &hm {
-        //     if v.is_empty() {
-        //         hm.remove(k);
-        //     }
-        // }
-
-        // hm.
         
         hm
     }

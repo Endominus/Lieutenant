@@ -170,7 +170,7 @@ impl AppState {
                     KeyCode::Tab => {
                         self.mode = Screen::DbFilter;
                         if self.dirty_deck {
-                            let ord = self.config.get_sort_order(self.deck_id as usize);
+                            let ord = self.config.get_sort_order(self.deck_id);
                             self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id, ord).unwrap());
 
                             self.dirty_deck = false;
@@ -532,7 +532,7 @@ impl AppState {
 
     fn init_deck_view(&mut self) {
         if self.dirty_deck {
-            let ord = self.config.get_sort_order(self.deck_id as usize);
+            let ord = self.config.get_sort_order(self.deck_id);
             self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id, ord).unwrap());
             self.dirty_deck = false;
             self.dirty_cards = Vec::new();
@@ -542,7 +542,7 @@ impl AppState {
 
         // self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
         self.deck = Some(db::rdfdid(&self.dbc.lock().unwrap(), self.deck_id).unwrap());
-        self.slt = StatefulList::with_items(self.config.get_tags_deck(self.deck_id as usize));
+        self.slt = StatefulList::with_items(self.config.get_tags_deck(self.deck_id));
         self.slt.next();
 
         if let Some(c) = self.sldc.get_string() {
@@ -638,8 +638,9 @@ impl AppState {
             )}
             _ => { panic!(); }
         };
-        let cf = db::CardFilter::from(&self.deck.as_ref().unwrap(), & ss);
-        let ord = self.config.get_sort_order(self.deck_id as usize);
+        let ord = self.config.get_sort_order(self.deck_id);
+        let df = self.config.get_default_filter(self.deck_id);
+        let cf = db::CardFilter::from(&self.deck.as_ref().unwrap(), & ss, df);
         
         let vcr = db::rvcfcf(&self.dbc.lock().unwrap(), cf, general, ord);
         let vc = match vcr {
