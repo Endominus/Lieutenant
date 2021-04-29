@@ -69,7 +69,8 @@ pub fn run(command: Command) -> Result<()> {
             // Ok(()) 
         },
         Command::ImportCards(deck_name, commanders, filename) => {
-            let conn = Connection::open("lieutenant.db")?;
+            let p = util::get_local_file("lieutenant.db");
+            let conn = Connection::open(p).unwrap();
             let file =  File::open(filename).unwrap();
             let buf = BufReader::new(file);
             let mut cards = Vec::new();

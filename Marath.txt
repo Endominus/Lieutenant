@@ -133,7 +133,7 @@ Loyal Guardian
 Mage Slayer
 Make a Stand
 Managorger Hydra
-Mayael of the Anima
+Mayael the Anima
 Meglonoth
 Mighty Emergence
 Mikaeus, the Lunarch
@@ -331,7 +331,7 @@ Shadowspear
 Steelbane Hydra
 Gyre Sage
 Incubation Druid
-Evolution 
+Evolution Sage
 Fervor
 Purphoros, Bronze-Blooded
 Nissa, Who Shakes the World

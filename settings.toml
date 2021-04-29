@@ -26,5 +26,5 @@ default_filter = "text"
     ordering = "+cmc"
     default_filter = "name"
 
-    [decks.2]
+    [decks.3]
     ordering = "-cmc"

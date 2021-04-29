@@ -8,11 +8,22 @@ use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Bo
 use tui::style::{Color, Modifier, Style};
 // use lazy_static::lazy_static;
 
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, env};
 use serde::Deserialize;
 use serde_derive::Serialize;
 use config::{Config, ConfigError};
 use itertools::Itertools;
+
+pub fn get_local_file(name: &str) -> PathBuf {
+    let mut p = env::current_exe().unwrap();
+    p.pop();
+    p.push(name);
+    if !p.exists() {
+        panic!("Cannot find the {} file. Are you sure it's in the same directory as the executable?", name);
+    }
+    
+    p
+}
 
 #[derive(Debug)]
 pub enum SortOrder {
@@ -134,6 +145,11 @@ impl Settings {
         None
     }
 
+    pub fn remove(&mut self, deck: i32) {
+        self.decks.remove(&deck);
+    }
+
+    // Experimented with using toml_edit, which preserves comments, but found that it didn't preserve indentation.
     pub fn to_toml(&self) -> String {
         let mut vr = Vec::from([String::from("[global]")]);
         if let Some(vt) = &self.global.tags {

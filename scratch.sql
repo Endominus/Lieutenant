@@ -65,7 +65,8 @@
 --         cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
 --         FROM cards WHERE card_text LIKE "%can't be blocked%";
 
-SELECT * FROM cards WHERE name LIKE "%Rowan Kenrith%";
+-- SELECT * FROM cards WHERE name LIKE "%Rowan Kenrith%";
+-- SELECT * FROM cards WHERE name = "Evolution";
 
 -- DELETE from cards;
 -- DELETE FROM decks;
@@ -85,9 +86,9 @@ SELECT * FROM cards WHERE name LIKE "%Rowan Kenrith%";
 -- FROM decks
 -- WHERE id > 5;
 -- SELECT *
--- DELETE
--- FROM deck_contents
--- WHERE deck > 5;
+DELETE
+FROM decks
+WHERE name = "Chul";
 -- SELECT name, layout, related_cards, side, price, date_price_retrieved, tags
 --         FROM cards
 --         INNER JOIN deck_contents

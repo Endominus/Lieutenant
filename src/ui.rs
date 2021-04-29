@@ -64,22 +64,11 @@ struct WidgetOwner<'a> {
 
 impl AppState {
     fn new() -> AppState {
-        let mut p = env::current_exe().unwrap();
-        p.pop();
-        p.push("settings.toml");
-        if !p.exists() {
-            panic!("Cannot find the settings file. Are you sure it's in the same directory as the executable?");
-        }
-
+        let p = get_local_file("settings.toml");
         let config = Settings::new(&p).unwrap();
-        
-        p.pop();
-        p.push("lieutenant.db");
-        if !p.exists() {
-            panic!("Cannot find the lieutenant database. Are you sure it's in the same directory as the executable?");
-        }
-        
+        let p = get_local_file("lieutenant.db");
         let conn = Connection::open(p).unwrap();
+
         db::add_regexp_function(&conn).unwrap();
         let mut app = AppState {
             mode: Screen::MainMenu,
@@ -145,6 +134,7 @@ impl AppState {
                     KeyCode::Delete => {
                         if let Some(deck) = self.stod.remove() {
                             db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
+                            self.config.remove(deck.id);
                         };
                     }
                     _ => {}

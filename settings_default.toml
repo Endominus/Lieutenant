@@ -1,0 +1,13 @@
+[global]
+tags = [
+    "main", 
+    "draw", 
+    "board_wipe", 
+    "removal",
+    "ramp",
+    "side",
+]
+ordering = "+name"
+default_filter = "name"
+
+[decks]

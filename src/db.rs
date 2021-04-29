@@ -727,15 +727,21 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
         let deck = rdfdid(conn, deck_id).unwrap();
         for c in cards {
             // println!("Adding {}", c);
+            let c = c.trim().to_string();
+            if c.len() == 0 { continue }
             let card = if let Some(i) = c.find(" // ") {
                 let c = c.get(0..i).unwrap();
                 rcfn(conn, &c.to_string()).unwrap()
             } else {
-                rcfn(conn, &c).unwrap()
+                // rcfn(conn, &c).unwrap()
+                match rcfn(conn, &c) {
+                    Ok(a) => { a }
+                    Err(_) => { println!("Error on card {}", c); return Ok(()) }
+                }
             };
             let mut disq = "";
             for c in &card.color_identity {
-                if !deck.color.contains(*c) {
+                if *c != '\u{0}' && !deck.color.contains(*c) {
                     disq = "Invalid color identity";
                 }
             }
