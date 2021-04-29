@@ -22,6 +22,14 @@ pub enum SortOrder {
     CmcDesc,
 }
 
+#[derive(PartialEq)]
+pub enum CommanderType {
+    Default,
+    Partner,
+    PartnerWith(String),
+    Invalid
+}
+
 pub enum DefaultFilter {
     Name,
     Text
@@ -395,6 +403,7 @@ impl OpenDeckTable {
     }
 
     pub fn next(&mut self) {
+        if self.decks.len() == 0 { return }
         if self.decks.len() > 0 {
             let i = match self.state.selected() {
                 Some(i) => {
@@ -411,6 +420,7 @@ impl OpenDeckTable {
     }
 
     pub fn previous(&mut self) {
+        if self.decks.len() == 0 { return }
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -425,6 +435,7 @@ impl OpenDeckTable {
     }
 
     pub fn get(&self) -> Option<&Deck> {
+        if self.decks.len() == 0 { return None }
         if let Some(i) = self.state.selected() {
             self.decks.get(i)
         } else {
@@ -433,14 +444,21 @@ impl OpenDeckTable {
     }
 
     pub fn remove(&mut self) -> Option<Deck> {
+        if self.decks.len() == 0 { return None }
         let a = self.state.selected().unwrap();
-        if self.decks.len() > 0 {
-            if a+1 == self.decks.len() { self.state.select(Some(a-1)); }
-            // else { self.state.select(Some(a+1)); }
-        } else {
+        let d = self.decks.remove(a);
+
+        if self.decks.len() == 0 {
             self.state = TableState::default();
-        }
-        Some(self.decks.remove(a))
+        } else if self.decks.len() == a { self.state.select(Some(a-1)); }
+            // if a+1 == self.decks.len() { 
+            //     self.state.select(Some(a-1)); 
+            // }
+            // else { self.state.select(Some(a+1)); }
+        // } else {
+        //     self.state = TableState::default();
+        // }
+        Some(d)
     }
 }
 
@@ -851,6 +869,19 @@ impl Card {
             v.push(format!("Tags: {}", self.tags.join(" ")));
         }
         v
+    }
+
+    pub fn is_commander(&self) -> CommanderType {
+        if (self.types.contains("Legendary") && self.types.contains("Creature"))
+        || (self.types.contains("Planeswalker") && self.text.contains("can be your commander")) {
+            let re = Regex::new(r"Partner with ([\w, ]+)(?:\n| \()").unwrap();
+            if let Some(cap) = re.captures(self.text.as_str()) { 
+                return CommanderType::PartnerWith((&cap[1]).to_string()) 
+            }
+            if self.text.contains("Partner") { return CommanderType::Partner }
+            return CommanderType::Default
+        }
+        CommanderType::Invalid
     }
 }
 

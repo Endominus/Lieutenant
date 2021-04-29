@@ -32,7 +32,7 @@ pub enum Command {
     FullPull,
     UpdateDB,
     Draw,
-    ImportCards(String, String, String),
+    ImportCards(String, Vec<String>, String),
 }
 
 pub fn run(command: Command) -> Result<()> {
@@ -68,7 +68,7 @@ pub fn run(command: Command) -> Result<()> {
             let _a = ui::run();
             // Ok(()) 
         },
-        Command::ImportCards(deck_name, com_name, filename) => {
+        Command::ImportCards(deck_name, commanders, filename) => {
             let conn = Connection::open("lieutenant.db")?;
             let file =  File::open(filename).unwrap();
             let buf = BufReader::new(file);
@@ -77,7 +77,7 @@ pub fn run(command: Command) -> Result<()> {
                 cards.push(a.unwrap());
             }
 
-            db::import_deck(&conn, deck_name, com_name, cards)?;
+            db::import_deck(&conn, deck_name, commanders, cards)?;
             // Ok(())
         }
     }
@@ -111,22 +111,25 @@ fn main() {
             SubCommand::with_name("import")
                 .about("Imports cards from a file into a deck")
                 .arg(
-                    Arg::with_name("deck_name")
+                    Arg::with_name("deck")
                         .help("Desired name of the deck")
                         .index(1)
                         .required(true),
                 )
                 .arg(
-                    Arg::with_name("com_name")
-                        .help("Name of the commander")
-                        .index(2)
-                        .required(true)
-                )
-                .arg(
                     Arg::with_name("filename")
                        .help("Name of the file to import from")
-                       .index(3)
+                       .index(2)
                        .required(true),
+                )
+                .arg(
+                    Arg::with_name("commander")
+                        .short("com")
+                        .help("Name of the commander(s)")
+                        .multiple(true)
+                        .index(3)
+                        .required(false)
+                        .takes_value(true)
                 ),
             SubCommand::with_name("update")
                 .about("Updates the card database with any new cards added"),
@@ -148,15 +151,28 @@ fn main() {
 
         }
         ("import", Some(sub_m)) => {
-            println!("Creating deck {} with commander {}. Adding all cards from {}.",
-                sub_m.value_of("deck_name").unwrap(),
-                sub_m.value_of("com_name").unwrap(),
+            // let (primary, secondary) = match sub_m.value_of("primary_commander") {
+            //     Some(ps) => { 
+            //         match sub_m.value_of("secondary_commander") {
+            //             Some(ss) => { (ps.to_string(), ss.to_string())  }
+            //             None => { (ps.to_string(), String::new())  }
+            //         }
+            //     }
+            //     None => { (String::new(), String::new()) }
+            // };
+            let commanders: Vec<_> = match sub_m.values_of("commander") {
+                Some(vs) => { vs.map(|s| s.to_string()).collect() }
+                None => { Vec::new() }
+            };
+            println!("Creating deck {} with commander {:?}. Adding all cards from {}.",
+                sub_m.value_of("deck").unwrap(),
+                commanders,
                 sub_m.value_of("filename").unwrap()); 
             let _a = run(Command::ImportCards(
-                    sub_m.value_of("deck_name").unwrap().to_string(),
-                    sub_m.value_of("com_name").unwrap().to_string(),
+                    sub_m.value_of("deck").unwrap().to_string(),
+                    commanders,
                     sub_m.value_of("filename").unwrap().to_string()));
-            }
+        }
         ("update", Some(_sub_m)) => {
             println!("Updating the database");
             // let _a = run(Command::FullPull);

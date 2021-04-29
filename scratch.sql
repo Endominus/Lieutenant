@@ -65,7 +65,7 @@
 --         cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side
 --         FROM cards WHERE card_text LIKE "%can't be blocked%";
 
-SELECT * FROM cards WHERE name LIKE "%Marath%";
+SELECT * FROM cards WHERE name LIKE "%Rowan Kenrith%";
 
 -- DELETE from cards;
 -- DELETE FROM decks;

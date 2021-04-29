@@ -136,14 +136,16 @@ impl AppState {
                     KeyCode::Down => { self.stod.next(); }
                     KeyCode::Enter => { 
                         // TODO: Assign correct deck ID to config
-                        self.deck_id = self.stod.get().unwrap().id;
-                        self.dirty_deck = true;
-                        self.init_deck_view();
+                        if let Some(deck) = self.stod.get() {
+                            self.deck_id = deck.id;
+                            self.dirty_deck = true;
+                            self.init_deck_view();
+                        };
                     }
                     KeyCode::Delete => {
-                        // db::dd(&self.dbc, self.stod.remove().unwrap().id).unwrap();
-                        // db::dd(&self.dbc_mutex.lock().unwrap(), self.stod.remove().unwrap().id).unwrap();
-                        db::dd(&self.dbc.lock().unwrap(), self.stod.remove().unwrap().id).unwrap();
+                        if let Some(deck) = self.stod.remove() {
+                            db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
+                        };
                     }
                     _ => {}
                 }
@@ -335,31 +337,40 @@ impl AppState {
                             MakeDeckFocus::Commander => { 
                                 //TODO: Test against empty string
                                 if let Some(name) = self.mdc.commander_names.get(0) {
-                                    // match db::rcfn(&self.dbc, &name) {
-                                    let c = db::rcfn(&self.dbc.lock().unwrap(), &name);
-                                    match c {
-                                        Ok(card) => {
-                                            if card.text.contains("Partner") {
-                                                self.mdc.commander = name.clone();
-                                                self.mdc.commander_names.clear();
-                                                self.mdc.focus = MakeDeckFocus::SecondaryCommander;
-                                            } else {
-                                                self.deck_id = db::ideck(
-                                                    // &self.dbc, 
-                                                    &self.dbc.lock().unwrap(), 
-                                                    &self.mdc.title, 
-                                                    &name, 
-                                                    None,
-                                                    "Commander").unwrap();
-                                                self.mdc = MakeDeckContents::default();
-                                                self.init_deck_view();
-                                            }
+                                    let c = db::rcfn(&self.dbc.lock().unwrap(), &name).unwrap();
+                                    match c.is_commander() {
+                                        CommanderType::Default => {
+                                            self.deck_id = db::ideck(
+                                                &self.dbc.lock().unwrap(), 
+                                                &self.mdc.title, 
+                                                &name, 
+                                                None,
+                                                "Commander").unwrap();
+                                            self.mdc = MakeDeckContents::default();
+                                            self.init_deck_view(); 
                                         }
-                                        Err(_) => {
+                                        CommanderType::Partner => {
+                                            self.mdc.commander = name.clone();
+                                            self.mdc.commander_names.clear();
+                                            self.mdc.focus = MakeDeckFocus::SecondaryCommander;
+                                        }
+                                        CommanderType::PartnerWith(ss) => {
+                                            self.mdc.commander = name.clone();
+                                            self.mdc.commander_names = db::rvcnfnp(&self.dbc.lock().unwrap(), &ss).unwrap();
+                                            self.mdc.commander2 = ss;
+                                            self.mdc.focus = MakeDeckFocus::SecondaryCommander;
+                                        }
+                                        CommanderType::Invalid => {
                                             self.mode_p = self.mode;
                                             self.mode = Screen::Error("Commander name not found in database.\nPlease check spelling and try again.\nPress Enter to continue.");
                                         }
                                     }
+
+                                    // match c {
+                                    //     Err(_) => {
+                                    //         }
+                                    // }
+
                                 }
                                 
                             }
@@ -370,11 +381,10 @@ impl AppState {
                                     match c {
                                         Ok(_) => {
                                             self.deck_id = db::ideck(
-                                                // &self.dbc, 
                                                 &self.dbc.lock().unwrap(), 
                                                 &self.mdc.title, 
                                                 &self.mdc.commander, 
-                                                Some(name),
+                                                Some(name.clone()),
                                                 "Commander").unwrap();
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view();
@@ -410,12 +420,10 @@ impl AppState {
                             MakeDeckFocus::Title => { self.mdc.title.pop(); }
                             MakeDeckFocus::Commander => { 
                                 self.mdc.commander.pop(); 
-                                // self.mdc.commander_names = db::rvcnfn(&self.dbc, &self.mdc.commander).unwrap();
                                 self.mdc.commander_names = db::rvcnfn(&self.dbc.lock().unwrap(), &self.mdc.commander).unwrap();
                             }
                             MakeDeckFocus::SecondaryCommander => { 
                                 self.mdc.commander2.pop(); 
-                                // self.mdc.commander_names = db::rvcnfnp(&self.dbc, &self.mdc.commander2).unwrap();
                                 self.mdc.commander_names = db::rvcnfnp(&self.dbc.lock().unwrap(), &self.mdc.commander2).unwrap();
                             }
                         }
@@ -425,12 +433,10 @@ impl AppState {
                             MakeDeckFocus::Title => { self.mdc.title.push(ch); }
                             MakeDeckFocus::Commander => { 
                                 self.mdc.commander.push(ch); 
-                                // self.mdc.commander_names = db::rvcnfn(&self.dbc, &self.mdc.commander).unwrap();
                                 self.mdc.commander_names = db::rvcnfn(&self.dbc.lock().unwrap(), &self.mdc.commander).unwrap();
                             }
                             MakeDeckFocus::SecondaryCommander => { 
                                 self.mdc.commander2.push(ch); 
-                                // self.mdc.commander_names = db::rvcnfnp(&self.dbc, &self.mdc.commander2).unwrap();
                                 self.mdc.commander_names = db::rvcnfnp(&self.dbc.lock().unwrap(), &self.mdc.commander2).unwrap();
                             }
                         }

@@ -2,11 +2,11 @@ extern crate rusqlite;
 extern crate regex;
 // extern crate tokio;
 
-use crate::util::{Layout, CardStat, Card, Deck};
+use crate::util::{Layout, CardStat, Card, Deck, CommanderType};
 
-use self::rusqlite::{params, Connection, Result, Error};
+use self::rusqlite::{params, Connection};
 use std::{collections::HashMap, convert::TryInto, sync::Mutex};
-use rusqlite::{Row, named_params};
+use rusqlite::{Row, named_params, Result, Error};
 use serde::Deserialize;
 use regex::Regex;
 use serde_json::Value;
@@ -14,6 +14,8 @@ use self::rusqlite::functions::FunctionFlags;
 use std::sync::Arc;
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 use std::{thread, time};
+
+// use anyhow::{};
 
 // use futures::{io::BufReader, prelude::*};
 // use tokio::prelude::*;
@@ -633,7 +635,7 @@ pub fn cindid(conn: &Connection, c: &String, did: i32) -> bool {
     }
 }
 
-pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<&String>, t: &str) -> Result<i32> {
+pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &str) -> Result<i32> {
     // if c2 == &String::new() { let c2 = None; }
     // let c2 = c2.unwrap_or(rusqlite::types::Null);
     match c2 {
@@ -665,28 +667,86 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<&String>, t: 
     // println!("Row ID is {}", rid);
 }
 
-pub fn import_deck(conn: &Connection, deck_name: String, com_name: String, cards: Vec<String>) -> Result<()> {
+pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, cards: Vec<String>) -> Result<()> {
     let mut num = 0;
-    if let Ok(_) = rcfn(conn, &com_name) {
-        println!("Commander name is valid! Now creating deck...");
-        //TODO: Add support for multi-commander decks
-        //TODO: Check that the given string is an actual commander's name
-        if let Ok(deck_id) = ideck(conn, &deck_name, &com_name, None, "Commander") {
-            println!("Deck created successfully! Now adding cards...");
-            conn.execute_batch("BEGIN TRANSACTION;")?;
-            for c in cards {
-                println!("Adding {}", c);
-                let card = if let Some(i) = c.find(" // ") {
-                    let c = c.get(0..i).unwrap();
-                    rcfn(conn, &c.to_string()).unwrap()
-                } else {
-                    rcfn(conn, &c).unwrap()
-                };
+    let (primary, secondary) = match coms.len() {
+        0 => { 
+            let c = rcfn(conn, &cards.first().unwrap()).unwrap();
+            match c.is_commander() {
+                CommanderType::Default => { 
+                    println!("Valid commander found: {}", coms.first().unwrap());
+                    (cards.first().unwrap(), None) 
+                }
+                CommanderType::Partner => { 
+                    if let Some(cn) = cards.get(1) {
+                        let sc = rcfn(conn, &cn).unwrap();
+                        if sc.is_commander() == CommanderType::Partner { 
+                            println!("Valid commanders found: {} and {}", c.name, sc.name);
+                            // This is gross, but we need the owned value
+                            (cards.first().unwrap(), Some(cards.get(1).unwrap().clone()))
+                        } else { 
+                            println!("Valid commander found: {}", c.name);
+                            println!("This commander has the Partner keyword. To include the partner as a secondary commander, it must be the second card in the file.");
+                            (cards.first().unwrap(), None) 
+                        }
+                    } else { 
+                        println!("Valid commander found: {}", c.name);
+                        println!("Did you really import a deck of just one card? Why?");
+                        (cards.first().unwrap(), None) 
+                    }
+                }
+                CommanderType::PartnerWith(ss) => { 
+                    if cards.contains(&ss) {
+                        println!("Valid commanders found: {} and {}", c.name, &ss);
+                        // let ss = ss.clone();
+                        (cards.first().unwrap(), Some(ss))
+                    } else {
+                        println!("Valid commander found: {}", c.name);
+                        println!("But did you forget to put {} in the deck? It wasn't found.", &ss);
+                        (coms.first().unwrap(), None) 
+                    }
+                }
+                CommanderType::Invalid  => { 
+                    // (coms.first().unwrap(), None)
+                    println!("No valid commander found! Please ensure you pass in your commander name or include it at the top of the import file.");
+                    return Ok(())
+                }
+            }
+        }
+        1 => { 
+            println!("Valid commander found: {}", coms.first().unwrap());
+            (coms.first().unwrap(), None) 
+        }
+        _ => {
+            (coms.first().unwrap(), None)
+        }
+    };
+    if let Ok(deck_id) = ideck(conn, &deck_name, &primary, secondary, "Commander") {
+        println!("Deck created successfully! Now adding cards...");
+        conn.execute_batch("BEGIN TRANSACTION;")?;
+        let deck = rdfdid(conn, deck_id).unwrap();
+        for c in cards {
+            // println!("Adding {}", c);
+            let card = if let Some(i) = c.find(" // ") {
+                let c = c.get(0..i).unwrap();
+                rcfn(conn, &c.to_string()).unwrap()
+            } else {
+                rcfn(conn, &c).unwrap()
+            };
+            let mut disq = "";
+            for c in &card.color_identity {
+                if !deck.color.contains(*c) {
+                    disq = "Invalid color identity";
+                }
+            }
+            if disq.len() == 0 {
                 ictodc(conn, &card, deck_id)?;
                 num += 1;
+            } else {
+                println!("Card not added: \"{}\" due to: {}", &card.name, disq);
             }
-            conn.execute_batch("COMMIT TRANSACTION;")?;
-        };
+        }
+        conn.execute_batch("COMMIT TRANSACTION;")?;
     };
     println!("Added {} cards to deck {}", num, deck_name);
 
@@ -859,6 +919,9 @@ pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool, sort_order: Sort
 }
 
 pub fn rvcnfn(conn: &Connection, n: &String) -> Result<Vec<String>> {
+    if n.len() == 0 {
+        return Ok(Vec::new())
+    }
     let query = format!("
         SELECT name
         FROM cards
@@ -1041,7 +1104,7 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
             a
         };
             
-        let delay = time::Duration::from_millis(100);
+        let delay = time::Duration::from_millis(50);
         for (name, layout, related) in unpriced.unwrap() {
             thread::sleep(delay);
             let price = rpfdc(&name, &layout, &related).unwrap();
