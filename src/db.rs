@@ -7,7 +7,7 @@ use crate::util::{Layout, CardStat, Card, Deck, CommanderType};
 use self::rusqlite::{params, Connection};
 use std::{collections::HashMap, convert::TryInto, sync::Mutex};
 use rusqlite::{Row, named_params, Result, Error};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use regex::Regex;
 use serde_json::Value;
 use self::rusqlite::functions::FunctionFlags;
@@ -36,7 +36,7 @@ pub struct Set {
     name: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ImportCard {
     pub name: String,
     pub tags: Option<String>,
@@ -692,7 +692,7 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
             let c = rcfn(conn, &cards.first().unwrap().name, None).unwrap();
             match c.is_commander() {
                 CommanderType::Default => { 
-                    println!("Valid commander found: {}", coms.first().unwrap());
+                    println!("Valid commander found: {}", &c.name);
                     (&cards.first().unwrap().name, None) 
                 }
                 CommanderType::Partner => { 
@@ -1082,6 +1082,20 @@ fn cfr(row:& Row) -> Result<Card> {
         lo,
         tags
     })
+}
+
+pub fn rvicfdid(conn: &Connection, did: i32) -> Result<Vec<ImportCard>> {
+    // let mut r = Vec::new();
+    let mut stmt = conn.prepare(r#"SELECT
+        card_name, tags
+        FROM deck_contents
+        WHERE deck = :did;"#).unwrap();
+
+    let r = stmt.query_map(named_params!{":did": did}, |row| {
+        Ok(ImportCard { name: row.get(0)?, tags: row.get(1)? })
+    })?.collect();
+
+    r
 }
 
 pub fn rvmcfd(conn: &Connection, did: i32) -> Result<Vec<CardStat>> {

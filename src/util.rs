@@ -14,11 +14,11 @@ use serde_derive::Serialize;
 use config::{Config, ConfigError};
 use itertools::Itertools;
 
-pub fn get_local_file(name: &str) -> PathBuf {
+pub fn get_local_file(name: &str, file_must_exist: bool) -> PathBuf {
     let mut p = env::current_exe().unwrap();
     p.pop();
     p.push(name);
-    if !p.exists() {
+    if file_must_exist && !p.exists() {
         panic!("Cannot find the {} file. Are you sure it's in the same directory as the executable?", name);
     }
     

@@ -63,9 +63,9 @@ struct WidgetOwner<'a> {
 
 impl AppState {
     fn new() -> AppState {
-        let p = get_local_file("settings.toml");
+        let p = get_local_file("settings.toml", true);
         let config = Settings::new(&p).unwrap();
-        let p = get_local_file("lieutenant.db");
+        let p = get_local_file("lieutenant.db", true);
         let conn = Connection::open(p).unwrap();
 
         db::add_regexp_function(&conn).unwrap();

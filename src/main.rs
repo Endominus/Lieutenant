@@ -34,7 +34,8 @@ pub enum Command {
     FullPull,
     UpdateDB,
     Draw,
-    ImportCards(String, Vec<String>, PathBuf),
+    ImportDeck(String, Vec<String>, PathBuf),
+    ExportDeck(i32, Option<PathBuf>),
 }
 
 pub fn run(command: Command) -> Result<()> {
@@ -70,8 +71,8 @@ pub fn run(command: Command) -> Result<()> {
             let _a = ui::run();
             // Ok(()) 
         },
-        Command::ImportCards(deck_name, commanders, filename) => {
-            let p = util::get_local_file("lieutenant.db");
+        Command::ImportDeck(deck_name, commanders, filename) => {
+            let p = util::get_local_file("lieutenant.db", true);
             let conn = Connection::open(p).unwrap();
 
             let mut cards = Vec::new();
@@ -84,15 +85,30 @@ pub fn run(command: Command) -> Result<()> {
                             let ic = db::ImportCard { name: a.unwrap(), tags: None };
                             cards.push(ic);
                         }
-                        db::import_deck(&conn, deck_name, commanders, cards)?;
                     }
                     "csv" => {
                         let mut rdr = csv::ReaderBuilder::new().flexible(true).from_path(&filename)?;
                         for result in rdr.records() {
                             let record = result?;
                             match record.deserialize::<db::ImportCard>(None) {
-                                Ok(p) => {println!("{:?}", p);}
-                                Err(e) => {println!("Error found {:?}", e);}
+                                Ok(p) => { cards.push(p); }
+                                Err(e) => {
+                                    // The user may have forgotten to put a comma at the end of a line.
+                                    match e.kind() {
+                                        csv::ErrorKind::Deserialize { pos: _ , err } => {
+                                            if let csv::DeserializeErrorKind::Message(s) = err.kind() {
+                                                if err.field() == None 
+                                                && s == &String::from("invalid length 1, expected struct ImportCard with 2 elements") {
+                                                    // println!("Problem with the card: {:?}", record.get(0).unwrap());
+                                                    let ic = db::ImportCard { name: String::from(record.get(0).unwrap()), tags: None };
+                                                    cards.push(ic);
+
+                                                }
+                                            };
+                                        }
+                                        _ => { println!("Error found in csv file: {}", e); }
+                                    }
+                                }
                             }
                         }
                     }
@@ -100,9 +116,31 @@ pub fn run(command: Command) -> Result<()> {
                         println!("Wrong extension; imports will only work from txt and csv files.")
                     }
                 }
+
+                db::import_deck(&conn, deck_name, commanders, cards)?;
             };
 
             // Ok(())
+        }
+        Command::ExportDeck(did, path) => {
+            let p = util::get_local_file("lieutenant.db", false);
+            let conn = Connection::open(p).unwrap();
+            let cards = db::rvicfdid(&conn, did).unwrap();
+            let p = match path {
+                Some(p) => { p }
+                None => {
+                    let deck = db::rdfdid(&conn, did).unwrap();
+                    util::get_local_file(format!("{}.csv", deck.name).as_str(), false)
+                }
+            };
+
+            let mut wtr = csv::Writer::from_path(p).unwrap();
+            wtr.write_record(&["Card Name","Tags"]).unwrap();
+            for card in cards {
+                let tags = match card.tags { Some(s) => {s} None => {String::new()}};
+                wtr.write_record(&[card.name, tags]).unwrap();
+
+            }
         }
     }
 
@@ -159,6 +197,20 @@ fn main() {
                 .about("Updates the card database with any new cards added"),
             SubCommand::with_name("debug")
                     .about("For testing various features as developed."),
+            SubCommand::with_name("export")
+                .about("Exports a deck from a given deck id. If no output file is given, the csv will be generated in the same directory as the executable.")
+                .arg(
+                    Arg::with_name("deck_id")
+                        .help("ID of the deck to export. Can be seen in the Open Deck screen.")
+                        .index(1)
+                        .required(true)
+                )
+                .arg(
+                    Arg::with_name("out_file")
+                        .help("Output file. Optional.")
+                        .index(2)   
+                        .required(false)
+                )
         ])
         .get_matches();
 
@@ -175,15 +227,6 @@ fn main() {
 
         }
         ("import", Some(sub_m)) => {
-            // let (primary, secondary) = match sub_m.value_of("primary_commander") {
-            //     Some(ps) => { 
-            //         match sub_m.value_of("secondary_commander") {
-            //             Some(ss) => { (ps.to_string(), ss.to_string())  }
-            //             None => { (ps.to_string(), String::new())  }
-            //         }
-            //     }
-            //     None => { (String::new(), String::new()) }
-            // };
             let commanders: Vec<_> = match sub_m.values_of("commander") {
                 Some(vs) => { vs.map(|s| s.to_string()).collect() }
                 None => { Vec::new() }
@@ -192,10 +235,18 @@ fn main() {
                 sub_m.value_of("deck").unwrap(),
                 commanders,
                 sub_m.value_of("filename").unwrap()); 
-            let _a = run(Command::ImportCards(
+            let _a = run(Command::ImportDeck(
                     sub_m.value_of("deck").unwrap().to_string(),
                     commanders,
                     PathBuf::from(sub_m.value_of("filename").unwrap())));
+        }
+        ("export", Some(sub_m)) => {
+            let did: i32 = sub_m.value_of("deck_id").unwrap().parse().unwrap();
+            let p = match sub_m.value_of("out_file") {
+                Some(s) => { Some(PathBuf::from(s)) }
+                None => { None }
+            };
+            run(Command::ExportDeck(did, p)).unwrap();
         }
         ("update", Some(_sub_m)) => {
             println!("Updating the database");
