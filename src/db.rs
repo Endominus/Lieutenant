@@ -611,16 +611,22 @@ pub fn dcntodc(conn: &Connection, c: &String, did: i32) -> Result<()> {
 
 pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<Card> {
     let mut card = rcfndid(conn, &c, did).unwrap();
-    if card.tags.contains(&t) {
+    let tags = if card.tags.contains(&t) {
         card.tags.remove(card.tags.iter().position(|x| x == t).unwrap());
         // return None;
+        if card.tags.is_empty() {
+            None
+        } else {
+            Some(card.tags.join("|"))
+        }
     } else {
         card.tags.push(t.clone());
-    }
+        Some(card.tags.join("|"))
+    };
     conn.execute("UPDATE deck_contents 
         SET tags = :tags
         WHERE card_name = :name
-        AND deck = :did;", named_params!{":tags": card.tags.join("|"), ":name": c, ":did": did})
+        AND deck = :did;", named_params!{":tags": tags, ":name": c, ":did": did})
         .unwrap();
     Some(card)
 }

@@ -13,13 +13,15 @@
     -- power, 
     -- toughness, 
     -- cmc
---     tags,
---     price
+    -- tags,
+    -- price
 -- FROM `cards`
 -- INNER JOIN deck_contents
 -- ON cards.name = deck_contents.card_name
--- WHERE deck_contents.deck = 6
+-- WHERE deck_contents.deck = 1
 -- AND power LIKE '%*%'
+-- AND (cards.name LIKE '%aetherm%')
+-- AND tags = ""
 -- AND (cards.name LIKE '%ana%' OR cards.name LIKE '%wis%')
 -- AND layout = 'modal_dfc' 
 -- OR types LIKE '%land%'
@@ -86,9 +88,9 @@
 -- FROM decks
 -- WHERE id > 5;
 -- SELECT *
-DELETE
-FROM decks
-WHERE name = "Chul";
+-- DELETE
+-- FROM decks
+-- WHERE name = "Chul";
 -- SELECT name, layout, related_cards, side, price, date_price_retrieved, tags
 --         FROM cards
 --         INNER JOIN deck_contents
@@ -117,7 +119,7 @@ WHERE name = "Chul";
 
 -- UPDATE deck_contents SET tags = NULL WHERE tags = "";
 
--- SELECT * FROM deck_contents WHERE tags LIKE "%|";
+SELECT * FROM deck_contents WHERE tags LIKE " ";
 
 -- SELECT name,card_text,side,layout,related_cards,types 
 -- FROM cards 

@@ -47,7 +47,6 @@ struct AppState {
     slt: StatefulList<String>,
     stod: OpenDeckTable,
     ac: Option<Card>,
-    tag: String,
     mdc: MakeDeckContents,
     dsi: DeckStatInfo,
     dirty_deck: bool,
@@ -83,7 +82,6 @@ impl AppState {
             slt: StatefulList::with_items(config.get_tags()),
             stod: OpenDeckTable::default(),
             ac: None,
-            tag: String::default(),
             mdc: MakeDeckContents::default(),
             dsi: DeckStatInfo::default(),
             quit: false,
@@ -158,8 +156,8 @@ impl AppState {
                                         self.slt = StatefulList::with_items(vt);
                                     };
                                     self.slt.select(&tag);
-                                    self.tag = tag;
                                 }
+                                // self.tag = self.slt.get().unwrap().clone();
                             }
                         }
                     }
@@ -230,14 +228,14 @@ impl AppState {
                         if let Some(card) = db::ttindc(
                             &self.dbc.lock().unwrap(), 
                             self.sldc.get().unwrap().name.clone(), 
-                            &self.tag, 
+                            &self.slt.get().unwrap(), 
                             self.deck_id) {
                                 self.sldc.replace(card.clone());
                                 self.ac = Some(card);
                         };
                     }
-                    KeyCode::Right => { self.tag = self.slt.next().unwrap(); }
-                    KeyCode::Left => { self.tag = self.slt.previous(); }
+                    KeyCode::Right => { self.slt.next().unwrap(); }
+                    KeyCode::Left => { self.slt.previous(); }
                     _ => {}
                 }
             }
@@ -299,7 +297,7 @@ impl AppState {
                                 // &self.dbc, 
                                 &self.dbc.lock().unwrap(), 
                                 self.sldbc.get().unwrap().name.clone(), 
-                                &self.tag, 
+                                &self.slt.get().unwrap(), 
                                 self.deck_id) {
                                     self.sldbc.replace(card.clone());
                                     self.ac = Some(card);
@@ -313,8 +311,8 @@ impl AppState {
                     }
                     KeyCode::Delete => { self.remove_from_deck(); }
                     KeyCode::Char(' ') => { self.ac_switch(true); }
-                    KeyCode::Right => { self.tag = self.slt.next().unwrap(); }
-                    KeyCode::Left => { self.tag = self.slt.previous(); }
+                    KeyCode::Right => { self.slt.next().unwrap(); }
+                    KeyCode::Left => { self.slt.previous(); }
                     _ => {}
                 }
             }
