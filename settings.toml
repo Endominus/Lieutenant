@@ -1,4 +1,5 @@
 [global]
+version = 1.0
 tags = [
     "main", 
     "draw", 
@@ -9,6 +10,8 @@ tags = [
 ]
 ordering = "-name"
 default_filter = "text"
+recent = -1
+open_into_recent = false
 
 [decks]
 

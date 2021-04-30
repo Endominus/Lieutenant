@@ -47,33 +47,59 @@ pub enum DefaultFilter {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct SettingsGroup {
+struct DeckSettings {
     tags: Option<Vec<String>>,
     ordering: Option<String>,
     default_filter: Option<String>
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+struct GlobalSettings {
+    tags: Vec<String>,
+    ordering: String,
+    default_filter: String,
+    version: f64,
+    recent: i32,
+    open_into_recent: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
-    global: SettingsGroup,
-    decks: HashMap<i32, SettingsGroup>
+    global: GlobalSettings,
+    decks: HashMap<i32, DeckSettings>
 }
 
 impl Settings {
     pub fn new(path: &PathBuf) -> Result<Self, ConfigError> {
         let mut s = Config::default();
+        let tags = Vec::from([
+            String::from("main"), 
+            String::from("draw"), 
+            String::from("board_wipe"), 
+            String::from("removal"), 
+            String::from("ramp"), 
+            String::from("side"), 
+        ]);
+        let ds: HashMap<String, String> = HashMap::new();
+        s.set_default("global.version", 0).unwrap();
+        s.set_default("global.recent", -1).unwrap();
+        s.set_default("global.open_into_recent", false).unwrap();
+        s.set_default("global.tags", tags).unwrap();
+        s.set_default("global.ordering", String::from("+name")).unwrap();
+        s.set_default("global.default_filter", String::from("name")).unwrap();
+        s.set_default("decks", ds).unwrap();
         s.merge(config::File::with_name(path.to_str().unwrap())).unwrap();
 
         s.try_into()
     }
 
     pub fn get_tags(&self) -> Vec<String> {
-        self.global.tags.as_ref().unwrap().clone()
+        self.global.tags.clone()
     }
 
     pub fn get_tags_deck(&self, deck: i32) -> Vec<String> {
         let mut r = Vec::new();
-        r.append(&mut self.global.tags.as_ref().unwrap().clone());
+        r.append(&mut self.global.tags.clone());
         if let Some(s) = self.decks.get(&deck) {
             if let Some(t) = &s.tags {
                 r.append(&mut t.clone());
@@ -95,17 +121,13 @@ impl Settings {
             }
         }
 
-        if let Some(o) = &self.global.ordering {
-            match o.as_str() {
-                "+name" => { return SortOrder::NameAsc }
-                "-name" => { return SortOrder::NameDesc }
-                "+cmc" => { return SortOrder::CmcAsc }
-                "-cmc" => { return SortOrder::CmcDesc }
-                _ => { return SortOrder::NameAsc }
-            }
+        match self.global.ordering.as_str() {
+            "+name" => { return SortOrder::NameAsc }
+            "-name" => { return SortOrder::NameDesc }
+            "+cmc" => { return SortOrder::CmcAsc }
+            "-cmc" => { return SortOrder::CmcDesc }
+            _ => { return SortOrder::NameAsc }
         }
-
-        SortOrder::NameAsc
     }
 
     pub fn get_default_filter(&self, deck: i32) -> DefaultFilter {
@@ -118,7 +140,7 @@ impl Settings {
             }
         }
 
-        if self.global.default_filter == Some(String::from("text")) { return DefaultFilter::Text }
+        if self.global.default_filter == String::from("text") { return DefaultFilter::Text }
         else { return DefaultFilter::Name }
     }
 
@@ -136,7 +158,7 @@ impl Settings {
                     nvt.sort();
                 }
             }
-            let d = SettingsGroup { tags: Some(nvt.clone()), ordering: o, default_filter: df };
+            let d = DeckSettings { tags: Some(nvt.clone()), ordering: o, default_filter: df };
             self.decks.insert(deck, d);
             vt.append(&mut nvt);
             return Some(vt)
@@ -152,19 +174,16 @@ impl Settings {
     // Experimented with using toml_edit, which preserves comments, but found that it didn't preserve indentation.
     pub fn to_toml(&self) -> String {
         let mut vr = Vec::from([String::from("[global]")]);
-        if let Some(vt) = &self.global.tags {
-            vr.push(String::from("tags = ["));
-            for t in vt {
-                vr.push(format!("\t\"{}\",", t));
-            }
-            vr.push(String::from("]"));
+        vr.push(format!("version = {}", self.global.version));
+        vr.push(String::from("tags = ["));
+        for t in &self.global.tags {
+            vr.push(format!("\t\"{}\",", t));
         }
-        if let Some(o) = &self.global.ordering {
-            vr.push(format!("ordering = \"{}\"", o));
-        }
-        if let Some(df) = &self.global.default_filter {
-            vr.push(format!("default_filter = \"{}\"", df));
-        }
+        vr.push(String::from("]"));
+        vr.push(format!("ordering = \"{}\"", self.global.ordering));
+        vr.push(format!("default_filter = \"{}\"", self.global.default_filter));
+        vr.push(format!("recent = {}", self.global.recent));
+        vr.push(format!("open_into_recent = {}", self.global.open_into_recent));
         vr.push(String::from("\n[decks]"));
 
         // Explore using a BTreeMap instead to lose dependence on itertools
