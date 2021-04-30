@@ -3,3 +3,5 @@
 *.json
 *.csv
 /.vscode
+Cargo.lock
+Marath.txt

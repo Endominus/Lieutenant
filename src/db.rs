@@ -36,6 +36,18 @@ pub struct Set {
     name: String,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct ImportCard {
+    pub name: String,
+    pub tags: Option<String>,
+}
+
+impl PartialEq for ImportCard {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
 #[derive(Default)]
 pub struct CardFilter<'a> {
     did: i32,
@@ -570,7 +582,7 @@ pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
     let mut r = Vec::new();
     let mut stmt = conn.prepare("INSERT INTO deck_contents (card_name, deck) VALUES (:card_name, :deck_id)")?;
     stmt.execute(named_params!{":card_name": c.name, ":deck_id": did as u32} )?;
-    r.push(rcfn(conn, &c.name).unwrap());
+    r.push(rcfn(conn, &c.name, None).unwrap());
     
     match &c.lo {
         Layout::Flip(_, n) | 
@@ -580,19 +592,19 @@ pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
         Layout::Adventure(_, n) | 
         Layout::Transform(_, n) => { 
             stmt.execute(named_params!{":card_name": n, ":deck_id": did as u32} )?;
-            r.push(rcfn(conn, &c.name).unwrap());
+            r.push(rcfn(conn, &c.name, None).unwrap());
         }
         Layout::Meld(s, n, m) => { 
             if s == &'b' {  
                 stmt.execute(named_params!{":card_name": n, ":deck_id": did as u32} )?;
-                r.push(rcfn(conn, &c.name).unwrap()); 
+                r.push(rcfn(conn, &c.name, None).unwrap()); 
                 stmt.execute(named_params!{":card_name": m, ":deck_id": did as u32} )?;
-                r.push(rcfn(conn, &c.name).unwrap());
+                r.push(rcfn(conn, &c.name, None).unwrap());
             } else {
                 let names: Vec<String> =  rvcfdid(conn, did, SortOrder::NameAsc).unwrap().iter().map(|c| c.to_string()).collect();
                 if names.contains(&n) {  
                     stmt.execute(named_params!{":card_name": m, ":deck_id": did as u32} )?;
-                    r.push(rcfn(conn, &c.name).unwrap());
+                    r.push(rcfn(conn, &c.name, None).unwrap());
                 }
             }
         }
@@ -609,8 +621,8 @@ pub fn dcntodc(conn: &Connection, c: &String, did: i32) -> Result<()> {
     Ok(())
 }
 
-pub fn ttindc(conn: &Connection, c: String, t: &String, did: i32) -> Option<Card> {
-    let mut card = rcfndid(conn, &c, did).unwrap();
+pub fn ttindc(conn: &Connection, c: &String, t: &String, did: i32) -> Option<Card> {
+    let mut card = rcfndid(conn, c, did).unwrap();
     let tags = if card.tags.contains(&t) {
         card.tags.remove(card.tags.iter().position(|x| x == t).unwrap());
         // return None;
@@ -650,10 +662,10 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &
                 "INSERT INTO decks (name, commander, commander2, deck_type) VALUES (:name, :commander, :commander2, :deck_type);").unwrap();
             stmt.execute(named_params!{":name": n, ":commander": c, ":commander2": c2, ":deck_type": t} ).unwrap();
             let rid = conn.last_insert_rowid();
-            let com = rcfn(conn, &c).unwrap();
+            let com = rcfn(conn, &c, None).unwrap();
             ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
         
-            let com = rcfn(conn, &c2).unwrap();
+            let com = rcfn(conn, &c2, None).unwrap();
             ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
 
             Ok(rid.try_into().unwrap())
@@ -664,7 +676,7 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &
                 "INSERT INTO decks (name, commander, deck_type) VALUES (:name, :commander, :deck_type);").unwrap();
             stmt.execute(named_params!{":name": n, ":commander": c, ":deck_type": t} ).unwrap();
             let rid = conn.last_insert_rowid();
-            let com = rcfn(conn, &c).unwrap();
+            let com = rcfn(conn, &c, None).unwrap();
             ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
 
             Ok(rid.try_into().unwrap())
@@ -673,43 +685,44 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &
     // println!("Row ID is {}", rid);
 }
 
-pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, cards: Vec<String>) -> Result<()> {
+pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, cards: Vec<ImportCard>) -> Result<()> {
     let mut num = 0;
     let (primary, secondary) = match coms.len() {
         0 => { 
-            let c = rcfn(conn, &cards.first().unwrap()).unwrap();
+            let c = rcfn(conn, &cards.first().unwrap().name, None).unwrap();
             match c.is_commander() {
                 CommanderType::Default => { 
                     println!("Valid commander found: {}", coms.first().unwrap());
-                    (cards.first().unwrap(), None) 
+                    (&cards.first().unwrap().name, None) 
                 }
                 CommanderType::Partner => { 
                     if let Some(cn) = cards.get(1) {
-                        let sc = rcfn(conn, &cn).unwrap();
+                        let sc = rcfn(conn, &cn.name, None).unwrap();
                         if sc.is_commander() == CommanderType::Partner { 
                             println!("Valid commanders found: {} and {}", c.name, sc.name);
                             // This is gross, but we need the owned value
-                            (cards.first().unwrap(), Some(cards.get(1).unwrap().clone()))
+                            (&cards.first().unwrap().name, Some(cards.get(1).unwrap().name.clone()))
                         } else { 
                             println!("Valid commander found: {}", c.name);
                             println!("This commander has the Partner keyword. To include the partner as a secondary commander, it must be the second card in the file.");
-                            (cards.first().unwrap(), None) 
+                            (&cards.first().unwrap().name, None) 
                         }
                     } else { 
                         println!("Valid commander found: {}", c.name);
                         println!("Did you really import a deck of just one card? Why?");
-                        (cards.first().unwrap(), None) 
+                        (&cards.first().unwrap().name, None) 
                     }
                 }
                 CommanderType::PartnerWith(ss) => { 
-                    if cards.contains(&ss) {
+                    let partner = ImportCard { name: ss.clone(), tags: None};
+                    if cards.contains(&partner) {
                         println!("Valid commanders found: {} and {}", c.name, &ss);
                         // let ss = ss.clone();
-                        (cards.first().unwrap(), Some(ss))
+                        (&cards.first().unwrap().name, Some(ss))
                     } else {
                         println!("Valid commander found: {}", c.name);
                         println!("But did you forget to put {} in the deck? It wasn't found.", &ss);
-                        (coms.first().unwrap(), None) 
+                        (&cards.first().unwrap().name, None) 
                     }
                 }
                 CommanderType::Invalid  => { 
@@ -731,16 +744,16 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
         println!("Deck created successfully! Now adding cards...");
         conn.execute_batch("BEGIN TRANSACTION;")?;
         let deck = rdfdid(conn, deck_id).unwrap();
-        for c in cards {
+        for ic in cards {
             // println!("Adding {}", c);
-            let c = c.trim().to_string();
+            let c = ic.name.trim().to_string();
             if c.len() == 0 { continue }
             let card = if let Some(i) = c.find(" // ") {
                 let c = c.get(0..i).unwrap();
-                rcfn(conn, &c.to_string()).unwrap()
+                rcfn(conn, &c.to_string(), None).unwrap()
             } else {
                 // rcfn(conn, &c).unwrap()
-                match rcfn(conn, &c) {
+                match rcfn(conn, &c, None) {
                     Ok(a) => { a }
                     Err(_) => { println!("Error on card {}", c); return Ok(()) }
                 }
@@ -753,6 +766,11 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
             }
             if disq.len() == 0 {
                 ictodc(conn, &card, deck_id)?;
+                if let Some(tags) = ic.tags {
+                    for tag in tags.split("|") {
+                        ttindc(conn, &card.name, &tag.to_string(), deck_id);
+                    }
+                };
                 num += 1;
             } else {
                 println!("Card not added: \"{}\" due to: {}", &card.name, disq);
@@ -765,14 +783,15 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
     Ok(())
 }
 
-pub fn rcfn(conn: &Connection, name: &String) -> Result<Card> {
+pub fn rcfn(conn: &Connection, name: &String, odid: Option<i32>) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT 
         cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
         FROM cards 
         LEFT OUTER JOIN deck_contents
         ON cards.name = deck_contents.card_name
+        AND deck_contents.deck = :did
         WHERE name = :name;")?;
-    stmt.query_row(named_params!{":name": name}, |row| {
+    stmt.query_row(named_params!{":name": name, ":did": odid}, |row| {
         cfr(row)
     })
 }
@@ -810,7 +829,7 @@ pub fn rcomfdid(conn: &Connection, did: i32, secondary: bool) -> Result<Card> {
         })?
     };
 
-    rcfn(conn, &name)
+    rcfn(conn, &name, Some(did))
 }
 
 pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
@@ -818,11 +837,11 @@ pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
 
     let a = stmt.query_map([], |row| {
         let mut color = String::new();
-        let com = rcfn(conn, &row.get(2)?)?;
+        let com = rcfn(conn, &row.get(2)?, None)?;
         let mut com2_colors = Vec::new();
         let com2 = match row.get::<usize, String>(3) {
             Ok(com) => { 
-                let b = rcfn(conn, &com)?; 
+                let b = rcfn(conn, &com, None)?; 
                 com2_colors = b.color_identity.clone(); 
                 Some(b) 
             }
@@ -858,11 +877,11 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
 
     stmt.query_row(params![id], |row| {
         let mut color = String::new();
-        let com = rcfn(conn, &row.get(2)?)?;
+        let com = rcfn(conn, &row.get(2)?, None)?;
         let mut com2_colors = Vec::new();
         let com2 = match row.get::<usize, String>(3) {
             Ok(com) => { 
-                let b = rcfn(conn, &com)?; 
+                let b = rcfn(conn, &com, None)?; 
                 com2_colors = b.color_identity.clone(); 
                 Some(b) 
             }

@@ -11,6 +11,7 @@ extern crate tui;
 extern crate serde_json;
 extern crate peg;
 extern crate lazy_static;
+extern crate csv;
 
 use lieutenant::db;
 use lieutenant::ui;
@@ -19,6 +20,7 @@ use lieutenant::util;
 use rusqlite::Connection;
 use std::{fs::File, io::BufRead};
 use std::io::BufReader;
+use std::path::PathBuf;
 // use std::collections::HashMap;
 // use std::path::Path;
 // use std::time::{Duration, Instant};
@@ -32,7 +34,7 @@ pub enum Command {
     FullPull,
     UpdateDB,
     Draw,
-    ImportCards(String, Vec<String>, String),
+    ImportCards(String, Vec<String>, PathBuf),
 }
 
 pub fn run(command: Command) -> Result<()> {
@@ -49,7 +51,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::RetrieveCard(card) => {
             // let cf = CardFilter::from(-1, &card);
             let conn = Connection::open("lieutenant.db")?;
-            let a = db::rcfn(&conn, &card)?;
+            let a = db::rcfn(&conn, &card, None)?;
             // for card in a {
             println!("{:?}", a);
             // }
@@ -71,14 +73,35 @@ pub fn run(command: Command) -> Result<()> {
         Command::ImportCards(deck_name, commanders, filename) => {
             let p = util::get_local_file("lieutenant.db");
             let conn = Connection::open(p).unwrap();
-            let file =  File::open(filename).unwrap();
-            let buf = BufReader::new(file);
-            let mut cards = Vec::new();
-            for a in buf.lines() {
-                cards.push(a.unwrap());
-            }
 
-            db::import_deck(&conn, deck_name, commanders, cards)?;
+            let mut cards = Vec::new();
+            if let Some(ext) = filename.extension() {
+                match ext.to_str().unwrap() {
+                    "txt" => {
+                        let file =  File::open(&filename).unwrap();
+                        let buf = BufReader::new(file);
+                        for a in buf.lines() {
+                            let ic = db::ImportCard { name: a.unwrap(), tags: None };
+                            cards.push(ic);
+                        }
+                        db::import_deck(&conn, deck_name, commanders, cards)?;
+                    }
+                    "csv" => {
+                        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_path(&filename)?;
+                        for result in rdr.records() {
+                            let record = result?;
+                            match record.deserialize::<db::ImportCard>(None) {
+                                Ok(p) => {println!("{:?}", p);}
+                                Err(e) => {println!("Error found {:?}", e);}
+                            }
+                        }
+                    }
+                    _ => {
+                        println!("Wrong extension; imports will only work from txt and csv files.")
+                    }
+                }
+            };
+
             // Ok(())
         }
     }
@@ -110,7 +133,7 @@ fn main() {
                         .required(true),
                 ),
             SubCommand::with_name("import")
-                .about("Imports cards from a file into a deck")
+                .about("Imports cards from a csv or text file into a deck")
                 .arg(
                     Arg::with_name("deck")
                         .help("Desired name of the deck")
@@ -172,7 +195,7 @@ fn main() {
             let _a = run(Command::ImportCards(
                     sub_m.value_of("deck").unwrap().to_string(),
                     commanders,
-                    sub_m.value_of("filename").unwrap().to_string()));
+                    PathBuf::from(sub_m.value_of("filename").unwrap())));
         }
         ("update", Some(_sub_m)) => {
             println!("Updating the database");

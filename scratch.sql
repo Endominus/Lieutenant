@@ -119,7 +119,17 @@
 
 -- UPDATE deck_contents SET tags = NULL WHERE tags = "";
 
-SELECT * FROM deck_contents WHERE tags LIKE " ";
+-- SELECT * FROM deck_contents WHERE tags LIKE " ";
+-- DELETE FROM deck_contents WHERE deck > 6;
+-- SELECT * FROM deck_contents WHERE card_name = "Bident of Thassa";
+-- SELECT DISTINCT id FROM decks;
+SELECT 
+cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
+FROM cards 
+LEFT OUTER JOIN deck_contents
+ON deck_contents.deck = NULL
+AND deck_contents.card_name = cards.name
+WHERE name = "Bident of Thassa";
 
 -- SELECT name,card_text,side,layout,related_cards,types 
 -- FROM cards 

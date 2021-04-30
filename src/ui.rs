@@ -172,7 +172,7 @@ impl AppState {
                         }
                         if let Some(c) = self.sldbc.get_string() {
                             // self.ac = Some(db::rcfn(&self.dbc, &c).unwrap());
-                            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &c).unwrap());
+                            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &c, Some(self.deck_id)).unwrap());
                         } else {
                             self.ac = None;
                         }
@@ -227,7 +227,7 @@ impl AppState {
                     KeyCode::Enter => {
                         if let Some(card) = db::ttindc(
                             &self.dbc.lock().unwrap(), 
-                            self.sldc.get().unwrap().name.clone(), 
+                            &self.sldbc.get().unwrap().name, 
                             &self.slt.get().unwrap(), 
                             self.deck_id) {
                                 self.sldc.replace(card.clone());
@@ -254,7 +254,7 @@ impl AppState {
                         if self.sldbc.items.len() > 0 {
                             self.mode = Screen::DbCards;
                             // self.ac = Some(db::rcfn(&self.dbc, &self.sldbc.get_string().unwrap()).unwrap());
-                            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &self.sldbc.get_string().unwrap()).unwrap());
+                            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &self.sldbc.get_string().unwrap(), Some(self.deck_id)).unwrap());
                         }
                     }
                     KeyCode::Tab => {
@@ -274,7 +274,8 @@ impl AppState {
                         self.ac = Some(db::rcfn(
                             // &self.dbc, 
                             &self.dbc.lock().unwrap(), 
-                            &self.sldbc.previous()).unwrap());  
+                            &self.sldbc.previous(), 
+                            Some(self.deck_id)).unwrap());  
                         //TODO: Move to the below model instead
                         // self.sldbc.previous();
                         // self.ac = self.sldbc.get();
@@ -283,7 +284,8 @@ impl AppState {
                         self.ac = Some(db::rcfn(
                             // &self.dbc, 
                             &self.dbc.lock().unwrap(), 
-                            &self.sldbc.next().unwrap()).unwrap()); 
+                            &self.sldbc.next().unwrap(), 
+                            Some(self.deck_id)).unwrap()); 
                         //TODO: Move to the below model instead
                         // self.sldbc.next();
                         // self.ac = self.sldbc.get();
@@ -296,7 +298,7 @@ impl AppState {
                             if let Some(card) = db::ttindc(
                                 // &self.dbc, 
                                 &self.dbc.lock().unwrap(), 
-                                self.sldbc.get().unwrap().name.clone(), 
+                                &self.sldbc.get().unwrap().name, 
                                 &self.slt.get().unwrap(), 
                                 self.deck_id) {
                                     self.sldbc.replace(card.clone());
@@ -325,7 +327,7 @@ impl AppState {
                             MakeDeckFocus::Commander => { 
                                 //TODO: Test against empty string
                                 if let Some(name) = self.mdc.commander_names.get(0) {
-                                    let c = db::rcfn(&self.dbc.lock().unwrap(), &name).unwrap();
+                                    let c = db::rcfn(&self.dbc.lock().unwrap(), &name, None).unwrap();
                                     match c.is_commander() {
                                         CommanderType::Default => {
                                             self.deck_id = db::ideck(
@@ -365,7 +367,7 @@ impl AppState {
                             MakeDeckFocus::SecondaryCommander => {
                                 if let Some(name) = self.mdc.commander_names.get(0) {
                                     // match db::rcfn(&self.dbc, &name) {
-                                    let c = db::rcfn(&self.dbc.lock().unwrap(), &name);
+                                    let c = db::rcfn(&self.dbc.lock().unwrap(), &name, None);
                                     match c {
                                         Ok(_) => {
                                             self.deck_id = db::ideck(
@@ -594,7 +596,7 @@ impl AppState {
         if rel2 != String::new() {
             if side == &'a' {
                 // let meld = db::rcfn(&self.dbc, &rel2).unwrap();
-                let meld = db::rcfn(&self.dbc.lock().unwrap(), &rel2).unwrap();
+                let meld = db::rcfn(&self.dbc.lock().unwrap(), &rel2, Some(self.deck_id)).unwrap();
                 match meld.lo {
                     crate::util::Layout::Meld(_, face, _) => {
                         if face.clone() == rel {
@@ -607,14 +609,14 @@ impl AppState {
         }
         if general {
             // self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
-            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &rel).unwrap());
+            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &rel, Some(self.deck_id)).unwrap());
         } else {
             // if let Ok(c) = db::rcfndid(&self.dbc, &rel, self.deck_id) {
             if let Ok(c) = db::rcfndid(&self.dbc.lock().unwrap(), &rel, self.deck_id) {
                 self.ac = Some(c);
             } else {
                 // self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
-                self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &rel).unwrap());
+                self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &rel, Some(self.deck_id)).unwrap());
             }
         }
     }
