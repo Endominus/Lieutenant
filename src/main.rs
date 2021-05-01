@@ -12,27 +12,23 @@ extern crate serde_json;
 extern crate peg;
 extern crate lazy_static;
 extern crate csv;
+extern crate self_update;
 
 use lieutenant::db;
 use lieutenant::ui;
 use lieutenant::util;
 
+use std::{fs::File, path::PathBuf, io::{BufReader, BufRead}};
 use rusqlite::Connection;
-use std::{fs::File, io::BufRead};
-use std::io::BufReader;
-use std::path::PathBuf;
-// use std::collections::HashMap;
-// use std::path::Path;
-// use std::time::{Duration, Instant};
-
 use clap::{App, Arg, SubCommand};
 use anyhow::Result;
+use self_update::cargo_crate_version;
 
 pub enum Command {
     RetrieveCardOnline(String),
     RetrieveCard(String),
     FullPull,
-    UpdateDB,
+    Update,
     Draw,
     ImportDeck(String, Vec<String>, PathBuf),
     ExportDeck(i32, Option<PathBuf>),
@@ -66,10 +62,20 @@ pub fn run(command: Command) -> Result<()> {
             // println!("{:?}", a);
             // Ok(())
         },
-        Command::UpdateDB => {unimplemented!()},
+        Command::Update => {
+            let status = self_update::backends::github::Update::configure()
+                .repo_owner("Endominus")
+                .repo_name("Lieutenant")
+                .bin_name("lieutenant")
+                .show_download_progress(true)
+                .current_version(cargo_crate_version!())
+                .build()?
+                .update()?;
+            println!("Updated to version {}!", status.version());
+            //TODO: update card database as well
+        },
         Command::Draw => { 
             let _a = ui::run();
-            // Ok(()) 
         },
         Command::ImportDeck(deck_name, commanders, filename) => {
             let p = util::get_local_file("lieutenant.db", true);
@@ -150,7 +156,7 @@ pub fn run(command: Command) -> Result<()> {
 
 fn main() {
     let matches = App::new("Lieutenant")
-        .version("0.6")
+        .version(cargo_crate_version!())
         .about("Helps you manage your commander decks")
         .author("Endominus")
         .subcommands( vec![
@@ -194,9 +200,9 @@ fn main() {
                         .takes_value(true)
                 ),
             SubCommand::with_name("update")
-                .about("Updates the card database with any new cards added"),
+                .about("Updates the application and card database."),
             SubCommand::with_name("debug")
-                    .about("For testing various features as developed."),
+                .about("For testing various features as developed."),
             SubCommand::with_name("export")
                 .about("Exports a deck from a given deck id. If no output file is given, the csv will be generated in the same directory as the executable.")
                 .arg(
@@ -249,11 +255,8 @@ fn main() {
             run(Command::ExportDeck(did, p)).unwrap();
         }
         ("update", Some(_sub_m)) => {
-            println!("Updating the database");
-            // let _a = run(Command::FullPull);
-            // if let Err(e) = run(Command::FullPull) {
-            //     println!("Error: {}", e);
-            // }
+            println!("Updating the application and database.");
+            run(Command::Update).unwrap();
         }
         ("debug", Some(_sub_m)) => {
             let conn = Connection::open("lieutenant.db").unwrap();

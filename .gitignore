@@ -5,3 +5,5 @@
 /.vscode
 Cargo.lock
 Marath.txt
+*.zip
+*.tar.gz

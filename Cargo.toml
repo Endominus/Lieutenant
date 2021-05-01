@@ -1,6 +1,6 @@
 [package]
 name = "lieutenant"
-version = "0.6.0"
+version = "0.7.1"
 authors = ["Endominus <endominus@gmail.com>"]
 edition = "2018"
 
@@ -35,3 +35,7 @@ features = ["bundled", "functions"]
 version = "0.14"
 default-features = false
 features = ['crossterm']
+
+[dependencies.self_update]
+version = "0.26.0"
+features = ['archive-tar', 'archive-zip', 'compression-flate2', 'compression-zip-deflate']

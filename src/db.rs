@@ -181,10 +181,10 @@ impl<'a> CardFilter<'a> {
             if let Some(i) = omni.find(" /") {
                 ss = omni.get(0..i).unwrap();
             }
-            let ph = omni_parser::default(ss.trim()).unwrap();
+            // let ph = omni_parser::default(ss.trim()).unwrap();
             match default_filter {
-                DefaultFilter::Name => { hm.insert("name", ph); }
-                DefaultFilter::Text => { hm.insert("text", ph); }
+                DefaultFilter::Name => { hm.insert("name", String::from(ss.trim())); }
+                DefaultFilter::Text => { hm.insert("text", String::from(ss.trim())); }
                 // DefaultFilter::Name => { hm.insert("name", String::from(omni)); }
                 // DefaultFilter::Text => { hm.insert("text", String::from(omni)); }
             }
