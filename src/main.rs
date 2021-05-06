@@ -23,6 +23,7 @@ use rusqlite::Connection;
 use clap::{App, Arg, SubCommand};
 use anyhow::Result;
 use self_update::cargo_crate_version;
+use std::time::Instant;
 
 pub enum Command {
     RetrieveCardOnline(String),
@@ -73,6 +74,19 @@ pub fn run(command: Command) -> Result<()> {
                 .update()?;
             println!("Updated to version {}!", status.version());
             //TODO: update card database as well
+            // println!("Adding cards from STX.");
+            // let now = Instant::now();
+            // let file = File::open("C:\\Users\\ahals\\Downloads\\AtomicCards.json").unwrap();
+            // let reader = BufReader::new(file);
+            // let a: serde_json::Value = serde_json::from_reader(reader).unwrap();
+            // println!("Imported cards in {} ms.", now.elapsed().as_millis());
+
+            let now = Instant::now();
+            let conn2 = Connection::open("D:\\Programs\\Lieutenant\\AllPrintings.sqlite").unwrap();
+            let p = util::get_local_file("lieutenant.db", true);
+            let conn = Connection::open(p).unwrap();
+            db::ucfsqlite(&conn, &conn2).unwrap();
+            println!("Updated all cards in {} ms.", now.elapsed().as_millis());
         },
         Command::Draw => { 
             let _a = ui::run();

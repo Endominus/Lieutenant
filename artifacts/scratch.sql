@@ -123,13 +123,13 @@
 -- DELETE FROM deck_contents WHERE deck > 6;
 -- SELECT * FROM deck_contents WHERE card_name = "Bident of Thassa";
 -- SELECT DISTINCT id FROM decks;
-SELECT 
-cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
-FROM cards 
-LEFT OUTER JOIN deck_contents
-ON deck_contents.deck = NULL
-AND deck_contents.card_name = cards.name
-WHERE name = "Bident of Thassa";
+-- SELECT 
+-- cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
+-- FROM cards 
+-- LEFT OUTER JOIN deck_contents
+-- ON deck_contents.deck = NULL
+-- AND deck_contents.card_name = cards.name
+-- WHERE name = "Bident of Thassa";
 
 -- SELECT name,card_text,side,layout,related_cards,types 
 -- FROM cards 
@@ -165,18 +165,18 @@ WHERE name = "Bident of Thassa";
 -- FROM cards
 -- WHERE layout == 'modal_dfc';
 
--- SELECT name, layout, related_cards, side, date_price_retrieved, tags
---         FROM cards
---         INNER JOIN deck_contents
---         ON cards.name = deck_contents.card_name
---         WHERE deck_contents.deck = 1
+SELECT name, rarity, price, tags
+        FROM cards
+        INNER JOIN deck_contents
+        ON cards.name = deck_contents.card_name
+        WHERE deck_contents.deck = 1;
 --         AND side != 'b'
 --         AND (date_price_retrieved ISNULL OR date_price_retrieved < date())
 --         AND tags IS NOT NULL 
 
--- SELECT name
---         FROM cards
---         WHERE name LIKE '%Avacyn%'
+-- SELECT *
+--         FROM cards;
+        -- WHERE name LIKE '%Wake the Past%';
 --         AND types LIKE 'Legendary%'
 --         AND (types LIKE '%Creature%' OR card_text LIKE '%can be your commander%')
 --         ORDER BY name ASC;

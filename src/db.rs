@@ -444,6 +444,7 @@ pub fn initdb(conn: &Connection) -> Result<()> {
             layout text not null,
             side text,
             legalities text not null,
+            rarity,
             price real,
             date_price_retrieved text
         )", [],
@@ -474,33 +475,73 @@ pub fn initdb(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn ucfsqlite(conn_primary: &Connection, conn_secondary: &Connection,) -> Result<()> {
+    let mut stmt = conn_primary.prepare("UPDATE cards SET rarity = :rarity WHERE name = :name;")?;
+
+    let mut stmt_second = conn_secondary.prepare("SELECT name, faceName, rarity FROM cards;")?;
+    let mut result = HashMap::new();
+    let _a: Result<Vec<()>> = stmt_second.query_map(
+        [], 
+        |row| { 
+            let name = match row.get::<usize, String>(1) {
+                Ok(s) => { s }
+                _ => { row.get::<usize, String>(0)? }
+            };
+            let rarity = row.get::<usize, String>(2)?;
+            if rarity != "special".to_string() && rarity != "bonus".to_string() {
+                result.insert(name, rarity); 
+            }
+            Ok(()) 
+        })?.collect();
+
+    let (mut success, mut failure) = (0, 0);
+
+    println!("Generated card array. {} total cards.", result.len());
+    conn_primary.execute_batch("BEGIN TRANSACTION;")?;
+
+    for (name, rarity) in result {
+
+        match stmt.execute(named_params!{
+            ":name": name,
+            ":rarity": rarity,
+        }) {
+            Ok(_) => { success += 1; },
+            Err(_) => { 
+                failure += 1;
+                println!("Failed for {}", name);
+             },
+        }
+    }
+    
+    conn_primary.execute_batch("COMMIT TRANSACTION;")?;
+
+    println!("{} cards changed successfully. {} failures.", success, failure);
+
+    Ok(())
+}
+
 pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
     //TODO: since we've split the Json out of Card, see if any of this can be more effectively passed in
     let mut stmt = conn.prepare("INSERT INTO cards (
-        name, mana_cost, cmc, types, card_text, power, toughness, loyalty, color_identity, related_cards, layout, side, legalities
+        name, mana_cost, cmc, types, card_text, power, toughness, loyalty, color_identity, related_cards, layout, side, legalities, rarity
     ) VALUES (
-            :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :loyalty, :color_identity, :related_cards, :layout, :side, :legalities
+            :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :loyalty, :color_identity, :related_cards, :layout, :side, :legalities, :rarity
     )")?;
     let mut vc: Vec<JsonCard> = Vec::new();
 
-    let (mut success, mut failure) = (0, 0);    
+    let (mut success, mut failure) = (0, 0);
     
-    let map =  match &jm["data"] {
-        serde_json::Value::Object(i) => { i }
+    let map =  match &jm["data"]["cards"] {
+        serde_json::Value::Array(i) => { i }
         _ => { panic!(); }
     };
 
-    for (_name, value) in map {
-        // For some reason, serde won't deserialize the sequence properly.
-        for v in value.as_array() {
-            for c in v {
-                let d = serde_json::from_value(c.clone()).unwrap();
-                vc.push(d);
-            }
-        }
+    for value in map {
+        let d = serde_json::from_value(value.clone()).unwrap();
+        vc.push(d);
     }
 
-    println!("Generated card array.");
+    println!("Generated card array. {} total cards.", vc.len());
     conn.execute_batch("BEGIN TRANSACTION;")?;
 
     for c in vc {
@@ -551,6 +592,7 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
             ":layout": c.layout,
             ":side": side,
             ":legalities": c.legalities.to_string(),
+            ":rarity": c.rarity,
         }) {
             Ok(_) => { success += 1; },
             Err(_) => { 
@@ -1180,7 +1222,6 @@ pub fn rpfdc(name: &String, layout: &String, related: &String) -> Result<f64> {
     // let future = rcostfcn(&s);
     // let res = rt.block_on(future).unwrap();
     let res = rcostfcn(&s).unwrap();
-    // println!("{} has a price of {}", s, res);
 
     Ok(res)
 }
@@ -1210,7 +1251,7 @@ pub struct JsonCard {
     pub layout : String,
     // pub related_cards: Option<Relation>,
     pub side: Option<char>,
-    //TODO: Add rarity and sets
+    pub rarity: String,
 }
 
 fn zero() -> String { String::from("0") }
