@@ -135,7 +135,7 @@ impl AppState {
                         //     self.config.remove(deck.id);
                         // };
                         self.mode_p = self.mode;
-                        self.mode = Screen::Error("Confirm Deletion\nAre you sure you want to delete this deck?\nPress Enter to confirm.");
+                        self.mode = Screen::Error("Confirm Deletion\nAre you sure you want to delete the below deck?\n{DECK}\nPress Enter to confirm.");
                     }
                     _ => {}
                 }
@@ -909,7 +909,11 @@ fn draw<'a>(
             }
             Screen::Settings => {}
             Screen::Error(s) => {
-                let (title, message) = s.split_once("\n").unwrap();
+                let (title, mut message) = s.split_once("\n").unwrap();
+                let s = message.replace("{DECK}", state.stod.get().unwrap().name.as_str());
+                if title == "Confirm Deletion" {
+                    message = s.as_str();
+                }
                 let err_message = Paragraph::new(message)
                     .block(Block::default().borders(Borders::ALL).title(title));
                 let area = centered_rect(60, f.size());
@@ -991,8 +995,8 @@ fn centered_rect(percent_x: u16, r: Rect) -> Rect {
         .direction(Direction::Vertical)
         .constraints(
             [
-                Constraint::Length(r.height/2 - 2),
-                Constraint::Length(4),
+                Constraint::Length(r.height/2 - 3),
+                Constraint::Length(5),
                 Constraint::Length(r.height/2 - 2),
             ]
             .as_ref(),
