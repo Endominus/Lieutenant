@@ -832,6 +832,7 @@ pub struct Card {
     pub toughness: String,
     pub types: String,
     pub lo: Layout,
+    pub rarity: String
     //TODO: Add rarity and sets
 }
 
@@ -842,6 +843,7 @@ impl Card {
             self.name.clone(),
             format!("{}, ({})", self.mana_cost, self.cmc),
             self.types.clone(),
+            self.rarity.clone(),
             String::new(),
         ];
             

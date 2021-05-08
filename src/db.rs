@@ -83,9 +83,6 @@ impl<'a> CardFilter<'a> {
 
     pub fn parse_omni(omni: &str, default_filter: DefaultFilter) -> HashMap<&str, String> {
         let mut hm = HashMap::new();
-        // hm.insert(String::from("test"), String::from("test"));
-
-        // let omni = String::from(omni);
 
         peg::parser!{
             grammar omni_parser() for str {
@@ -103,7 +100,8 @@ impl<'a> CardFilter<'a> {
                 / cmc(hm) 
                 / color_identity(hm) 
                 / power(hm) 
-                / toughness(hm) 
+                / toughness(hm)
+                / rarity(hm) 
                 / sort(hm)
                 / name(hm)
                 )
@@ -123,12 +121,13 @@ impl<'a> CardFilter<'a> {
                 rule ctype(hm: &mut HashMap<&str, String>)
                 = type_alias() ":" value:type_group() ** or_separator() { if value[0] != String::default() { hm.insert("type", value.join("|")); }}
                 rule power(hm: &mut std::collections::HashMap<&str, String>)
-                = power_alias() ":" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { if value != "" { hm.insert("power", String::from(value)); }}
+                = power_alias() ":" value:$(number_range() / "*") { if value != "" { hm.insert("power", String::from(value)); }}
                 rule toughness(hm: &mut std::collections::HashMap<&str, String>)
-                = toughness_alias() ":" value:$((['0'..='9']+)? "-"? (['0'..='9']+)?) { if value != "" { hm.insert("toughness", String::from(value)); }}
+                = toughness_alias() ":" value:$(number_range() / "*") { if value != "" { hm.insert("toughness", String::from(value)); }}
                 rule color_identity(hm: &mut HashMap<&str, String>)
                 = color_identity_alias() ":" value:$(colors()+) ** or_separator() { if !value.is_empty() { hm.insert("color_identity", value.join("|")); }}
-
+                rule rarity(hm: &mut HashMap<&str, String>)
+                = rarity_alias() ":" value:$(['c' | 'u' | 'r' | 'm']+) { hm.insert("rarity", String::from(value)); }
                 rule ss_values() -> String
                 = v:$(phrase() / word()) { String::from(v) }
                 rule type_group() -> String
@@ -143,6 +142,7 @@ impl<'a> CardFilter<'a> {
                 rule color_alias() = ("color" / "c")
                 rule power_alias() = ("power" / "p")
                 rule toughness_alias() = ("toughness" / "t")
+                rule rarity_alias() = ("rarity" / "r")
                 rule color_identity_alias() = ("color_identity" / "coloridentity" / "ci")
                 rule tag_alias() = ("tag" / "tags")
 
@@ -374,10 +374,72 @@ impl<'a> CardFilter<'a> {
                     }
                     sort_on = String::from(value.get(1..).unwrap());
                 }
-                //TODO: Add later. Not critical right now, and will be annoying due to the string->integer translation.
-                // "strength" => {}
-                // "toughness" => {}
-                // "rarity" => {}
+                "power" => {
+                    if value == "*" {
+                        vs.push(String::from("AND power LIKE \'%*%\'"));
+                    } else {
+                        match value.get(0..1) {
+                            Some(">") => { vs.push(format!("AND power > {}", value.get(1..).unwrap())); }
+                            Some("<") => { vs.push(format!("AND power < {}", value.get(1..).unwrap())); }
+                            Some("-") => { vs.push(format!("AND power <= {}", value.get(1..).unwrap())); }
+                            Some(_) => { 
+                                match value.find("-") {
+                                    Some(i) => {
+                                        let (min, max) = value.split_at(i);
+                                        // let max = if let Some("") = max.get(1..) { i } else { "1000" };
+                                        let max_raw = max.get(1..).unwrap();
+                                        let max = if "" == max_raw { "1000" } else { max_raw };
+                                        vs.push(format!("AND (power >= {} AND power <= {})", min, max));
+                                    }
+                                    None => {
+                                        vs.push(format!("AND power = {}", value));
+                                    }
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                "toughness" => {
+                    if value == "*" {
+                        vs.push(String::from("AND toughness LIKE \'%*%\'"));
+                    } else {
+                        match value.get(0..1) {
+                            Some(">") => { vs.push(format!("AND toughness > {}", value.get(1..).unwrap())); }
+                            Some("<") => { vs.push(format!("AND toughness < {}", value.get(1..).unwrap())); }
+                            Some("-") => { vs.push(format!("AND toughness <= {}", value.get(1..).unwrap())); }
+                            Some(_) => { 
+                                match value.find("-") {
+                                    Some(i) => {
+                                        let (min, max) = value.split_at(i);
+                                        // let max = if let Some("") = max.get(1..) { i } else { "1000" };
+                                        let max_raw = max.get(1..).unwrap();
+                                        let max = if "" == max_raw { "1000" } else { max_raw };
+                                        vs.push(format!("AND (toughness >= {} AND toughness <= {})", min, max));
+                                    }
+                                    None => {
+                                        vs.push(format!("AND toughness = {}", value));
+                                    }
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                "rarity" => {
+                    let mut vc = Vec::new();
+                    for r in value.chars() {
+                        let rarity = match r {
+                            'c' => { "common" }
+                            'u' => { "uncommon" }
+                            'r' => { "rare" }
+                            'm' => { "mythic" }
+                            _ => { continue; }
+                        };
+                        vc.push(format!("rarity == \'{}\'", rarity));
+                    }
+                    vs.push(format!("AND ({})", vc.join(" OR ")));
+                }
                 _ => {}
             }
         }
@@ -827,7 +889,7 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
 
 pub fn rcfn(conn: &Connection, name: &String, odid: Option<i32>) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity
         FROM cards 
         LEFT OUTER JOIN deck_contents
         ON cards.name = deck_contents.card_name
@@ -840,7 +902,7 @@ pub fn rcfn(conn: &Connection, name: &String, odid: Option<i32>) -> Result<Card>
 
 pub fn rcfndid(conn: &Connection, name: &String, did: i32) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity
         FROM cards 
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
@@ -959,7 +1021,7 @@ pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec
 
     // For some reason, sqlite doesn't like named parameters in the ORDER BY clause.
     let s = format!("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity
         FROM cards 
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
@@ -974,7 +1036,7 @@ pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec
 }
 
 pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool, sort_order: SortOrder) -> Result<Vec<Card>> {
-    let fields = "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags";
+    let fields = "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity";
     let qs = format!("
         SELECT {}
         FROM `cards`
@@ -1122,7 +1184,8 @@ fn cfr(row:& Row) -> Result<Card> {
         toughness: row.get(8)?,
         types: row.get(9)?,
         lo,
-        tags
+        tags,
+        rarity: row.get(14)?
     })
 }
 
