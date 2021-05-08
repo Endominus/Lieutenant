@@ -397,6 +397,7 @@ impl OpenDeckTable {
     pub fn rdt(&self) -> Table {
         let decks = self.decks.clone();
         let headers = Row::new(vec![
+            Cell::from("ID"),
             Cell::from("Deck Name"),
             Cell::from("Commander(s)"),
             Cell::from("Color"),
@@ -414,6 +415,7 @@ impl OpenDeckTable {
             };
 
             let r = Row::new(vec![
+                Cell::from(deck.id.to_string()),
                 Cell::from(deck.name),
                 Cell::from(format!("{}\n{}", deck.commander.name, com2)),
                 Cell::from(deck.color)
@@ -426,9 +428,9 @@ impl OpenDeckTable {
 
         let table = Table::new(rows)
             .header(headers)
-            .block(Block::default().title("Open Deck")
+            .block(Block::default()//.title("Open Deck")
                 .borders(Borders::ALL))
-            .widths(&[Constraint::Percentage(40), Constraint::Percentage(40), Constraint::Length(7)])
+            .widths(&[Constraint::Length(4), Constraint::Percentage(40), Constraint::Percentage(40), Constraint::Length(7)])
             .column_spacing(1)
             .highlight_style(Style::default()
                 .fg(Color::Yellow)

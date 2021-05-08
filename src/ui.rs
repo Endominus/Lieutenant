@@ -13,7 +13,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tui::widgets::{Clear, ListItem, Paragraph, Table};
+use tui::widgets::{ListItem, Paragraph, Table};
 use tui::layout::Rect;
 use rusqlite::Connection;
 use tui::backend::CrosstermBackend;
@@ -130,10 +130,12 @@ impl AppState {
                         };
                     }
                     KeyCode::Delete => {
-                        if let Some(deck) = self.stod.remove() {
-                            db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
-                            self.config.remove(deck.id);
-                        };
+                        // if let Some(deck) = self.stod.remove() {
+                        //     db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
+                        //     self.config.remove(deck.id);
+                        // };
+                        self.mode_p = self.mode;
+                        self.mode = Screen::Error("Confirm Deletion\nAre you sure you want to delete this deck?\nPress Enter to confirm.");
                     }
                     _ => {}
                 }
@@ -439,10 +441,19 @@ impl AppState {
                     _ => { self.mode = Screen::DeckOmni; }
                 }
             }
-            Screen::Error(_) => {
-                if KeyCode::Enter == c {
-                    self.mode = self.mode_p;
+            Screen::Error(s) => {
+                match c {
+                    KeyCode::Enter => {
+                        if s.starts_with("Confirm Deletion") {
+                            if let Some(deck) = self.stod.remove() {
+                                db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
+                                self.config.remove(deck.id);
+                            };
+                        }
+                    }
+                    _ => {}
                 }
+                self.mode = self.mode_p;
             }
             _ => {}
         }
@@ -898,10 +909,11 @@ fn draw<'a>(
             }
             Screen::Settings => {}
             Screen::Error(s) => {
-                let err_message = Paragraph::new(s)
-                    .block(Block::default().title("Error!"));
-                let area = centered_rect(60, 20, f.size());
-                f.render_widget(Clear, area);
+                let (title, message) = s.split_once("\n").unwrap();
+                let err_message = Paragraph::new(message)
+                    .block(Block::default().borders(Borders::ALL).title(title));
+                let area = centered_rect(60, f.size());
+                // f.render_widget(Clear, area); //Not necessary because we clear the full screen anyway on every input.
                 f.render_widget(err_message, area);
             }
             Screen::MakeDeck => {
@@ -973,14 +985,15 @@ fn draw<'a>(
     Ok(())
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+fn centered_rect(percent_x: u16, r: Rect) -> Rect {
+    
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints(
             [
-                Constraint::Percentage((100 - percent_y) / 2),
-                Constraint::Percentage(percent_y),
-                Constraint::Percentage((100 - percent_y) / 2),
+                Constraint::Length(r.height/2 - 2),
+                Constraint::Length(4),
+                Constraint::Length(r.height/2 - 2),
             ]
             .as_ref(),
         )
