@@ -236,10 +236,12 @@ impl<'a> CardFilter<'a> {
             match key {
                 "name" => { vs.push(format!("AND (cards.name LIKE \"%{}%\")", value.trim_matches('\"'))); }
                 "tag" => { 
-                    vs.push(format!(r#"AND tags IS NOT NULL"#));
-                    let tags = value.split("&");
-                    for tag in tags {
-                        vs.push(format!(r#"AND tags REGEXP '\|?{}(?:$|\|)'"#, tag));
+                    if !general {
+                        vs.push(format!(r#"AND tags IS NOT NULL"#));
+                        let tags = value.split("&");
+                        for tag in tags {
+                            vs.push(format!(r#"AND tags REGEXP '\|?{}(?:$|\|)'"#, tag));
+                        }
                     }
                 }
                 "text" => { 

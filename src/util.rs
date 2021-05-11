@@ -144,6 +144,14 @@ impl Settings {
         else { return DefaultFilter::Name }
     }
 
+    pub fn get_recent(&self) -> i32 {
+        self.global.recent
+    }
+
+    pub fn set_recent(&mut self, did: i32) {
+        self.global.recent = did;
+    }
+
     pub fn add_tag(&mut self, deck: i32, tag: String) -> Option<Vec<String>> {
         let mut vt = self.get_tags_deck(deck);
         let mut o = None;

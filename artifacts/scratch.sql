@@ -1,6 +1,7 @@
 -- -- SQLite
--- SELECT 
---     name, 
+SELECT 
+    name,
+    rarity 
     -- card_text, 
     -- mana_cost,
     -- layout,
@@ -15,10 +16,11 @@
     -- cmc
     -- tags,
     -- price
--- FROM `cards`
--- INNER JOIN deck_contents
--- ON cards.name = deck_contents.card_name
--- WHERE deck_contents.deck = 1
+FROM `cards`
+INNER JOIN deck_contents
+ON cards.name = deck_contents.card_name
+WHERE deck_contents.deck = 1
+AND (rarity == 'common');
 -- AND power LIKE '%*%'
 -- AND (cards.name LIKE '%aetherm%')
 -- AND tags = ""
@@ -42,10 +44,10 @@
 --     color_identity, 
 --     related_cards, 
 --     power, 
---     toughness, 
+--     toughness
 --     cmc
---     -- *
 -- FROM cards
+-- WHERE power LIKE '%*%';
 -- WHERE name LIKE "%Hunter's%";
 -- AND legalities = "";
 -- AND instr(color_identity, 'U') = 0 
@@ -165,18 +167,4 @@
 -- FROM cards
 -- WHERE layout == 'modal_dfc';
 
-SELECT name, rarity, price, tags
-        FROM cards
-        INNER JOIN deck_contents
-        ON cards.name = deck_contents.card_name
-        WHERE deck_contents.deck = 1;
---         AND side != 'b'
---         AND (date_price_retrieved ISNULL OR date_price_retrieved < date())
---         AND tags IS NOT NULL 
-
--- SELECT *
---         FROM cards;
-        -- WHERE name LIKE '%Wake the Past%';
---         AND types LIKE 'Legendary%'
---         AND (types LIKE '%Creature%' OR card_text LIKE '%can be your commander%')
---         ORDER BY name ASC;
+select DISTINCT toughness from cards;

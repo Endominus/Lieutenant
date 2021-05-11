@@ -124,7 +124,7 @@ impl AppState {
                     KeyCode::Enter => { 
                         // TODO: Assign correct deck ID to config
                         if let Some(deck) = self.stod.get() {
-                            self.deck_id = deck.id;
+                            self.config.set_recent(deck.id);
                             self.dirty_deck = true;
                             self.init_deck_view();
                         };
@@ -332,12 +332,13 @@ impl AppState {
                                     let c = db::rcfn(&self.dbc.lock().unwrap(), &name, None).unwrap();
                                     match c.is_commander() {
                                         CommanderType::Default => {
-                                            self.deck_id = db::ideck(
+                                            let did = db::ideck(
                                                 &self.dbc.lock().unwrap(), 
                                                 &self.mdc.title, 
                                                 &name, 
                                                 None,
                                                 "Commander").unwrap();
+                                            self.config.set_recent(did);
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view(); 
                                         }
@@ -372,35 +373,38 @@ impl AppState {
                                     let c = db::rcfn(&self.dbc.lock().unwrap(), &name, None);
                                     match c {
                                         Ok(_) => {
-                                            self.deck_id = db::ideck(
+                                            let did = db::ideck(
                                                 &self.dbc.lock().unwrap(), 
                                                 &self.mdc.title, 
                                                 &self.mdc.commander, 
                                                 Some(name.clone()),
                                                 "Commander").unwrap();
+                                            self.config.set_recent(did);
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view();
                                         }
                                         Err(_) => {
-                                            self.deck_id = db::ideck(
+                                            let did = db::ideck(
                                                 // &self.dbc, 
                                                 &self.dbc.lock().unwrap(), 
                                                 &self.mdc.title, 
                                                 &self.mdc.commander, 
                                                 None,
                                                 "Commander").unwrap();
+                                            self.config.set_recent(did);
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view();
                                         }
                                     }
                                 } else {
-                                    self.deck_id = db::ideck(
+                                    let did = db::ideck(
                                         // &self.dbc, 
                                         &self.dbc.lock().unwrap(), 
                                         &self.mdc.title, 
                                         &self.mdc.commander, 
                                         None,
                                         "Commander").unwrap();
+                                    self.config.set_recent(did);
                                     self.mdc = MakeDeckContents::default();
                                     self.init_deck_view();
                                 }
@@ -529,7 +533,7 @@ impl AppState {
         match next {
             Some(Screen::MakeDeck) => { self.mode = Screen::MakeDeck; }
             Some(Screen::OpenDeck) => { self.init_open_view(); }
-            Some(Screen::DeckOmni) => { /* Set deck_id here */ self.init_deck_view(); }
+            Some(Screen::DeckOmni) => { self.init_deck_view(); }
             Some(Screen::Settings) => { self.init_settings(); }
             Some(Screen::DeckCard) => {  }
             Some(Screen::MainMenu) => { self.reset(); self.mode = Screen::MainMenu;}
@@ -541,6 +545,8 @@ impl AppState {
     fn init_create_view(&mut self) {}
 
     fn init_deck_view(&mut self) {
+        self.deck_id = self.config.get_recent();
+
         if self.dirty_deck {
             let ord = self.config.get_sort_order(self.deck_id);
             self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id, ord).unwrap());
@@ -577,8 +583,8 @@ impl AppState {
 
     fn init_main_menu(&mut self) {
         let mut items = Vec::new();
+        if self.config.get_recent() > 0 { items.push(MainMenuItem::from_with_screen(String::from("Load most recent deck"), Screen::DeckOmni)); }
         items.push(MainMenuItem::from_with_screen(String::from("Create a new deck"), Screen::MakeDeck));
-        if false { items.push(MainMenuItem::from_with_screen(String::from("Load most recent deck"), Screen::DeckOmni)); }
         items.push(MainMenuItem::from_with_screen(String::from("Load a deck"), Screen::OpenDeck));
         items.push(MainMenuItem::from_with_screen(String::from("Settings"), Screen::Settings));
         items.push(MainMenuItem::from(String::from("Quit")));
