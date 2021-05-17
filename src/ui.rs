@@ -13,7 +13,8 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tui::widgets::{ListItem, Paragraph, Table};
+use itertools::Itertools;
+use tui::widgets::{BarChart, ListItem, Paragraph, Table, Wrap};
 use tui::layout::Rect;
 use rusqlite::Connection;
 use tui::backend::CrosstermBackend;
@@ -229,7 +230,7 @@ impl AppState {
                     KeyCode::Enter => {
                         if let Some(card) = db::ttindc(
                             &self.dbc.lock().unwrap(), 
-                            &self.sldbc.get().unwrap().name, 
+                            &self.sldc.get().unwrap().name, 
                             &self.slt.get().unwrap(), 
                             self.deck_id) {
                                 self.sldc.replace(card.clone());
@@ -693,6 +694,10 @@ impl AppState {
         }
     }
 
+    pub fn get_main_cards(&self) -> Vec<CardStat> {
+        db::rvmcfd(&self.dbc.lock().unwrap(), self.deck_id).unwrap()
+    }
+
     pub fn generate_dss_info(& self) -> DeckStatInfo {
         let mut dsi = DeckStatInfo::default();
         // let vc = db::rvmcfd(&self.dbc, self.deck_id).unwrap();
@@ -777,13 +782,96 @@ impl AppState {
     }
 }
 
-impl<'a> WidgetOwner<'a> {
+// impl<'a> WidgetOwner<'a> {
 
-    pub fn new() -> WidgetOwner<'a> {
-        WidgetOwner {
-            odt: None
+//     pub fn new() -> WidgetOwner<'a> {
+//         WidgetOwner {
+//             odt: None
+//         }
+//     }
+// }
+
+fn generate_deckstat_managroup<'a>(vcs: &'a Vec<CardStat>) -> List<'a> {
+    let mut cc = HashMap::new();
+    let mut total = 0;
+    for cs in vcs {
+        for ch in cs.mana_cost.chars() {
+            if ['W', 'U', 'B', 'R', 'G', 'C', 'X'].contains(&ch) {
+                if let Some(i) = cc.get_mut(&ch) { *i += 1; }
+                else { cc.insert(ch, 1); }
+                total += 1;
+            }
         }
     }
+    let vli: Vec<ListItem> = cc
+        .drain()
+        .sorted()
+        .map(|(symbol, amount)| { 
+            let percentage: f64 = 100.0 * (amount as f64) / (total as f64);
+            ListItem::new(format!("{}: {} ({:.1}%)", symbol, amount, percentage ))
+        }).collect();
+    List::new(vli).block(Block::default().title("Mana Colors").borders(Borders::ALL))
+}
+
+fn generate_deckstat_recommendations<'a>(vcs: &'a Vec<CardStat>) -> Paragraph<'a> {
+    let mut nonlands = 0;
+    let mut total_cmc: u16 = 0;
+    let mut cc = HashMap::new();
+    let mut recs = Vec::new();
+
+    for cs in vcs {
+        total_cmc += cs.cmc as u16;
+        if let Some(i) = cc.get_mut(&cs.cmc) { *i += 1; }
+        else { cc.insert(cs.cmc, 1); }
+        if !cs.types.contains("Land") { nonlands += 1; }
+        // TODO: Add check for legalities after adding them to CardStat
+    }
+
+    if nonlands < 60 { recs.push(format!("Only {} nonland cards in deck! Consider adding more.", nonlands)); }
+    if nonlands > 70 { recs.push(format!("{} nonland cards in deck! Is that too many?", nonlands)); }
+    if total_cmc / nonlands > 4 { recs.push(String::from("Average mana cost is very high.")); }
+    if total_cmc / nonlands < 3 { recs.push(String::from("Average mana cost is very low.")); }
+
+    Paragraph::new(recs.join("\n")).block(Block::default().title("Recommendations").borders(Borders::ALL)).wrap(Wrap {trim: false})
+}
+
+fn generate_deckstat_manacurve<'a>(vcs: &'a Vec<CardStat>) -> Vec<(&str, u64)> {
+    let mut hm_cmc: HashMap<&str, u64> = HashMap::new();
+    hm_cmc.insert("0", 0);
+    hm_cmc.insert("1", 0);
+    hm_cmc.insert("2", 0);
+    hm_cmc.insert("3", 0);
+    hm_cmc.insert("4", 0);
+    hm_cmc.insert("5", 0);
+    hm_cmc.insert("6", 0);
+    hm_cmc.insert("7+", 0);
+
+    for cs in vcs {
+        match cs.cmc {
+            0 => { if !cs.types.contains("Land") { let a = hm_cmc.get_mut("0").unwrap(); *a += 1; } }
+            1 => { let a = hm_cmc.get_mut("1").unwrap();  *a += 1; }
+            2 => { let a = hm_cmc.get_mut("2").unwrap();  *a += 1; }
+            3 => { let a = hm_cmc.get_mut("3").unwrap();  *a += 1; }
+            4 => { let a = hm_cmc.get_mut("4").unwrap();  *a += 1; }
+            5 => { let a = hm_cmc.get_mut("5").unwrap();  *a += 1; }
+            6 => { let a = hm_cmc.get_mut("6").unwrap();  *a += 1; }
+            _ => { let a = hm_cmc.get_mut("7+").unwrap();  *a += 1;}
+        }
+    }
+
+    let data: Vec<(&str, u64)> = hm_cmc.drain().sorted_by_key(|x|  x.0).map(|(k, v)| (k, v)).collect();
+    data
+}
+
+fn generate_deckstat_barchart<'a>(title: &'a str, vd: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
+    BarChart::default()
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .bar_width(3)
+        .bar_gap(1)
+        .bar_style(Style::default().fg(Color::White))
+        .value_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        .label_style(Style::default().fg(Color::Cyan))
+        .data(vd.as_slice().clone())
 }
 
 fn draw<'a>(
@@ -850,12 +938,12 @@ fn draw<'a>(
 
                 let mut top_chunks = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .constraints([Constraint::Percentage(33), Constraint::Percentage(33), Constraint::Percentage(33)].as_ref())
                     .split(chunks[0]);
 
                 let mut bottom_chunks = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .constraints([Constraint::Percentage(33), Constraint::Percentage(33), Constraint::Percentage(33)].as_ref())
                     .split(chunks[1]);
 
                 top_chunks.append(&mut bottom_chunks);
@@ -969,6 +1057,7 @@ fn draw<'a>(
             }
             Screen::DeckStat => {
                 let dsi = state.generate_dss_info();
+                let vcs = state.get_main_cards();
                 
                 let cmc_data: Vec<(&str, u64)> = dsi.cmc_data.iter()
                     .map(|(k, v)| (k.as_str(), *v))
@@ -984,11 +1073,17 @@ fn draw<'a>(
                 //     .collect();
 
                 let dss = DeckStatScreen::from(&cmc_data, &dsi.price_data, &type_data, tag_data);
+                let mg = generate_deckstat_managroup(&vcs);
+                let recs = generate_deckstat_recommendations(&vcs);
+                let mc = generate_deckstat_manacurve(&vcs);
+                let mcc = generate_deckstat_barchart("Mana Values", &mc);
 
-                f.render_widget(dss.mana_curve, chunks[0]);
+                f.render_widget(mcc, chunks[0]);
                 f.render_widget(dss.prices, chunks[1]);
-                f.render_widget(dss.type_breakdown, chunks[2]);
-                f.render_widget(dss.tag_list, chunks[3]);
+                f.render_widget(mg, chunks[2]);
+                f.render_widget(dss.type_breakdown, chunks[3]);
+                f.render_widget(dss.tag_list, chunks[4]);
+                f.render_widget(recs, chunks[5]);
             }
         }
     })?;

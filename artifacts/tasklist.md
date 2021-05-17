@@ -1,5 +1,3 @@
-Idea; Add a notes column to the decks.
-
 https://mtgjson.com
 https://scryfall.com/docs/api/
 https://docs.magicthegathering.io/
@@ -9,10 +7,10 @@ https://docs.magicthegathering.io/
 - Add, edit, and remove decks.
   - ~~Implement Create Deck screen.~~
   - Takes Deck Name, Commander, and optionally a file to import.
-  - View list of commanders as the user types. Can go up and down to select the specific one.
+  - ~~View list of commanders as the user types. Can go up and down to select the specific one.~~
   - ~~List of potential commanders must include all potential commanders, including planeswalkers and partners.~~
   - ~~Import needs to handle the '//' case of split cards, and automatically adding the other half of cards.~~
-- Manipulate cards in a deck.
+- ~~Manipulate cards in a deck.~~
   - ~~Add and remove cards.~~
   - ~~Automatically add the other half of split or transform cards.~~
   - ~~Add and remove tags from cards.~~
@@ -26,15 +24,22 @@ https://docs.magicthegathering.io/
     - ~~color,~~
     - ~~color identity,~~
     - ~~tag,~~
-    - rarity,
-    - power, 
-    - toughness,
-  - Sort by name and cmc, ascending and descending
+    - ~~rarity,~~
+    - ~~power,~~ 
+    - ~~toughness,~~
+  - ~~Sort by name and cmc, ascending and descending~~
   - Automatically filter by ~~deck color~~ and commander legality(?).
 - View deck info.
-  - Include ~~mana curve~~, color groups, ~~type breakdowns~~
-  - Determine the number of "real" cards in deck and warn if that is too high or low.
-  - Warn the user of any illegal cards(?)
+  - Include: 
+    - ~~mana curve~~
+    - ~~type breakdowns~~
+    - ~~mana symbol amounts~~
+    - ~~tag list~~
+    - ~~prices~~
+  - Caution the user if:
+    - Number of "real" cards in deck is too high/low.
+    - Any illegal cards in the deck
+    - Excessively high mana curve
 - Update the card database with new sets
 - 
 
@@ -53,21 +58,6 @@ https://docs.magicthegathering.io/
 
 tags should be applied to castable spells only (i.e. not transformed)?
 
-ana
-ana te:and ty:creature+legendary st:cleric cmc:1-3 c:wr c:wb ci
-te:"draw a card"
-c:wr
-c:w+r
-c:w|r
-
-Enchantment
-Creature
-Land
-Instant
-Sorcery
-Artifact
-
----
 
            let cards = db::rvcfdid(&conn, 2, util::SortOrder::NameAsc).unwrap();
             println!("{}", cards.get(0).unwrap().name);

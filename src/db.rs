@@ -210,10 +210,15 @@ impl<'a> CardFilter<'a> {
                 for c in self.color.chars() {
                     colors = colors.replace(c, "");
                 }
+                let ci = match colors.len() {
+                    0 => { String::from("1=1") }
+                    _ => { format!("color_identity REGEXP \'^[^{}]*$\'", &colors) }
+                };
                 format!("
                     LEFT OUTER JOIN deck_contents
                     ON cards.name = deck_contents.card_name
-                    WHERE color_identity REGEXP \'^[^{}]*$\'", colors) 
+                    AND deck_contents.deck = {}
+                    WHERE {}", self.did, ci) 
             }
             false => { 
                 format!("
@@ -770,9 +775,11 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &
             let rid = conn.last_insert_rowid();
             let com = rcfn(conn, &c, None).unwrap();
             ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+            ttindc(conn, c, &String::from("main"), rid.try_into().unwrap());
         
             let com = rcfn(conn, &c2, None).unwrap();
             ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+            ttindc(conn, &c2, &String::from("main"), rid.try_into().unwrap());
 
             Ok(rid.try_into().unwrap())
             
@@ -784,6 +791,7 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &
             let rid = conn.last_insert_rowid();
             let com = rcfn(conn, &c, None).unwrap();
             ictodc(conn, &com, rid.try_into().unwrap()).unwrap();
+            ttindc(conn, c, &String::from("main"), rid.try_into().unwrap());
 
             Ok(rid.try_into().unwrap())
         }

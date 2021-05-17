@@ -958,6 +958,7 @@ pub enum Relation {
     Meld {face: String, transform: String },
 }
 
+#[derive(Clone)]
 pub struct CardStat {
     pub cmc: u8,
     pub color_identity: Vec<String>,

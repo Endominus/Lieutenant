@@ -273,7 +273,8 @@ fn main() {
             run(Command::Update).unwrap();
         }
         ("debug", Some(_sub_m)) => {
-            let conn = Connection::open("lieutenant.db").unwrap();
+            let p = util::get_local_file("lieutenant.db", false);
+            let conn = Connection::open(p).unwrap();
             db::add_regexp_function(&conn).unwrap();
             let mut p = std::env::current_exe().unwrap();
             p.pop();
@@ -282,15 +283,13 @@ fn main() {
                 panic!("Cannot find the settings file. Are you sure it's in the same directory as the executable?");
             }
 
-            let mut config = util::Settings::new(&p).unwrap();
-            config.add_tag(1, String::from("mill"));
-            config.add_tag(3, String::from("test"));
+            let config = util::Settings::new(&p).unwrap();
             // println!("{}", config.to_toml());
 
-            let deck = db::rdfdid(&conn, 1).unwrap();
+            let deck = db::rdfdid(&conn, 10).unwrap();
             let s = String::from("az");
-            let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
-            println!("Cardfilter produces: \n{}", cf.make_filter(false, config.get_sort_order(1)));
+            let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(10));
+            println!("Cardfilter produces: \n{}", cf.make_filter(true, config.get_sort_order(10)));
 
         }
         _ => { let _a = run(Command::Draw); }
