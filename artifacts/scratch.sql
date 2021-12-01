@@ -1,7 +1,7 @@
 -- -- SQLite
-SELECT 
-    name,
-    rarity 
+-- SELECT 
+--     name,
+--     rarity 
     -- card_text, 
     -- mana_cost,
     -- layout,
@@ -16,11 +16,11 @@ SELECT
     -- cmc
     -- tags,
     -- price
-FROM `cards`
-INNER JOIN deck_contents
-ON cards.name = deck_contents.card_name
-WHERE deck_contents.deck = 1
-AND (rarity == 'common');
+-- FROM `cards`
+-- INNER JOIN deck_contents
+-- ON cards.name = deck_contents.card_name
+-- WHERE deck_contents.deck = 1
+-- AND (rarity == 'common');
 -- AND power LIKE '%*%'
 -- AND (cards.name LIKE '%aetherm%')
 -- AND tags = ""
@@ -167,4 +167,21 @@ AND (rarity == 'common');
 -- FROM cards
 -- WHERE layout == 'modal_dfc';
 
-select DISTINCT toughness from cards;
+-- select DISTINCT toughness from cards;
+
+SELECT 
+    name,
+    mana_cost,
+    cmc,
+    price
+FROM `cards`
+INNER JOIN deck_contents
+ON cards.name = deck_contents.card_name
+WHERE deck_contents.deck = 12
+-- AND mana_cost LIKE "%X%"
+AND tags LIKE "%main%"
+-- AND tags LIKE "%ramp%"
+-- AND card_text LIKE "%proliferate%"
+ORDER BY price ASC;
+
+-- SELECT * FROM 'cards' WHERE name = "Venser, the Sojourner";

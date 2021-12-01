@@ -3,17 +3,18 @@ extern crate regex;
 // extern crate tokio;
 
 use crate::util::{Layout, CardStat, Card, Deck, CommanderType};
+use crate::network::rvjc;
 
 use self::rusqlite::{params, Connection};
 use std::{collections::HashMap, convert::TryInto, sync::Mutex};
 use rusqlite::{Row, named_params, Result, Error};
 use serde::{Deserialize, Serialize};
 use regex::Regex;
-use serde_json::Value;
 use self::rusqlite::functions::FunctionFlags;
 use std::sync::Arc;
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 use std::{thread, time};
+use chrono::{Datelike, Utc};
 
 // use anyhow::{};
 
@@ -34,6 +35,10 @@ const DB_FILE: &str = "lieutenant.db";
 pub struct Set {
     pub code: String,
     name: String,
+    #[serde(alias = "releaseDate")]
+    pub date: String,
+    #[serde(alias = "type")]
+    pub set_type: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -493,7 +498,9 @@ pub fn initdb(conn: &Connection) -> Result<()> {
         "create table if not exists sets (
             id integer primary key,
             code text not null unique, 
-            name text not null unique
+            name text not null unique,
+            date text not null,
+            set_type text NOT NULL
         )", [],
     )?;
 
@@ -544,6 +551,62 @@ pub fn initdb(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(sets);")?;
+    sets.sort_by(|a, b| a.date.cmp(&b.date));
+    let mut cols = Vec::new();
+    match stmt.query([]) {
+        Ok(mut results) => { 
+            while let Some(row) = results.next()? {
+                cols.push(row.get::<usize, String>(1)?);
+            }
+        }
+        Err(e) => { println!("Error!\n{:?}", e); }
+    };
+    if !cols.contains(&String::from("date")) {
+        let mut stmt = conn.prepare("ALTER TABLE sets ADD COLUMN text INTEGER NOT NULL")?;
+        stmt.execute([]).unwrap();
+    }
+    if !cols.contains(&String::from("set_type")) {
+        let mut stmt = conn.prepare("ALTER TABLE sets ADD COLUMN set_type text NOT NULL")?;
+        stmt.execute([]).unwrap();
+    }
+
+    stmt = conn.prepare("SELECT * FROM sets;")?;
+    let rows: Result<Vec<Set>> = stmt.query_map([], |row| 
+        Ok(Set { 
+            code: row.get(1)?,
+            name: row.get(2)?,
+            date: row.get(3)?,
+            set_type: row.get(4)?,
+        }
+    ))?.collect();
+    let existing_sets = rows?;
+    let mut set_stmt = conn.prepare("INSERT INTO sets (code, name, date, set_type) VALUES (:code, :name, :date, :set_type);")?;
+
+    let now = Utc::now();
+    let date = format!("{}-{}-{}", now.year(), now.month(), now.day());
+
+    for set in sets {
+        if !existing_sets.contains(&set) && set.date <= date {
+            println!("Adding {} to existing sets.", set.name);
+
+            let vjc = rvjc(&set.code).unwrap();
+            let (success, failure) = ivcfjsmap(conn, vjc)?;
+            println!("Added {} cards, with {} not added.", success, failure);
+
+            set_stmt.execute(named_params!{
+                ":code": set.code, 
+                ":name": set.name, 
+                ":date": set.date,
+                ":set_type": set.set_type 
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn ucfsqlite(conn_primary: &Connection, conn_secondary: &Connection,) -> Result<()> {
     let mut stmt = conn_primary.prepare("UPDATE cards SET rarity = :rarity WHERE name = :name;")?;
 
@@ -577,7 +640,7 @@ pub fn ucfsqlite(conn_primary: &Connection, conn_secondary: &Connection,) -> Res
             Ok(_) => { success += 1; },
             Err(_) => { 
                 failure += 1;
-                println!("Failed for {}", name);
+                // println!("Failed for {}", name);
              },
         }
     }
@@ -589,31 +652,30 @@ pub fn ucfsqlite(conn_primary: &Connection, conn_secondary: &Connection,) -> Res
     Ok(())
 }
 
-pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
-    //TODO: since we've split the Json out of Card, see if any of this can be more effectively passed in
+pub fn ivcfjsmap(conn: &Connection, vjc: Vec<JsonCard>) -> Result<(usize, usize)> {
     let mut stmt = conn.prepare("INSERT INTO cards (
         name, mana_cost, cmc, types, card_text, power, toughness, loyalty, color_identity, related_cards, layout, side, legalities, rarity
     ) VALUES (
             :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :loyalty, :color_identity, :related_cards, :layout, :side, :legalities, :rarity
     )")?;
-    let mut vc: Vec<JsonCard> = Vec::new();
-
     let (mut success, mut failure) = (0, 0);
+    // let mut vc: Vec<JsonCard> = Vec::new();
+
     
-    let map =  match &jm["data"]["cards"] {
-        serde_json::Value::Array(i) => { i }
-        _ => { panic!(); }
-    };
+    // let map = match &jm["data"]["cards"] {
+    //     serde_json::Value::Array(i) => { i }
+    //     _ => { panic!(); }
+    // };
 
-    for value in map {
-        let d = serde_json::from_value(value.clone()).unwrap();
-        vc.push(d);
-    }
+    // for value in map {
+    //     let d = serde_json::from_value(value.clone()).unwrap();
+    //     vc.push(d);
+    // }
 
-    println!("Generated card array. {} total cards.", vc.len());
+    println!("Found {} cards. Adding them to card database.", vjc.len());
     conn.execute_batch("BEGIN TRANSACTION;")?;
 
-    for c in vc {
+    for c in vjc {
         let mut name = c.name.clone();
         let mut side = String::new();
         let mut related = String::new();
@@ -683,8 +745,6 @@ pub fn ivcfjsmap(conn: &Connection, jm: Value) -> Result<(usize, usize)> {
     conn.execute_batch("COMMIT TRANSACTION;")?;
     
     println!("Committed transaction.");
-
-    // TODO: for each meld card with relation to unknown, automatically correct it.
 
     Ok((success, failure))
 }
@@ -1172,15 +1232,20 @@ fn cfr(row:& Row) -> Result<Card> {
         Err(_) => { Layout::Normal }
     };
     
-    let tags: Vec<String> = if row.column_names().contains(&"tags") { 
-        // println!("In tags!");
-        match row.get::<usize, String>(13) {
-            Ok(a) => {
-                stovs(a)
-            }
-            Err(_) => { Vec::new() }
-        } 
-    } else { Vec::new() };
+    let tags: Vec<String> = match row.get::<usize, String>(13) {
+        Ok(a) => { stovs(a) }
+        Err(_) => { Vec::new() }
+    };
+    
+    // if row.column_count() == 14 { 
+    //     // println!("In tags!");
+    //     match row.get::<usize, String>(13) {
+    //         Ok(a) => {
+    //             stovs(a)
+    //         }
+    //         Err(_) => { Vec::new() }
+    //     } 
+    // } else { Vec::new() };
 
     Ok( Card {
         cmc: row.get(0)?,

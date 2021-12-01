@@ -1,6 +1,6 @@
 [package]
 name = "lieutenant"
-version = "0.7.2"
+version = "0.7.3"
 authors = ["Endominus <endominus@gmail.com>"]
 edition = "2018"
 
@@ -24,11 +24,12 @@ regex = "1.4.5"
 peg = "0.6.3"
 itertools = "0.10.0"
 csv = "1.1.6"
+chrono = "0.4.19"
 # futures = { version = "0.3.*" }
 # tokio = {version = "1.4.*", features = ["full"] }
 
 [dependencies.rusqlite]
-version = "0.25"
+version = "0.26"
 features = ["bundled", "functions"]
 
 [dependencies.tui]

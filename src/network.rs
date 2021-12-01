@@ -1,4 +1,5 @@
 // use crate::util::Card;
+// mod db;
 
 // use std::{thread, time};
 // use reqwest::Response;
@@ -6,6 +7,7 @@ use reqwest::blocking::get;
 // use reqwest::get;
 use anyhow::Result;
 use serde_json::Value;
+use crate::db::{JsonCard, Set};
 
 
 fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
@@ -57,6 +59,41 @@ fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
 //     c
 //     // todo!()
 // }
+
+pub fn rvs() -> Result<Vec<Set>> {
+    let mut sets = Vec::new();
+    let url = format!("https://mtgjson.com/api/v5/SetList.json");
+    let res: serde_json::Value = get(&url)?.json().unwrap();
+    let map =  match &res["data"] {
+        serde_json::Value::Array(i) => { i }
+        _ => { panic!(); }
+    };
+    println!("Found {} sets. Filtering...", map.len());
+    let allowed_types = Vec::from(["expansion", "core", "commander"]);
+    for value in map {
+        let d: Set = serde_json::from_value(value.clone()).unwrap();
+        if allowed_types.contains(&d.set_type.as_str()) { sets.push(d); }
+    }
+    println!("{} sets are commander-legal.", sets.len());
+
+    Ok(sets)
+}
+
+pub fn rvjc(set_code: &String) -> Result<Vec<JsonCard>> {
+    let mut vjc = Vec::new();
+    let url = format!("https://mtgjson.com/api/v5/{}.json", set_code);
+    let res: serde_json::Value = get(&url)?.json().unwrap();
+    let cards = match &res["data"]["cards"] {
+        serde_json::Value::Array(i) => { i }
+        _ => { panic!(); }
+    };
+    // let cards = res
+    for value in cards {
+        let d: JsonCard = serde_json::from_value(value.clone()).unwrap();
+        vjc.push(d);
+    }
+    Ok(vjc)
+}
 
 // fn rvc(url: String, page: i8) -> Result<Vec<JsonCard>> {
 //     let url = format!("{url}&page={page}", url = url, page = page);

@@ -17,6 +17,7 @@ extern crate self_update;
 use lieutenant::db;
 use lieutenant::ui;
 use lieutenant::util;
+use lieutenant::network;
 
 use std::{fs::File, path::PathBuf, io::{BufReader, BufRead}};
 use rusqlite::Connection;
@@ -73,20 +74,13 @@ pub fn run(command: Command) -> Result<()> {
                 .build()?
                 .update()?;
             println!("Updated to version {}!", status.version());
-            //TODO: update card database as well
-            // println!("Adding cards from STX.");
-            // let now = Instant::now();
-            // let file = File::open("C:\\Users\\ahals\\Downloads\\AtomicCards.json").unwrap();
-            // let reader = BufReader::new(file);
-            // let a: serde_json::Value = serde_json::from_reader(reader).unwrap();
-            // println!("Imported cards in {} ms.", now.elapsed().as_millis());
 
             let now = Instant::now();
-            let conn2 = Connection::open("D:\\Programs\\Lieutenant\\AllPrintings.sqlite").unwrap();
+            let sets = network::rvs().unwrap();
             let p = util::get_local_file("lieutenant.db", true);
             let conn = Connection::open(p).unwrap();
-            db::ucfsqlite(&conn, &conn2).unwrap();
-            println!("Updated all cards in {} ms.", now.elapsed().as_millis());
+            db::updatedb(&conn, sets).unwrap();
+            println!("Imported cards in {} ms.", now.elapsed().as_millis());
         },
         Command::Draw => { 
             let _a = ui::run();
@@ -273,25 +267,32 @@ fn main() {
             run(Command::Update).unwrap();
         }
         ("debug", Some(_sub_m)) => {
-            let p = util::get_local_file("lieutenant.db", false);
-            let conn = Connection::open(p).unwrap();
-            db::add_regexp_function(&conn).unwrap();
-            let mut p = std::env::current_exe().unwrap();
-            p.pop();
-            p.push("settings.toml");
-            if !p.exists() {
-                panic!("Cannot find the settings file. Are you sure it's in the same directory as the executable?");
-            }
+            // let p = util::get_local_file("lieutenant.db", false);
+            // let conn = Connection::open(p).unwrap();
+            // db::add_regexp_function(&conn).unwrap();
+            // let mut p = std::env::current_exe().unwrap();
+            // p.pop();
+            // p.push("settings.toml");
+            // if !p.exists() {
+            //     panic!("Cannot find the settings file. Are you sure it's in the same directory as the executable?");
+            // }
 
-            let config = util::Settings::new(&p).unwrap();
-            // println!("{}", config.to_toml());
+            // let config = util::Settings::new(&p).unwrap();
+            // // println!("{}", config.to_toml());
 
-            let deck = db::rdfdid(&conn, 10).unwrap();
-            let s = String::from("az");
-            let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(10));
-            println!("Cardfilter produces: \n{}", cf.make_filter(true, config.get_sort_order(10)));
-
+            // let deck = db::rdfdid(&conn, 10).unwrap();
+            // let s = String::from("az");
+            // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(10));
+            // println!("Cardfilter produces: \n{}", cf.make_filter(true, config.get_sort_order(10)));
+            // let _a = debug_rvjc();
         }
         _ => { let _a = run(Command::Draw); }
     }
+}
+
+
+fn debug_rvjc() -> Result<()> {
+    let cards = lieutenant::network::rvjc(&String::from("STX"))?;
+    println!("First card is: {}", cards[0].name);
+    Ok(())
 }
