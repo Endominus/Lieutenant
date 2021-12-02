@@ -873,10 +873,28 @@ pub fn dcntodc(conn: &Connection, c: &String, did: i32) -> Result<()> {
 }
 
 pub fn ttindc(conn: &Connection, c: &String, t: &String, did: i32) -> Option<Card> {
+    let mut stmt = conn.prepare("UPDATE deck_contents 
+        SET tags = :tags
+        WHERE card_name = :name
+        AND deck = :did;").unwrap();
+
     let mut card = rcfndid(conn, c, did).unwrap();
+    let cc = if t.eq(&String::from("main")) || t.eq(&String::from("main")) {
+        match &card.lo {
+            Layout::Adventure(_, n) | 
+            Layout::Aftermath(_, n) | 
+            Layout::Flip(_, n) | 
+            Layout::ModalDfc(_, n) | 
+            Layout::Split(_, n) | 
+            Layout::Transform(_, n) => { 
+                Some(rcfndid(conn, n, did).unwrap())
+            },
+            _ => { None }
+        }
+    } else { None };
+
     let tags = if card.tags.contains(&t) {
         card.tags.remove(card.tags.iter().position(|x| x == t).unwrap());
-        // return None;
         if card.tags.is_empty() {
             None
         } else {
@@ -886,11 +904,17 @@ pub fn ttindc(conn: &Connection, c: &String, t: &String, did: i32) -> Option<Car
         card.tags.push(t.clone());
         Some(card.tags.join("|"))
     };
-    conn.execute("UPDATE deck_contents 
-        SET tags = :tags
-        WHERE card_name = :name
-        AND deck = :did;", named_params!{":tags": tags, ":name": c, ":did": did})
-        .unwrap();
+
+    stmt.execute(named_params!{":tags": tags, ":name": c, ":did": did}).unwrap();
+    if let Some(mut cc) = cc {
+        if !card.tags.contains(&t) && cc.tags.contains(&t) { 
+            cc.tags.remove(cc.tags.iter().position(|x| x == t).unwrap());
+        } else if card.tags.contains(&t) && !cc.tags.contains(&t) {
+            cc.tags.push(t.clone());
+        }
+        let t = if cc.tags.is_empty() { None } else { Some(cc.tags.join("|")) };
+        stmt.execute(named_params!{":tags": t, ":name": cc.name, ":did": did}).unwrap();
+    }
     Some(card)
 }
 
