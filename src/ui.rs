@@ -823,16 +823,28 @@ fn generate_deckstat_recommendations<'a>(vcs: &'a Vec<CardStat>) -> Paragraph<'a
         total_cmc += cs.cmc as u16;
         if let Some(i) = cc.get_mut(&cs.cmc) { *i += 1; }
         else { cc.insert(cs.cmc, 1); }
+        // TODO: check for modal cards/double-facing.
         if !cs.types.contains("Land") { nonlands += 1; }
         // TODO: Add check for legalities after adding them to CardStat
     }
 
-    if nonlands < 60 { recs.push(format!("Only {} nonland cards in deck! Consider adding more.", nonlands)); }
-    if nonlands > 70 { recs.push(format!("{} nonland cards in deck! Is that too many?", nonlands)); }
-    if total_cmc / nonlands > 4 { recs.push(String::from("Average mana cost is very high.")); }
-    if total_cmc / nonlands < 3 { recs.push(String::from("Average mana cost is very low.")); }
+    if nonlands < 60 { 
+        recs.push(format!("Only {} nonland cards in deck! Consider adding more.", nonlands)); 
+    } else if nonlands > 70 { 
+        recs.push(format!("{} nonland cards in deck! Is that too many?", nonlands)); 
+    } else {
+        recs.push(format!("{} nonland cards in deck.", nonlands));
+    }
+    let avg_cmc: f64 = ((total_cmc as f64) / (nonlands as f64)).into();
+    if avg_cmc > 4.0 { 
+        recs.push(format!("Average mana cost {:.2}. Seems high.", avg_cmc)); 
+    } else if avg_cmc < 3.0 { 
+        recs.push(format!("Average mana cost {:.2}. Seems low.", avg_cmc)); 
+    } else {
+        recs.push(format!("Average mana cost {:.2}.", avg_cmc)); 
+    }
 
-    Paragraph::new(recs.join("\n")).block(Block::default().title("Recommendations").borders(Borders::ALL)).wrap(Wrap {trim: false})
+    Paragraph::new(recs.join("\n")).block(Block::default().title("Deck Notes").borders(Borders::ALL)).wrap(Wrap {trim: false})
 }
 
 fn generate_deckstat_manacurve<'a>(vcs: &'a Vec<CardStat>) -> Vec<(&str, u64)> {

@@ -1,6 +1,6 @@
 [package]
 name = "lieutenant"
-version = "0.7.3"
+version = "0.7.4"
 authors = ["Endominus <endominus@gmail.com>"]
 edition = "2018"
 
@@ -33,7 +33,7 @@ version = "0.26"
 features = ["bundled", "functions"]
 
 [dependencies.tui]
-version = "0.14"
+version = "0.16"
 default-features = false
 features = ['crossterm']
 

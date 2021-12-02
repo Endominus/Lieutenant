@@ -47,6 +47,12 @@ pub struct ImportCard {
     pub tags: Option<String>,
 }
 
+enum ParseMode {
+    Text,
+    Tags,
+    Color
+}
+
 impl PartialEq for ImportCard {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
@@ -89,6 +95,7 @@ impl<'a> CardFilter<'a> {
     pub fn parse_omni(omni: &str, default_filter: DefaultFilter) -> HashMap<&str, String> {
         let mut hm = HashMap::new();
 
+        // Abandon all hope, ye who enter here.
         peg::parser!{
             grammar omni_parser() for str {
                 pub rule root(hm: &mut HashMap<&str, String>)
@@ -114,11 +121,11 @@ impl<'a> CardFilter<'a> {
                 rule cmc(hm: &mut std::collections::HashMap<&str, String>)
                 = "cmc:" value:$number_range() { hm.insert("cmc", String::from(value)); }
                 rule tag(hm: &mut HashMap<&str, String>)
-                = tag_alias() ":" value:text_group() ** and_separator() { hm.insert("tag", value.join("|")); }
+                = tag_alias() ":" value:$(text_group() / "!") ** or_separator() { hm.insert("tag", value.join("|")); }
                 rule name(hm: &mut HashMap<&str, String>)
                 = name_alias() ":" value:ss_values() { hm.insert("name", value); }
                 rule text(hm: &mut HashMap<&str, String>)
-                = text_alias() ":" value:text_group() ** or_separator() { if value[0] != String::default() { hm.insert("text", value.join("|")); }}
+                = text_alias() ":" value:text_group() **<1,> or_separator() { if value[0] != String::default() { hm.insert("text", value.join("|")); }}
                 rule sort(hm: &mut HashMap<&str, String>)
                 = "sort:" value:$(['+' | '-'] ("name" / "cmc")) { hm.insert("sort", String::from(value)); }
                 rule color(hm: &mut HashMap<&str, String>)
@@ -138,7 +145,7 @@ impl<'a> CardFilter<'a> {
                 rule type_group() -> String
                 = and_types:word() ** and_separator() { and_types.join("&") }
                 rule text_group() -> String
-                = and_text:$(word() / phrase()) ** and_separator() { and_text.join("&") }
+                = and_text:$(word() / phrase()) **<1,> and_separator() { and_text.join("&") }
                 rule number_range() = ['-' | '>' | '<'] ['0'..='9']+ / ['0'..='9']+ "-"? (['0'..='9']+)?
 
                 rule name_alias() = ("name" / "n")
@@ -194,6 +201,8 @@ impl<'a> CardFilter<'a> {
                 // DefaultFilter::Text => { hm.insert("text", String::from(omni)); }
             }
         }
+
+        // println!("{:?}", hm);
         
         hm
     }
@@ -243,157 +252,128 @@ impl<'a> CardFilter<'a> {
         let mut vs = Vec::from([initial]);
 
         for (key, value) in self.fi.clone() {
-            match key {
-                "name" => { vs.push(format!("AND (cards.name LIKE \"%{}%\")", value.trim_matches('\"'))); }
-                "tag" => { 
-                    if !general {
-                        vs.push(format!(r#"AND tags IS NOT NULL"#));
-                        let tags = value.split("&");
-                        for tag in tags {
-                            vs.push(format!(r#"AND tags REGEXP '\|?{}(?:$|\|)'"#, tag));
+            if value.len() > 0 {
+                match key {
+                    "name" => { vs.push(format!("AND (cards.name LIKE \"%{}%\")", value.trim_matches('\"'))); }
+                    "tag" => { 
+                        if !general {
+                            // vs.push(format!(r#"AND tags IS NOT NULL"#));
+                        //     let tags = value.split("&");
+                        //     for tag in tags {
+                        //         vs.push(format!(r#"AND tags REGEXP '\|?{}(?:$|\|)'"#, tag));
+                        //     }
+                            vs.push(parse_args("tags", ParseMode::Tags, &value));
                         }
                     }
-                }
-                "text" => { 
-                    let tegs = value.split("|"); 
-                    let mut vteg = Vec::new();
-                    for teg in tegs {
-                        let mut vf = Vec::new();
-                        for mut te in teg.split('&') {
-                            let include = match te.get(0..1) {
-                                Some("!") => { te = te.get(1..).unwrap(); "NOT LIKE" }
-                                Some(_) => { "LIKE" }
-                                None => { continue; }
-                            };
-                            vf.push(format!("card_text {} \"%{}%\"", include, te.trim_matches('\"')));
-                        }
-                        if vf.len() > 0 {
-                            vteg.push(format!("({})", vf.join(" AND ")));
-                        }
+                    "text" => { 
+                        // let tegs = value.split("|"); 
+                        // let mut vteg = Vec::new();
+                        // for teg in tegs {
+                        //     let mut vf = Vec::new();
+                        //     for mut te in teg.split('&') {
+                        //         let include = match te.get(0..1) {
+                        //             Some("!") => { te = te.get(1..).unwrap(); "NOT LIKE" }
+                        //             Some(_) => { "LIKE" }
+                        //             None => { continue; }
+                        //         };
+                        //         vf.push(format!("card_text {} \"%{}%\"", include, te.trim_matches('\"')));
+                        //     }
+                        //     if vf.len() > 0 {
+                        //         vteg.push(format!("({})", vf.join(" AND ")));
+                        //     }
+                        // }
+                        // vs.push(format!("AND ({})", vteg.join(" OR ")));
+                        vs.push(parse_args("card_text", ParseMode::Text, &value));
                     }
-                    vs.push(format!("AND ({})", vteg.join(" OR ")));
-                }
-                "color" => { 
-                    let cgs = value.split("|"); 
-                    let mut vcg = Vec::new();
-                    for cg in cgs {
-                        let mut vf = Vec::new();
-                        let mut include = ">";
-                        for c in cg.chars() {
-                            let f = match c { //TODO: Speed test instr vs regex
-                                'w' => { format!("instr(mana_cost, 'W') {} 0", include) }
-                                'u' => { format!("instr(mana_cost, 'U') {} 0", include) }
-                                'b' => { format!("instr(mana_cost, 'B') {} 0", include) }
-                                'r' => { format!("instr(mana_cost, 'R') {} 0", include) }
-                                'g' => { format!("instr(mana_cost, 'G') {} 0", include) }
-                                'c' => { format!("mana_cost REGEXP \'^[^WUBRG]*$\'") }
-                                '!' => { include = "="; continue;}
-                                _ => { String::new() }
-                            };
-                            vf.push(f);
-                        }
-                        vcg.push(format!("({})", vf.join(" AND ")));
+                    "color" => { 
+                        vs.push(parse_args("mana_cost", ParseMode::Color, &value));
+                        // let cgs = value.split("|"); 
+                        // let mut vcg = Vec::new();
+                        // for cg in cgs {
+                            //     let mut vf = Vec::new();
+                            //     let mut include = ">";
+                            //     for c in cg.chars() {
+                                //         let f = match c {
+                        //             'w' => { format!("instr(mana_cost, 'W') {} 0", include) }
+                        //             'u' => { format!("instr(mana_cost, 'U') {} 0", include) }
+                        //             'b' => { format!("instr(mana_cost, 'B') {} 0", include) }
+                        //             'r' => { format!("instr(mana_cost, 'R') {} 0", include) }
+                        //             'g' => { format!("instr(mana_cost, 'G') {} 0", include) }
+                        //             'c' => { format!("mana_cost REGEXP \'^[^WUBRG]*$\'") }
+                        //             '!' => { include = "="; continue;}
+                        //             _ => { String::new() }
+                        //         };
+                        //         vf.push(f);
+                        //     }
+                        //     vcg.push(format!("({})", vf.join(" AND ")));
+                        // }
+                        // vs.push(format!("AND ({})", vcg.join(" OR ")));
                     }
-                    vs.push(format!("AND ({})", vcg.join(" OR ")));
-                }
-                "color_identity" => {
-                    let cigs = value.split("|"); 
-                    let mut vcig = Vec::new();
-                    for cig in cigs {
-                        let mut vf = Vec::new();
-                        let mut include = ">";
-                        for ci in cig.chars() {
-                            let f = match ci { //TODO: Speed test instr vs regex
-                                'w' => { format!("instr(color_identity, 'W') {} 0", include) }
-                                'u' => { format!("instr(color_identity, 'U') {} 0", include) }
-                                'b' => { format!("instr(color_identity, 'B') {} 0", include) }
-                                'r' => { format!("instr(color_identity, 'R') {} 0", include) }
-                                'g' => { format!("instr(color_identity, 'G') {} 0", include) }
-                                'c' => { format!("color_identity REGEXP \'^[^WUBRG]*$\'") }
-                                '!' => { include = "="; continue;}
-                                _ => { String::new() }
-                            };
-                            vf.push(f);
-                        }
-                        vcig.push(format!("({})", vf.join(" AND ")));
+                    "color_identity" => {
+                        vs.push(parse_args("color_identity", ParseMode::Color, &value));
+                        // let cigs = value.split("|"); 
+                        // let mut vcig = Vec::new();
+                        // for cig in cigs {
+                        //     let mut vf = Vec::new();
+                        //     let mut include = ">";
+                        //     for ci in cig.chars() {
+                        //         let f = match ci { //TODO: Speed test instr vs regex
+                        //             'w' => { format!("instr(color_identity, 'W') {} 0", include) }
+                        //             'u' => { format!("instr(color_identity, 'U') {} 0", include) }
+                        //             'b' => { format!("instr(color_identity, 'B') {} 0", include) }
+                        //             'r' => { format!("instr(color_identity, 'R') {} 0", include) }
+                        //             'g' => { format!("instr(color_identity, 'G') {} 0", include) }
+                        //             'c' => { format!("color_identity REGEXP \'^[^WUBRG]*$\'") }
+                        //             '!' => { include = "="; continue;}
+                        //             _ => { String::new() }
+                        //         };
+                        //         vf.push(f);
+                        //     }
+                        //     vcig.push(format!("({})", vf.join(" AND ")));
+                        // }
+                        // vs.push(format!("AND ({})", vcig.join(" OR ")));
                     }
-                    vs.push(format!("AND ({})", vcig.join(" OR ")));
-                }
-                "type" => {
-                    let tygs = value.split("|"); 
-                    let mut vtyg = Vec::new();
-                    for tyg in tygs {
-                        let mut vf = Vec::new();
-                        for mut ty in tyg.split('&') {
-                            let include = match ty.get(0..1) {
-                                Some("!") => { ty = ty.get(1..).unwrap(); "NOT LIKE" }
-                                Some(_) => { "LIKE" }
-                                None => { "" }
-                            };
-                            match ty {
-                                "per" => { 
-                                    // ty = "permanent"; 
-                                    vf.push(format!("types NOT LIKE \'%instant%\'"));
-                                    vf.push(format!("types NOT LIKE \'%sorcery%\'"));
-                                    continue;
+                    "type" => {
+                        let tygs = value.split("|"); 
+                        let mut vtyg = Vec::new();
+                        for tyg in tygs {
+                            let mut vf = Vec::new();
+                            for mut ty in tyg.split('&') {
+                                let include = match ty.get(0..1) {
+                                    Some("!") => { ty = ty.get(1..).unwrap(); "NOT LIKE" }
+                                    Some(_) => { "LIKE" }
+                                    None => { "" }
+                                };
+                                match ty {
+                                    "per" => { 
+                                        // ty = "permanent"; 
+                                        vf.push(format!("types NOT LIKE \'%instant%\'"));
+                                        vf.push(format!("types NOT LIKE \'%sorcery%\'"));
+                                        continue;
+                                    }
+                                    "l" => { ty = "legendary";}
+                                    "e" => { ty = "enchantment";}
+                                    "p" => { ty = "planeswalker";}
+                                    "i" => { ty = "instant";}
+                                    "s" => { ty = "sorcery";}
+                                    "c" => { ty = "creature";}
+                                    "a" => { ty = "artifact";}
+                                    "" => { continue; }
+                                    _ => {}
                                 }
-                                "l" => { ty = "legendary";}
-                                "e" => { ty = "enchantment";}
-                                "p" => { ty = "planeswalker";}
-                                "i" => { ty = "instant";}
-                                "s" => { ty = "sorcery";}
-                                "c" => { ty = "creature";}
-                                "a" => { ty = "artifact";}
-                                "" => { continue; }
-                                _ => {}
+                                vf.push(format!("types {} \'%{}%\'", include, ty));
                             }
-                            vf.push(format!("types {} \'%{}%\'", include, ty));
-                        }
-                        if vf.len() > 0 {
-                            vtyg.push(format!("({})", vf.join(" AND ")));
-                        }
-                    }
-                    vs.push(format!("AND ({})", vtyg.join(" OR ")));
-                }
-                "cmc" => {
-                    match value.get(0..1) {
-                        Some(">") => { vs.push(format!("AND cmc > {}", value.get(1..).unwrap())); }
-                        Some("<") => { vs.push(format!("AND cmc < {}", value.get(1..).unwrap())); }
-                        Some("-") => { vs.push(format!("AND cmc <= {}", value.get(1..).unwrap())); }
-                        Some(_) => { 
-                            match value.find("-") {
-                                Some(i) => {
-                                    let (min, max) = value.split_at(i);
-                                    // let max = if let Some("") = max.get(1..) { i } else { "1000" };
-                                    let max_raw = max.get(1..).unwrap();
-                                    let max = if "" == max_raw { "1000" } else { max_raw };
-                                    vs.push(format!("AND (cmc >= {} AND cmc <= {})", min, max));
-                                }
-                                None => {
-                                    vs.push(format!("AND cmc = {}", value));
-                                }
+                            if vf.len() > 0 {
+                                vtyg.push(format!("({})", vf.join(" AND ")));
                             }
                         }
-                        None => {}
+                        vs.push(format!("AND ({})", vtyg.join(" OR ")));
                     }
-                }
-                "sort" => {
-                    match value.get(0..1) {
-                        Some("+") => { order = String::from("ASC"); }
-                        Some("-") => { order = String::from("DESC"); }
-                        Some(_) => {}
-                        None => {}
-                    }
-                    sort_on = String::from(value.get(1..).unwrap());
-                }
-                "power" => {
-                    if value == "*" {
-                        vs.push(String::from("AND power LIKE \'%*%\'"));
-                    } else {
+                    "cmc" => {
                         match value.get(0..1) {
-                            Some(">") => { vs.push(format!("AND power > {}", value.get(1..).unwrap())); }
-                            Some("<") => { vs.push(format!("AND power < {}", value.get(1..).unwrap())); }
-                            Some("-") => { vs.push(format!("AND power <= {}", value.get(1..).unwrap())); }
+                            Some(">") => { vs.push(format!("AND cmc > {}", value.get(1..).unwrap())); }
+                            Some("<") => { vs.push(format!("AND cmc < {}", value.get(1..).unwrap())); }
+                            Some("-") => { vs.push(format!("AND cmc <= {}", value.get(1..).unwrap())); }
                             Some(_) => { 
                                 match value.find("-") {
                                     Some(i) => {
@@ -401,58 +381,93 @@ impl<'a> CardFilter<'a> {
                                         // let max = if let Some("") = max.get(1..) { i } else { "1000" };
                                         let max_raw = max.get(1..).unwrap();
                                         let max = if "" == max_raw { "1000" } else { max_raw };
-                                        vs.push(format!("AND (power >= {} AND power <= {})", min, max));
+                                        vs.push(format!("AND (cmc >= {} AND cmc <= {})", min, max));
                                     }
                                     None => {
-                                        vs.push(format!("AND power = {}", value));
+                                        vs.push(format!("AND cmc = {}", value));
                                     }
                                 }
                             }
                             None => {}
                         }
                     }
-                }
-                "toughness" => {
-                    if value == "*" {
-                        vs.push(String::from("AND toughness LIKE \'%*%\'"));
-                    } else {
+                    "sort" => {
                         match value.get(0..1) {
-                            Some(">") => { vs.push(format!("AND toughness > {}", value.get(1..).unwrap())); }
-                            Some("<") => { vs.push(format!("AND toughness < {}", value.get(1..).unwrap())); }
-                            Some("-") => { vs.push(format!("AND toughness <= {}", value.get(1..).unwrap())); }
-                            Some(_) => { 
-                                match value.find("-") {
-                                    Some(i) => {
-                                        let (min, max) = value.split_at(i);
-                                        // let max = if let Some("") = max.get(1..) { i } else { "1000" };
-                                        let max_raw = max.get(1..).unwrap();
-                                        let max = if "" == max_raw { "1000" } else { max_raw };
-                                        vs.push(format!("AND (toughness >= {} AND toughness <= {})", min, max));
-                                    }
-                                    None => {
-                                        vs.push(format!("AND toughness = {}", value));
-                                    }
-                                }
-                            }
+                            Some("+") => { order = String::from("ASC"); }
+                            Some("-") => { order = String::from("DESC"); }
+                            Some(_) => {}
                             None => {}
                         }
+                        sort_on = String::from(value.get(1..).unwrap());
                     }
-                }
-                "rarity" => {
-                    let mut vc = Vec::new();
-                    for r in value.chars() {
-                        let rarity = match r {
-                            'c' => { "common" }
-                            'u' => { "uncommon" }
-                            'r' => { "rare" }
-                            'm' => { "mythic" }
-                            _ => { continue; }
-                        };
-                        vc.push(format!("rarity == \'{}\'", rarity));
+                    "power" => {
+                        if value == "*" {
+                            vs.push(String::from("AND power LIKE \'%*%\'"));
+                        } else {
+                            match value.get(0..1) {
+                                Some(">") => { vs.push(format!("AND power > {}", value.get(1..).unwrap())); }
+                                Some("<") => { vs.push(format!("AND power < {}", value.get(1..).unwrap())); }
+                                Some("-") => { vs.push(format!("AND power <= {}", value.get(1..).unwrap())); }
+                                Some(_) => { 
+                                    match value.find("-") {
+                                        Some(i) => {
+                                            let (min, max) = value.split_at(i);
+                                            // let max = if let Some("") = max.get(1..) { i } else { "1000" };
+                                            let max_raw = max.get(1..).unwrap();
+                                            let max = if "" == max_raw { "1000" } else { max_raw };
+                                            vs.push(format!("AND (power >= {} AND power <= {})", min, max));
+                                        }
+                                        None => {
+                                            vs.push(format!("AND power = {}", value));
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
                     }
-                    vs.push(format!("AND ({})", vc.join(" OR ")));
-                }
-                _ => {}
+                    "toughness" => {
+                        if value == "*" {
+                            vs.push(String::from("AND toughness LIKE \'%*%\'"));
+                        } else {
+                            match value.get(0..1) {
+                                Some(">") => { vs.push(format!("AND toughness > {}", value.get(1..).unwrap())); }
+                                Some("<") => { vs.push(format!("AND toughness < {}", value.get(1..).unwrap())); }
+                                Some("-") => { vs.push(format!("AND toughness <= {}", value.get(1..).unwrap())); }
+                                Some(_) => { 
+                                    match value.find("-") {
+                                        Some(i) => {
+                                            let (min, max) = value.split_at(i);
+                                            // let max = if let Some("") = max.get(1..) { i } else { "1000" };
+                                            let max_raw = max.get(1..).unwrap();
+                                            let max = if "" == max_raw { "1000" } else { max_raw };
+                                            vs.push(format!("AND (toughness >= {} AND toughness <= {})", min, max));
+                                        }
+                                        None => {
+                                            vs.push(format!("AND toughness = {}", value));
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                    }
+                    "rarity" => {
+                        let mut vc = Vec::new();
+                        for r in value.chars() {
+                            let rarity = match r {
+                                'c' => { "common" }
+                                'u' => { "uncommon" }
+                                'r' => { "rare" }
+                                'm' => { "mythic" }
+                                _ => { continue; }
+                            };
+                            vc.push(format!("rarity == \'{}\'", rarity));
+                        }
+                        vs.push(format!("AND ({})", vc.join(" OR ")));
+                    }
+                    _ => {}
+                }   
             }
         }
         vs.push(format!("ORDER BY {} {};", sort_on, order));
@@ -484,6 +499,71 @@ pub fn add_regexp_function(db: &Connection) -> Result<()> {
             Ok(is_match)
         },
     )
+}
+
+fn parse_args(column: &str, mode: ParseMode, items: &String) -> String {
+    let mut v_or_conditions = Vec::new();
+    // println!("In parse");
+    
+    let p = match &mode {
+        ParseMode::Text => { "{:col} {:req} \"%{:item}%\"" }
+        ParseMode::Tags => { r#"{:col} {:req} '\|?{:item}(?:$|\|)'"# }
+        ParseMode::Color => { "instr({:col}, '{:item}') {:req} 0" }
+    };
+    
+    let groups = items.split("|");
+    for mut group in groups {
+        let mut v_and_conditions = Vec::new();
+        let negation = group.get(0..1);
+        let mut _g = String::new();
+        let (req, items): (&str, Vec<&str>) = match &mode {
+            ParseMode::Text => {
+                match negation {
+                    Some("!") => { group = group.get(1..).unwrap(); ("NOT LIKE", group.split("&").collect()) }
+                    Some(_) => { ("LIKE", group.split("&").collect()) }
+                    None => { continue; }
+                }
+            }
+            ParseMode::Tags => {
+                v_and_conditions.push(format!(r#"tags IS NOT NULL"#));
+                if group == "!" {
+                    v_or_conditions.push(format!(r#"tags IS NULL"#));
+                    continue;
+                }
+                match negation {
+                    Some("!") => { 
+                        group = group.get(1..).unwrap(); 
+                        ("NOT REGEXP", group.split("&").collect()) 
+                    }
+                    Some(_) => { ("REGEXP", group.split("&").collect()) }
+                    None => { continue; }
+                }
+            }
+            ParseMode::Color => {
+                // println!("In color");
+                match negation {
+                    Some("!") => { 
+                        _g = group.get(1..).unwrap().to_uppercase(); 
+                        ("=", _g.split_inclusive(|_c| true).collect()) }
+                    Some(_) => { 
+                        _g = group.to_uppercase(); 
+                        (">", _g.split_inclusive(|_c| true).collect()) }
+                    None => { continue; }
+                }
+            }
+        };
+
+        for item in items {
+            let s = p
+                .replace("{:col}", column)
+                .replace("{:req}", req)
+                .replace("{:item}", item);
+            v_and_conditions.push(s);
+        }
+        v_or_conditions.push(format!("({})", v_and_conditions.join(" AND ")));
+    }
+
+    format!("AND ({})", v_or_conditions.join(" OR "))
 }
 
 pub fn initdb(conn: &Connection) -> Result<()> {
@@ -564,7 +644,7 @@ pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<()> {
         Err(e) => { println!("Error!\n{:?}", e); }
     };
     if !cols.contains(&String::from("date")) {
-        let mut stmt = conn.prepare("ALTER TABLE sets ADD COLUMN text INTEGER NOT NULL")?;
+        let mut stmt = conn.prepare("ALTER TABLE sets ADD COLUMN date text INTEGER NOT NULL")?;
         stmt.execute([]).unwrap();
     }
     if !cols.contains(&String::from("set_type")) {

@@ -153,14 +153,14 @@ impl Settings {
     }
 
     pub fn add_tag(&mut self, deck: i32, tag: String) -> Option<Vec<String>> {
-        let mut vt = self.get_tags_deck(deck);
-        let mut o = None;
-        let mut df = None;
+        let vt = self.get_tags_deck(deck);
         if !vt.contains(&tag) {
+            let mut o = None;
+            let mut df = None;
             let mut nvt = Vec::from([tag]);
             if let Some(d) = &mut self.decks.get(&deck) {
                 o = d.ordering.clone();
-                df = d.ordering.clone();
+                df = d.default_filter.clone();
                 if let Some(vt) = &d.tags {
                     nvt.append(&mut vt.clone());
                     nvt.sort();
@@ -168,8 +168,8 @@ impl Settings {
             }
             let d = DeckSettings { tags: Some(nvt.clone()), ordering: o, default_filter: df };
             self.decks.insert(deck, d);
-            vt.append(&mut nvt);
-            return Some(vt)
+            // vt.append(&mut nvt);
+            return Some(self.get_tags_deck(deck))
         }
 
         None
@@ -779,12 +779,21 @@ impl<'a> DeckStatScreen<'a> {
             .label_style(Style::default().fg(Color::Cyan))
             .data(cmc_data.as_slice());
 
+        // let type_breakdown = BarChart::default()
+        //     .block(Block::default().title("Type Breakdown").borders(Borders::ALL))
+        //     .bar_width(3)
+        //     .bar_gap(1)
+        //     .bar_style(Style::default().fg(Color::White).bg(Color::Black))
+        //     .value_style(Style::default().fg(Color::Black).add_modifier(Modifier::BOLD))
+        //     .label_style(Style::default().fg(Color::Cyan))
+        //     .data(type_data.as_slice());
+
         let type_breakdown = BarChart::default()
             .block(Block::default().title("Type Breakdown").borders(Borders::ALL))
             .bar_width(3)
             .bar_gap(1)
-            .bar_style(Style::default().fg(Color::White).bg(Color::Black))
-            .value_style(Style::default().fg(Color::Black).add_modifier(Modifier::BOLD))
+            .bar_style(Style::default().fg(Color::White))
+            .value_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
             .label_style(Style::default().fg(Color::Cyan))
             .data(type_data.as_slice());
 

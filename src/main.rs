@@ -267,24 +267,8 @@ fn main() {
             run(Command::Update).unwrap();
         }
         ("debug", Some(_sub_m)) => {
-            // let p = util::get_local_file("lieutenant.db", false);
-            // let conn = Connection::open(p).unwrap();
-            // db::add_regexp_function(&conn).unwrap();
-            // let mut p = std::env::current_exe().unwrap();
-            // p.pop();
-            // p.push("settings.toml");
-            // if !p.exists() {
-            //     panic!("Cannot find the settings file. Are you sure it's in the same directory as the executable?");
-            // }
-
-            // let config = util::Settings::new(&p).unwrap();
-            // // println!("{}", config.to_toml());
-
-            // let deck = db::rdfdid(&conn, 10).unwrap();
-            // let s = String::from("az");
-            // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(10));
-            // println!("Cardfilter produces: \n{}", cf.make_filter(true, config.get_sort_order(10)));
             // let _a = debug_rvjc();
+            let _a = debug_parse_args();
         }
         _ => { let _a = run(Command::Draw); }
     }
@@ -294,5 +278,42 @@ fn main() {
 fn debug_rvjc() -> Result<()> {
     let cards = lieutenant::network::rvjc(&String::from("STX"))?;
     println!("First card is: {}", cards[0].name);
+    Ok(())
+}
+
+fn debug_parse_args() -> Result<()> {
+    let p = util::get_local_file("lieutenant.db", false);
+    let conn = Connection::open(p).unwrap();
+    db::add_regexp_function(&conn).unwrap();
+    let mut p = std::env::current_exe().unwrap();
+    p.pop();
+    p.push("settings.toml");
+    if !p.exists() {
+        panic!("Cannot find the settings file. Are you sure it's in the same directory as the executable?");
+    }
+
+    let config = util::Settings::new(&p).unwrap();
+    // println!("{}", config.to_toml());
+
+    let deck = db::rdfdid(&conn, 1).unwrap();
+    let s = String::from("c:g");
+    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // let s = String::from("tag:main");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // let s = String::from("tag:main+ramp");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // let s = String::from("tag:!");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // let s = String::from("tag:!removal");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // let s = String::from("tag:untagged+removal");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+
     Ok(())
 }
