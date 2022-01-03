@@ -145,7 +145,7 @@ impl<'a> CardFilter<'a> {
                 rule type_group() -> String
                 = and_types:word() ** and_separator() { and_types.join("&") }
                 rule text_group() -> String
-                = and_text:$(word() / phrase()) **<1,> and_separator() { and_text.join("&") }
+                = and_text:(phrase() / word()) **<1,> and_separator() { and_text.join("&") }
                 rule number_range() = ['-' | '>' | '<'] ['0'..='9']+ / ['0'..='9']+ "-"? (['0'..='9']+)?
 
                 rule name_alias() = ("name" / "n")
@@ -159,9 +159,10 @@ impl<'a> CardFilter<'a> {
                 rule tag_alias() = ("tag" / "tags")
 
                 rule word() -> String
-                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '\'' | '.' | '_'| '\'']+) { String::from(s) }
+                // = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '.' | '_'| '\'']+) { String::from(s) }
+                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '.' | '_']+) { String::from(s) }
                 rule phrase() -> String
-                =s:$("!"? "\"" (word() / " " / "+" / ":" / "/")+ "\"" ) {String::from(s) }
+                ="'" s:$("!"? (" " / "+" / ":" / "/" / word())+) "'" { String::from(s) }
                 // rule exp_types() -> String
                 // = t:$types() { match t {
                 //     "l" => String::from("legendary"),
@@ -187,18 +188,18 @@ impl<'a> CardFilter<'a> {
         //     Ok(_) => {}
         //     Err(_) => {}
         // }
-        let _a = omni_parser::root(omni, &mut hm);
+        let omni2 = omni.replace("\"", "\'");
+        let _a = omni_parser::root(&omni2, &mut hm);
         if hm.is_empty() {
-            let mut ss = omni;
+            // println!("{}", omni2);
+            let mut ss = omni2.as_str();
             if let Some(i) = omni.find(" /") {
-                ss = omni.get(0..i).unwrap();
+                ss = omni2.get(0..i).unwrap();
             }
             // let ph = omni_parser::default(ss.trim()).unwrap();
             match default_filter {
                 DefaultFilter::Name => { hm.insert("name", String::from(ss.trim())); }
                 DefaultFilter::Text => { hm.insert("text", String::from(ss.trim())); }
-                // DefaultFilter::Name => { hm.insert("name", String::from(omni)); }
-                // DefaultFilter::Text => { hm.insert("text", String::from(omni)); }
             }
         }
 
@@ -229,16 +230,16 @@ impl<'a> CardFilter<'a> {
                     _ => { format!("color_identity REGEXP \'^[^{}]*$\'", &colors) }
                 };
                 format!("
-                    LEFT OUTER JOIN deck_contents
-                    ON cards.name = deck_contents.card_name
-                    AND deck_contents.deck = {}
-                    WHERE {}", self.did, ci) 
+LEFT OUTER JOIN deck_contents
+ON cards.name = deck_contents.card_name
+AND deck_contents.deck = {}
+WHERE {}", self.did, ci) 
             }
             false => { 
                 format!("
-                    INNER JOIN deck_contents
-                    ON cards.name = deck_contents.card_name
-                    WHERE deck_contents.deck = {}", self.did) 
+INNER JOIN deck_contents
+ON cards.name = deck_contents.card_name
+WHERE deck_contents.deck = {}", self.did) 
             }
         };
 
@@ -1211,12 +1212,12 @@ pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec
 
 pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool, sort_order: SortOrder) -> Result<Vec<Card>> {
     let fields = "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity";
-    let qs = format!("
-        SELECT {}
-        FROM `cards`
-        {}", fields, cf.make_filter(general, sort_order));
+    let qs = format!("SELECT {}
+FROM `cards`
+{}", fields, cf.make_filter(general, sort_order));
 
-    let mut stmt = conn.prepare(& qs).unwrap();
+    // let mut stmt = conn.prepare(& qs).unwrap();
+    let mut stmt = conn.prepare(& qs).expect("issue with filter string");
 
     let cards = stmt.query_map([], |row| {
         cfr(row)

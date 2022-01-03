@@ -210,7 +210,13 @@ fn main() {
             SubCommand::with_name("update")
                 .about("Updates the application and card database."),
             SubCommand::with_name("debug")
-                .about("For testing various features as developed."),
+                .about("For testing various features as developed.")
+                .arg(
+                    Arg::with_name("module")
+                        .help("Specific part of the program to be tested.")
+                        .index(1)
+                        .required(true)
+                ),
             SubCommand::with_name("export")
                 .about("Exports a deck from a given deck id. If no output file is given, the csv will be generated in the same directory as the executable.")
                 .arg(
@@ -266,9 +272,14 @@ fn main() {
             println!("Updating the application and database.");
             run(Command::Update).unwrap();
         }
-        ("debug", Some(_sub_m)) => {
-            // let _a = debug_rvjc();
-            let _a = debug_parse_args();
+        ("debug", Some(sub_m)) => {
+            match sub_m.value_of("module").unwrap() {
+                "rvjc" => { let _a = debug_rvjc(); },
+                "parser" => { let _a = debug_parse_args(); },
+                "filter" => { let _a = debug_rvcfcf(); },
+                "settings" => { let _a = debug_settings(); },
+                _ => {},
+            }
         }
         _ => { let _a = run(Command::Draw); }
     }
@@ -293,15 +304,21 @@ fn debug_parse_args() -> Result<()> {
     }
 
     let config = util::Settings::new(&p).unwrap();
-    // println!("{}", config.to_toml());
 
     let deck = db::rdfdid(&conn, 1).unwrap();
-    let s = String::from("c:g");
-    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
-    println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+
+    // let s = String::from("c:g");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
     // let s = String::from("tag:main");
     // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
     // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    let s = String::from("te:\" enters the\"");
+    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
+    let s = String::from("te:\"enters the");
+    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
     // let s = String::from("tag:main+ramp");
     // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
     // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
@@ -314,6 +331,39 @@ fn debug_parse_args() -> Result<()> {
     // let s = String::from("tag:untagged+removal");
     // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
     // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+
+    Ok(())
+}
+
+fn debug_rvcfcf() -> Result<()> {
+    let p = util::get_local_file("lieutenant.db", false);
+    let conn = Connection::open(p).unwrap();
+    db::add_regexp_function(&conn).unwrap();
+    let mut p = std::env::current_exe().unwrap();
+    p.pop();
+    p.push("settings.toml");
+    if !p.exists() {
+        panic!("Cannot find the settings file. Are you sure it's in the same directory as the executable?");
+    }
+
+    let config = util::Settings::new(&p).unwrap();
+
+    let deck = db::rdfdid(&conn, 1).unwrap();
+    let s = String::from("te:\"enters the\"");
+    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    match db::rvcfcf(&conn, cf, false, config.get_sort_order(1)) {
+        Ok(vc) => { println!("Found {} cards.", vc.len()); },
+        Err(res) => { println!("Error was: {}", res); },
+    }
+
+
+
+
+    Ok(())
+}
+
+fn debug_settings() -> Result<()> {
+    // println!("{}", config.to_toml());
 
     Ok(())
 }
