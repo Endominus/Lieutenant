@@ -319,9 +319,9 @@ fn debug_parse_args() -> Result<()> {
     let s = String::from("te:\"enters the");
     let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
     println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
-    // let s = String::from("tag:main+ramp");
-    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
-    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    let s = String::from("tag:main+ramp");
+    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
     // let s = String::from("tag:!");
     // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
     // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));

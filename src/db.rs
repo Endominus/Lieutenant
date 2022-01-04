@@ -121,7 +121,7 @@ impl<'a> CardFilter<'a> {
                 rule cmc(hm: &mut std::collections::HashMap<&str, String>)
                 = "cmc:" value:$number_range() { hm.insert("cmc", String::from(value)); }
                 rule tag(hm: &mut HashMap<&str, String>)
-                = tag_alias() ":" value:$(text_group() / "!") ** or_separator() { hm.insert("tag", value.join("|")); }
+                = tag_alias() ":" value:text_group() ** or_separator() { hm.insert("tag", value.join("|")); }
                 rule name(hm: &mut HashMap<&str, String>)
                 = name_alias() ":" value:ss_values() { hm.insert("name", value); }
                 rule text(hm: &mut HashMap<&str, String>)
