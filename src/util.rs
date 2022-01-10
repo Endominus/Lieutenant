@@ -679,7 +679,8 @@ impl<'a> DeckScreen<'a> {
         omnitext: Spans<'a>, 
         tag: &StatefulList<String>,
         vli: Vec<ListItem<'a>>, 
-        cardtext: String, 
+        // cardtext: Vec<Spans<'a>>, 
+        cardtext: Paragraph<'a>, 
         mode: Screen) -> DeckScreen<'a> {
         let (omni_title, list_title) = match mode {
             Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", "Card List") }
@@ -698,7 +699,7 @@ impl<'a> DeckScreen<'a> {
             .block(Block::default().title(list_title).borders(Borders::ALL))
             .style(Style::default().fg(Color::White))
             .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
-        let card = Paragraph::new(cardtext)
+        let card = Paragraph::from(cardtext)
             .style(Style::default())
             .wrap(Wrap { trim: false } )
             .block(Block::default().borders(Borders::ALL).title("Card Info"));
@@ -849,83 +850,202 @@ pub struct Card {
     pub toughness: String,
     pub types: String,
     pub lo: Layout,
-    pub rarity: String
-    //TODO: Add rarity and sets
+    pub rarity: String,
+    pub price: Option<f64>,
+    pub stale: bool,
+    //TODO: Add sets?
 }
 
 impl ToString for Card { fn to_string(& self) -> String { self.name.clone() } }
 impl Card {
-    pub fn ri(&self) -> Vec<String> {
-        let mut v = vec![
-            self.name.clone(),
-            format!("{}, ({})", self.mana_cost, self.cmc),
-            self.types.clone(),
-            self.rarity.clone(),
-            String::new(),
-        ];
-            
+    // pub fn ri(&self) -> Vec<String> {
+    pub fn display(&self) -> Paragraph {
+        let mut v = Vec::new();
+        v.push(Spans::from(self.name.clone()));
+        v.push(Spans::from(format!("{}, ({})", self.mana_cost, self.cmc)));
+        v.push(Spans::from(self.types.clone()));
+        v.push(Spans::from(self.rarity.clone()));
+        
+        v.push(Spans::from(String::new()));
         let t = self.text.split("\n");
         for l in t {
-            v.push(l.to_string());
+            v.push(Spans::from(l));
         }
-
-        if self.power.len() > 0 {
-            v.push(format!("Power/Toughness: {}/{}", self.power, self.toughness));
+        
+        let s = if self.power.len() > 0 {
+            v.push(Spans::from(String::new()));
+            format!("Power/Toughness: {}/{}", self.power, self.toughness)
         } else if self.loyalty.len() > 0 {
-            v.push(format!("Loyalty: {}", self.loyalty.clone()));
+            v.push(Spans::from(String::new()));
+            format!("Loyalty: {}", self.loyalty.clone())
+        } else {
+            String::new()
+        };
+        if s != String::new() {
+            v.push(Spans::from(s));
         }
-
-        // v.push(String::new());
-
-        match &self.lo {
+        
+        let s = match &self.lo {
             Layout::Adventure(side, rel) => { 
+                v.push(Spans::from(String::new()));
                 match side { 
-                    'a' => { v.push(format!("Also has Adventure: {}", rel)); } 
-                    'b' => { v.push(format!("Adventure of: {}", rel)); } 
-                    _ => {} 
+                    'a' => { format!("Also has Adventure: {}", rel) } 
+                    'b' => { format!("Adventure of: {}", rel) } 
+                    _ => { String::new() } 
                 }
             }
             Layout::Aftermath(side, rel) => { 
+                v.push(Spans::from(String::new()));
                 match side { 
-                    'a' => { v.push(format!("Also has Aftermath: {}", rel)); } 
-                    'b' => { v.push(format!("Aftermath of: {}", rel)); } 
-                    _ => {} 
+                    'a' => { format!("Also has Aftermath: {}", rel) } 
+                    'b' => { format!("Aftermath of: {}", rel) } 
+                    _ => { String::new() } 
                 }
             }
             Layout::Flip(side, rel) => { 
+                v.push(Spans::from(String::new()));
                 match side { 
-                    'a' => { v.push(format!("Also has Flip side: {}", rel)); } 
-                    'b' => { v.push(format!("Flip side of: {}", rel)); } 
-                    _ => {} 
+                    'a' => { format!("Also has Flip side: {}", rel) } 
+                    'b' => { format!("Flip side of: {}", rel) } 
+                    _ => { String::new() } 
                 }
             }
-            Layout::ModalDfc(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
-            Layout::Split(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
+            Layout::ModalDfc(_, rel) => { 
+                v.push(Spans::from(String::new()));
+                format!("You may instead cast: {}", rel) 
+            }
+            Layout::Split(_, rel) => { 
+                v.push(Spans::from(String::new()));
+                format!("You may instead cast: {}", rel) 
+            }
             Layout::Transform(side, rel) => { 
+                v.push(Spans::from(String::new()));
                 match side { 
-                    'a' => { v.push(format!("Transforms into: {}", rel)); } 
-                    'b' => { v.push(format!("Transforms from: {}", rel)); } 
-                    _ => {} 
+                    'a' => { 
+                        format!("Transforms into: {}", rel) 
+                    } 
+                    'b' => { 
+                        format!("Transforms from: {}", rel) 
+                    } 
+                    _ => { String::new() } 
                 }
             }
             Layout::Meld(side, face, meld) => { 
+                v.push(Spans::from(String::new()));
                 match side { 
-                    'a' => { v.push(format!("Melds with {} to form {}", face, meld)); } 
-                    'b' => { v.push(format!("Melds from {} and {}", face, meld)); } 
-                    _ => {} 
+                    'a' => { 
+                        format!("Melds with {} to form {}", face, meld) 
+                    } 
+                    'b' => { 
+                        format!("Melds from {} and {}", face, meld) 
+                    } 
+                    _ => { String::new() } 
                 }
             }
-            _ => {}
+            _ => { String::new() }
+        };
+        if s != String::new() {
+            v.push(Spans::from(s));
+        }
+
+        v.push(Spans::from(String::new()));
+        if let Some(p) = &self.price {
+            let style = if self.stale {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let a = Span::styled(format!("Price: ${}", p), style);
+            v.push(Spans::from(a));
         }
         
-        v.push(String::new());
-
-
         if self.tags.len() > 0 {
-            v.push(format!("Tags: {}", self.tags.join(" ")));
+            // v.push(Spans::from(String::new()));
+            v.push(Spans::from(format!("Tags: {}", self.tags.join(" "))));
         }
-        v
+
+        Paragraph::new(v)
     }
+
+    // pub fn ri(&self) -> Vec<Spans> {
+    //     let mut v = vec![
+    //         self.name.clone(),
+    //         format!("{}, ({})", self.mana_cost, self.cmc),
+    //         self.types.clone(),
+    //         self.rarity.clone(),
+    //         String::new(),
+    //     ];
+            
+    //     let t = self.text.split("\n");
+    //     for l in t {
+    //         v.push(l.to_string());
+    //     }
+
+    //     if self.power.len() > 0 {
+    //         v.push(format!("Power/Toughness: {}/{}", self.power, self.toughness));
+    //     } else if self.loyalty.len() > 0 {
+    //         v.push(format!("Loyalty: {}", self.loyalty.clone()));
+    //     }
+
+    //     match &self.lo {
+    //         Layout::Adventure(side, rel) => { 
+    //             match side { 
+    //                 'a' => { v.push(format!("Also has Adventure: {}", rel)); } 
+    //                 'b' => { v.push(format!("Adventure of: {}", rel)); } 
+    //                 _ => {} 
+    //             }
+    //         }
+    //         Layout::Aftermath(side, rel) => { 
+    //             match side { 
+    //                 'a' => { v.push(format!("Also has Aftermath: {}", rel)); } 
+    //                 'b' => { v.push(format!("Aftermath of: {}", rel)); } 
+    //                 _ => {} 
+    //             }
+    //         }
+    //         Layout::Flip(side, rel) => { 
+    //             match side { 
+    //                 'a' => { v.push(format!("Also has Flip side: {}", rel)); } 
+    //                 'b' => { v.push(format!("Flip side of: {}", rel)); } 
+    //                 _ => {} 
+    //             }
+    //         }
+    //         Layout::ModalDfc(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
+    //         Layout::Split(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
+    //         Layout::Transform(side, rel) => { 
+    //             match side { 
+    //                 'a' => { v.push(format!("Transforms into: {}", rel)); } 
+    //                 'b' => { v.push(format!("Transforms from: {}", rel)); } 
+    //                 _ => {} 
+    //             }
+    //         }
+    //         Layout::Meld(side, face, meld) => { 
+    //             match side { 
+    //                 'a' => { v.push(format!("Melds with {} to form {}", face, meld)); } 
+    //                 'b' => { v.push(format!("Melds from {} and {}", face, meld)); } 
+    //                 _ => {} 
+    //             }
+    //         }
+    //         _ => {}
+    //     }
+        
+    //     v.push(String::new());
+
+    //     let mut v_final: Vec<Spans> = v.into_iter().map(| s| { 
+    //         let sc = s.clone();
+    //         Spans::from(sc.as_str()) 
+    //     } ).collect();
+
+    //     if let Some(p) = &self.price {
+    //         let a = Span::styled(format!("Price: ${}", p), Style::default().fg(Color::Yellow));
+    //         v_final.push(Spans::from(a));
+    //     }
+
+
+    //     if self.tags.len() > 0 {
+    //         v_final.push(Spans::from(format!("Tags: {}", self.tags.join(" "))));
+    //     }
+    //     v_final
+    // }
 
     pub fn is_commander(&self) -> CommanderType {
         if (self.types.contains("Legendary") && self.types.contains("Creature"))

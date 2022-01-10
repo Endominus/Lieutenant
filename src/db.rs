@@ -6,6 +6,7 @@ use crate::util::{Layout, CardStat, Card, Deck, CommanderType};
 use crate::network::rvjc;
 
 use self::rusqlite::{params, Connection};
+// use std::io::BufRead;
 use std::{collections::HashMap, convert::TryInto, sync::Mutex};
 use rusqlite::{Row, named_params, Result, Error};
 use serde::{Deserialize, Serialize};
@@ -14,7 +15,7 @@ use self::rusqlite::functions::FunctionFlags;
 use std::sync::Arc;
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 use std::{thread, time};
-use chrono::{Datelike, Utc};
+use chrono::{Datelike, Utc, Duration, TimeZone};
 
 // use anyhow::{};
 
@@ -160,21 +161,9 @@ impl<'a> CardFilter<'a> {
 
                 rule word() -> String
                 // = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '.' | '_'| '\'']+) { String::from(s) }
-                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '.' | '_']+) { String::from(s) }
+                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '.' | '_']*) { String::from(s) }
                 rule phrase() -> String
                 ="'" s:$("!"? (" " / "+" / ":" / "/" / word())+) "'" { String::from(s) }
-                // rule exp_types() -> String
-                // = t:$types() { match t {
-                //     "l" => String::from("legendary"),
-                //     "e" => String::from("enchantment"),
-                //     "p" => String::from("planeswalker"),
-                //     "i" => String::from("instant"),
-                //     "s" => String::from("sorcery"),
-                //     "c" => String::from("creature"),
-                //     "a" => String::from("artifact"),
-                //     _ => String::from("ERROR"),
-                // } }
-                // =s:$("\"" [_]* "\"" ) {String::from(s) }
 
                 rule colors() = ['c' | 'w' | 'u' | 'b' | 'g' | 'r']
                 rule all_separator() = ['|' | '/' | '+' | '&']
@@ -183,20 +172,15 @@ impl<'a> CardFilter<'a> {
                 
             }
         }
-
-        // match omni_parser::root(omni, &mut hm) {
-        //     Ok(_) => {}
-        //     Err(_) => {}
-        // }
         let omni2 = omni.replace("\"", "\'");
         let _a = omni_parser::root(&omni2, &mut hm);
         if hm.is_empty() {
-            // println!("{}", omni2);
             let mut ss = omni2.as_str();
+            //TODO: this is causing some issues. Find a better solution.
             if let Some(i) = omni.find(" /") {
                 ss = omni2.get(0..i).unwrap();
             }
-            // let ph = omni_parser::default(ss.trim()).unwrap();
+            
             match default_filter {
                 DefaultFilter::Name => { hm.insert("name", String::from(ss.trim())); }
                 DefaultFilter::Text => { hm.insert("text", String::from(ss.trim())); }
@@ -475,6 +459,12 @@ WHERE deck_contents.deck = {}", self.did)
 
         vs.join("\n")
     }
+
+    pub fn printfilter(&self) {
+        for (k, v) in &self.fi {
+            println!("{}: {}", k, v);
+        }
+    }
 }
 
 pub fn add_regexp_function(db: &Connection) -> Result<()> {
@@ -504,11 +494,11 @@ pub fn add_regexp_function(db: &Connection) -> Result<()> {
 
 fn parse_args(column: &str, mode: ParseMode, items: &String) -> String {
     let mut v_or_conditions = Vec::new();
-    // println!("In parse");
+    // debug!("In parse");
     
     let p = match &mode {
-        ParseMode::Text => { "{:col} {:req} \"%{:item}%\"" }
-        ParseMode::Tags => { r#"{:col} {:req} '\|?{:item}(?:$|\|)'"# }
+        ParseMode::Text =>  { "{:col} {:req} \"%{:item}%\"" }
+        ParseMode::Tags =>  { r#"{:col} {:req} '\|?{:item}(?:$|\|)'"# }
         ParseMode::Color => { "instr({:col}, '{:item}') {:req} 0" }
     };
     
@@ -526,11 +516,12 @@ fn parse_args(column: &str, mode: ParseMode, items: &String) -> String {
                 }
             }
             ParseMode::Tags => {
-                v_and_conditions.push(format!(r#"tags IS NOT NULL"#));
                 if group == "!" {
                     v_or_conditions.push(format!(r#"tags IS NULL"#));
                     continue;
                 }
+                v_and_conditions.push(format!(r#"tags IS NOT NULL"#));
+                // let words = group.split("&");
                 match negation {
                     Some("!") => { 
                         group = group.get(1..).unwrap(); 
@@ -740,18 +731,6 @@ pub fn ivcfjsmap(conn: &Connection, vjc: Vec<JsonCard>) -> Result<(usize, usize)
             :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :loyalty, :color_identity, :related_cards, :layout, :side, :legalities, :rarity
     )")?;
     let (mut success, mut failure) = (0, 0);
-    // let mut vc: Vec<JsonCard> = Vec::new();
-
-    
-    // let map = match &jm["data"]["cards"] {
-    //     serde_json::Value::Array(i) => { i }
-    //     _ => { panic!(); }
-    // };
-
-    // for value in map {
-    //     let d = serde_json::from_value(value.clone()).unwrap();
-    //     vc.push(d);
-    // }
 
     println!("Found {} cards. Adding them to card database.", vjc.len());
     conn.execute_batch("BEGIN TRANSACTION;")?;
@@ -1064,7 +1043,7 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
 
 pub fn rcfn(conn: &Connection, name: &String, odid: Option<i32>) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity, price, date_price_retrieved
         FROM cards 
         LEFT OUTER JOIN deck_contents
         ON cards.name = deck_contents.card_name
@@ -1077,7 +1056,7 @@ pub fn rcfn(conn: &Connection, name: &String, odid: Option<i32>) -> Result<Card>
 
 pub fn rcfndid(conn: &Connection, name: &String, did: i32) -> Result<Card> {
     let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity, price, date_price_retrieved
         FROM cards 
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
@@ -1196,7 +1175,7 @@ pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec
 
     // For some reason, sqlite doesn't like named parameters in the ORDER BY clause.
     let s = format!("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity
+        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity, price, date_price_retrieved
         FROM cards 
         INNER JOIN deck_contents
         ON cards.name = deck_contents.card_name
@@ -1211,7 +1190,7 @@ pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec
 }
 
 pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool, sort_order: SortOrder) -> Result<Vec<Card>> {
-    let fields = "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity";
+    let fields = "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity, price, date_price_retrieved";
     let qs = format!("SELECT {}
 FROM `cards`
 {}", fields, cf.make_filter(general, sort_order));
@@ -1341,16 +1320,26 @@ fn cfr(row:& Row) -> Result<Card> {
         Ok(a) => { stovs(a) }
         Err(_) => { Vec::new() }
     };
-    
-    // if row.column_count() == 14 { 
-    //     // println!("In tags!");
-    //     match row.get::<usize, String>(13) {
-    //         Ok(a) => {
-    //             stovs(a)
-    //         }
-    //         Err(_) => { Vec::new() }
-    //     } 
-    // } else { Vec::new() };
+
+    let price = match row.get(15) {
+        Ok(a) => { Some(a) }
+        Err(_) => { None }
+    };
+
+    let staleness = match row.get::<usize, String>(16) {
+        Ok(a) => { 
+            let date = Utc::today();
+            let vs: Vec<u32> = a.split('-').map(|s| s.parse::<u32>().unwrap() ).collect();
+            let ret = Utc.ymd(vs[0] as i32, vs[1], vs[2]);
+            // let retrieved = chrono::DateTime::parse_from_str(a.as_str(), "%Y-%m-%d").unwrap();
+            if date - ret > Duration::days(30) {
+                true
+            } else {
+                false
+            }
+        }
+        Err(_) => { false }
+    };
 
     Ok( Card {
         cmc: row.get(0)?,
@@ -1365,7 +1354,11 @@ fn cfr(row:& Row) -> Result<Card> {
         types: row.get(9)?,
         lo,
         tags,
-        rarity: row.get(14)?
+        rarity: row.get(14)?,
+        // price: Some(0.0),
+        // stale: false
+        price: price,
+        stale: staleness
     })
 }
 
@@ -1460,10 +1453,6 @@ pub fn rpfdc(name: &String, layout: &String, related: &String) -> Result<f64> {
     } else {
         name.clone()
     };
-
-    // let rt = tokio::runtime::Runtime::new().unwrap();
-    // let future = rcostfcn(&s);
-    // let res = rt.block_on(future).unwrap();
     let res = rcostfcn(&s).unwrap();
 
     Ok(res)

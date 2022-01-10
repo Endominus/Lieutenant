@@ -14,6 +14,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use itertools::Itertools;
+use tui::text::Spans;
 use tui::widgets::{BarChart, ListItem, Paragraph, Table, Wrap};
 use tui::layout::Rect;
 use rusqlite::Connection;
@@ -685,12 +686,14 @@ impl AppState {
         self.sldbc.rvlis(a)
     }
 
-    pub fn get_card_info(&self) -> String {
+    pub fn get_card_para(&self) -> Paragraph {
         match &self.ac {
             Some(card) => { 
-                card.ri().join("\n") 
+                card.display()
             }
-            None => { String::from("No card found!") }
+            None => { 
+                Paragraph::new(Spans::from("No card found!")) 
+            }
         }
     }
 
@@ -974,7 +977,7 @@ fn draw<'a>(
             }
             Screen::DbFilter => {
                 // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = state.get_card_info();
+                let text = state.get_card_para();
                 let mut ds = DeckScreen::new(
                     state.dbftext.get_styled(), 
                     &state.slt,
@@ -990,7 +993,7 @@ fn draw<'a>(
             }
             Screen::DeckOmni => {
                 // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = state.get_card_info();
+                let text = state.get_card_para();
                 let mut ds = DeckScreen::new(
                     state.omnitext.get_styled(), 
                     &state.slt,
@@ -1038,7 +1041,7 @@ fn draw<'a>(
                 f.render_widget(mds.commander2_entry, chunks[3]);
             }
             Screen::DbCards => {
-                let text = state.get_card_info();
+                let text = state.get_card_para();
                 let mut ds = DeckScreen::new(
                     state.dbftext.get_styled(), 
                     &state.slt,
@@ -1054,7 +1057,7 @@ fn draw<'a>(
             }
             Screen::DeckCard => {
                 // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = state.get_card_info();
+                let text = state.get_card_para();
                 let mut ds = DeckScreen::new(
                     state.omnitext.get_styled(), 
                     &state.slt,

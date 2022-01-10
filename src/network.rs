@@ -69,7 +69,7 @@ pub fn rvs() -> Result<Vec<Set>> {
         _ => { panic!(); }
     };
     println!("Found {} sets. Filtering...", map.len());
-    let allowed_types = Vec::from(["expansion", "core", "commander"]);
+    let allowed_types = Vec::from(["expansion", "core", "commander", "draft_innovation"]);
     for value in map {
         let d: Set = serde_json::from_value(value.clone()).unwrap();
         if allowed_types.contains(&d.set_type.as_str()) { sets.push(d); }

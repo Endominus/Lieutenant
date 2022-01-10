@@ -21,7 +21,7 @@ use lieutenant::network;
 
 use std::{fs::File, path::PathBuf, io::{BufReader, BufRead}};
 use rusqlite::Connection;
-use clap::{App, Arg, SubCommand};
+use clap::{App, arg};
 use anyhow::Result;
 use self_update::cargo_crate_version;
 use std::time::Instant;
@@ -167,113 +167,62 @@ fn main() {
         .version(cargo_crate_version!())
         .about("Helps you manage your commander decks")
         .author("Endominus")
-        .subcommands( vec![
-            SubCommand::with_name("get") 
-                .about("Gets a card from the database")
-                .arg(
-                    Arg::with_name("input")
-                        .help("card to get")
-                        .index(1)
-                        .required(true),
-                ),
-            SubCommand::with_name("price")
-                .about("Retrieves the price of a given card")
-                .arg(
-                    Arg::with_name("input")
-                        .help("card to get")
-                        .index(1)
-                        .required(true),
-                ),
-            SubCommand::with_name("import")
-                .about("Imports cards from a csv or text file into a deck")
-                .arg(
-                    Arg::with_name("deck")
-                        .help("Desired name of the deck")
-                        .index(1)
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("filename")
-                       .help("Name of the file to import from")
-                       .index(2)
-                       .required(true),
-                )
-                .arg(
-                    Arg::with_name("commander")
-                        .short("com")
-                        .help("Name of the commander(s)")
-                        .multiple(true)
-                        .index(3)
-                        .required(false)
-                        .takes_value(true)
-                ),
-            SubCommand::with_name("update")
-                .about("Updates the application and card database."),
-            SubCommand::with_name("debug")
-                .about("For testing various features as developed.")
-                .arg(
-                    Arg::with_name("module")
-                        .help("Specific part of the program to be tested.")
-                        .index(1)
-                        .required(true)
-                ),
-            SubCommand::with_name("export")
-                .about("Exports a deck from a given deck id. If no output file is given, the csv will be generated in the same directory as the executable.")
-                .arg(
-                    Arg::with_name("deck_id")
-                        .help("ID of the deck to export. Can be seen in the Open Deck screen.")
-                        .index(1)
-                        .required(true)
-                )
-                .arg(
-                    Arg::with_name("out_file")
-                        .help("Output file. Optional.")
-                        .index(2)   
-                        .required(false)
-                )
-        ])
+        .subcommand(
+            App::new("import")
+            .about("Imports cards from a csv or text file into a deck")
+            .args(&[
+                arg!(<deckname> "Desired name of the deck"), //TODO: make this optional
+                arg!(<filename> "Source file to import"),
+                arg!([commander] "Name of commander (if not first row of the deck)"),
+            ])
+        ).subcommand(
+            App::new("update")
+            .about("Updates the application and card database.")
+        ).subcommand(
+            App::new("debug")
+            .about("For testing various features as developed.")
+            .arg(arg!(<module> "Specific part of the program to be tested."))
+        ).subcommand(
+            App::new("export")
+            .about("Exports a deck from a given deck id. If no output file is given, the csv will be generated in the same directory as the executable.")
+            .args(&[
+                arg!(<deck_id> "ID of the deck to export. Can be seen in the Open Deck screen."),
+                arg!([file] "Output file. Optional."),
+            ])
+        )
         .get_matches();
 
 
     match matches.subcommand() {
-        ("get", Some(sub_m)) => {
-            println!("Getting cards with name: {}", sub_m.value_of("input").unwrap());
-            let _a = run(Command::RetrieveCard(sub_m.value_of("input").unwrap().to_string()));
-        }
-        ("price", Some(sub_m)) => {
-            let s = sub_m.value_of("input").unwrap();
-            println!("Getting cards with name: {}", s);
-            let _a = run(Command::RetrieveCardOnline(s.to_string()));
-
-        }
-        ("import", Some(sub_m)) => {
+        Some(("import", sub_m)) => {
             let commanders: Vec<_> = match sub_m.values_of("commander") {
                 Some(vs) => { vs.map(|s| s.to_string()).collect() }
                 None => { Vec::new() }
             };
             println!("Creating deck {} with commander {:?}. Adding all cards from {}.",
-                sub_m.value_of("deck").unwrap(),
+                sub_m.value_of("deckname").unwrap(),
                 commanders,
                 sub_m.value_of("filename").unwrap()); 
             let _a = run(Command::ImportDeck(
-                    sub_m.value_of("deck").unwrap().to_string(),
+                    sub_m.value_of("deckname").unwrap().to_string(),
                     commanders,
                     PathBuf::from(sub_m.value_of("filename").unwrap())));
         }
-        ("export", Some(sub_m)) => {
+        Some(("export", sub_m)) => {
             let did: i32 = sub_m.value_of("deck_id").unwrap().parse().unwrap();
-            let p = match sub_m.value_of("out_file") {
+            let p = match sub_m.value_of("file") {
                 Some(s) => { Some(PathBuf::from(s)) }
                 None => { None }
             };
             run(Command::ExportDeck(did, p)).unwrap();
         }
-        ("update", Some(_sub_m)) => {
+        Some(("update", _sub_m)) => {
             println!("Updating the application and database.");
             run(Command::Update).unwrap();
         }
-        ("debug", Some(sub_m)) => {
+        Some(("debug", sub_m)) => {
             match sub_m.value_of("module").unwrap() {
+                "rcfn" => { let _a = debug_rcfn(); },
                 "rvjc" => { let _a = debug_rvjc(); },
                 "parser" => { let _a = debug_parse_args(); },
                 "filter" => { let _a = debug_rvcfcf(); },
@@ -313,24 +262,33 @@ fn debug_parse_args() -> Result<()> {
     // let s = String::from("tag:main");
     // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
     // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
-    let s = String::from("te:\" enters the\"");
-    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
-    println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
-    let s = String::from("te:\"enters the");
+    // let s = String::from("te:\" enters the\"");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // let s = String::from("te:!\" enters the\"");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // let s = String::from("te:\"enters the");
+    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    // println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
+    let s = String::from("tag:!");
     let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
     println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
     let s = String::from("tag:main+ramp");
     let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
     println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
-    // let s = String::from("tag:!");
-    // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
-    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    let s = String::from("tag:main+!ramp");
+    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
+    let s = String::from("tag:!main+ramp");
+    let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
+    println!("For {}, Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
     // let s = String::from("tag:!removal");
     // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
-    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // println!("For \"{}\", Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
     // let s = String::from("tag:untagged+removal");
     // let cf = db::CardFilter::from(&deck, &s, config.get_default_filter(1));
-    // println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_filter(false, config.get_sort_order(1)));
+    // println!("For \"{}\", Cardfilter produces: \n{}\n", &s, cf.make_filter(false, config.get_sort_order(1)));
 
     Ok(())
 }
@@ -360,6 +318,19 @@ fn debug_rvcfcf() -> Result<()> {
 
 
     Ok(())
+}
+
+fn debug_rcfn() {
+    let p = util::get_local_file("lieutenant.db", false);
+    let conn = Connection::open(p).unwrap();
+    db::add_regexp_function(&conn).unwrap();
+
+    let a = db::rcfndid(
+        &conn, 
+        &"Anafenza, Kin-Tree Spirit".to_string(), 
+        1).unwrap();
+    
+    println!("{:?}", a);
 }
 
 fn debug_settings() -> Result<()> {
