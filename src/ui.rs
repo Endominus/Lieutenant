@@ -227,6 +227,16 @@ impl AppState {
                     }
                     KeyCode::Tab => { self.mode = Screen::DeckOmni; }
                     KeyCode::Char(' ') => { self.ac_switch(false); }
+                    KeyCode::Char('u') => { 
+                        if let Some(ac) = &self.ac {
+                            if ac.stale {
+                                if let Ok(card) = db::ucfcn(&self.dbc.lock().unwrap(), &ac.name, &ac.lo, self.deck_id) {
+                                    self.sldc.replace(card.clone());
+                                    self.ac = Some(card);
+                                }
+                            }
+                        }
+                    }
                     KeyCode::Delete => { self.remove_from_deck(); }
                     KeyCode::Enter => {
                         if let Some(card) = db::ttindc(

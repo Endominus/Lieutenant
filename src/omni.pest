@@ -1,0 +1,29 @@
+word = { negation? ~ (ASCII_ALPHANUMERIC | "_" | "{" | "}" )+ }
+special_chars = { "\\" | "/" | "+" | " " | ":"| "-"| "."| "," }
+word_extended = { (ASCII_ALPHANUMERIC | special_chars)+ }
+phrase = { negation? ~ "\"" ~ (word_extended) ~ "\"" }
+number_range = { NUMBER ~ ("-" | "..") ~ NUMBER | (">" | "<") ~ NUMBER | NUMBER }
+and_separator = { "+" | "&" }
+or_separator = { "|" | "/" }
+separator = { and_separator | or_separator }
+negation = { "!" }
+rarity_val = { negation? ~ ("c" | "u" | "r" | "m") }
+color_val = { negation? ~ ("w" | "u" | "b" | "r" | "g" | "c") }
+
+text_token = { (phrase | word) ~ (separator ~ text_token)* }
+bracketed_text = { "(" ~ text_token ~ ")" }
+color_token = { color_val ~ color_token* }
+
+name = { ("name" | "na") ~ ":" ~ (text_token | bracketed_text) ~ (separator ~ (text_token | bracketed_text))* }
+text = { ("text" | "te") ~ ":" ~ (text_token | bracketed_text) ~ (separator ~ (text_token | bracketed_text))* }
+ctyp = { ("type" | "ty") ~ ":" ~ (text_token | bracketed_text) ~ (separator ~ (text_token | bracketed_text))* }
+tag = { "tag:" ~ (text_token | bracketed_text) ~ (separator ~ (text_token | bracketed_text))* }
+cmc = { "cmc:" ~ number_range }
+power = { "power:" ~ number_range }
+toughness = { "tough:" ~ number_range }
+color = { ("color" | "c") ~ ":" ~ color_token ~ (or_separator ~ color_token)* }
+color_identity = { "ci:" ~ color_token ~ (or_separator ~ color_token)* }
+rarity = { ("rarity" | "r") ~ ":" ~ rarity_val+ }
+sort = { "sort:" ~ ("+" | "-") ~ ("cmc" | "name") }
+
+input = { (name | text | ctyp | tag | cmc | power | toughness | color | color_identity | rarity | sort | " ")+ }

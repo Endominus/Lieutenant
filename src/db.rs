@@ -1338,7 +1338,7 @@ fn cfr(row:& Row) -> Result<Card> {
                 false
             }
         }
-        Err(_) => { false }
+        Err(_) => { true }
     };
 
     Ok( Card {
@@ -1439,6 +1439,27 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
         }
     
     Ok(())
+}
+
+pub fn ucfcn(conn: &Connection, cn: &String, layout: &Layout, did: i32) -> Result<Card> {
+    let s = match layout {
+        Layout::Adventure(_, rel) 
+        | Layout::Aftermath(_, rel) 
+        | Layout::Flip(_, rel) 
+        | Layout::ModalDfc(_, rel) 
+        | Layout::Split(_, rel) 
+        | Layout::Transform(_, rel) => format!("{} // {}", cn, rel),
+        _ => cn.clone()
+    };
+    let price = rcostfcn(&s).unwrap();
+
+    conn.execute("UPDATE cards 
+        SET price = :price, 
+        date_price_retrieved = date()
+        WHERE name = :name;", 
+        named_params!{":price": price, ":name": cn})?;
+
+    rcfn(conn, cn, Some(did))
 }
 
 pub fn dd(conn: &Connection, did: i32) -> Result<()> {

@@ -679,7 +679,6 @@ impl<'a> DeckScreen<'a> {
         omnitext: Spans<'a>, 
         tag: &StatefulList<String>,
         vli: Vec<ListItem<'a>>, 
-        // cardtext: Vec<Spans<'a>>, 
         cardtext: Paragraph<'a>, 
         mode: Screen) -> DeckScreen<'a> {
         let (omni_title, list_title) = match mode {
@@ -832,10 +831,6 @@ impl<'a> DeckStatScreen<'a> {
     }
 }
 
-// pub fn rdt(conn: &Connection) -> Table {
-    
-// }
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Card {
     pub cmc: f64,
@@ -858,7 +853,6 @@ pub struct Card {
 
 impl ToString for Card { fn to_string(& self) -> String { self.name.clone() } }
 impl Card {
-    // pub fn ri(&self) -> Vec<String> {
     pub fn display(&self) -> Paragraph {
         let mut v = Vec::new();
         v.push(Spans::from(self.name.clone()));
@@ -966,86 +960,6 @@ impl Card {
 
         Paragraph::new(v)
     }
-
-    // pub fn ri(&self) -> Vec<Spans> {
-    //     let mut v = vec![
-    //         self.name.clone(),
-    //         format!("{}, ({})", self.mana_cost, self.cmc),
-    //         self.types.clone(),
-    //         self.rarity.clone(),
-    //         String::new(),
-    //     ];
-            
-    //     let t = self.text.split("\n");
-    //     for l in t {
-    //         v.push(l.to_string());
-    //     }
-
-    //     if self.power.len() > 0 {
-    //         v.push(format!("Power/Toughness: {}/{}", self.power, self.toughness));
-    //     } else if self.loyalty.len() > 0 {
-    //         v.push(format!("Loyalty: {}", self.loyalty.clone()));
-    //     }
-
-    //     match &self.lo {
-    //         Layout::Adventure(side, rel) => { 
-    //             match side { 
-    //                 'a' => { v.push(format!("Also has Adventure: {}", rel)); } 
-    //                 'b' => { v.push(format!("Adventure of: {}", rel)); } 
-    //                 _ => {} 
-    //             }
-    //         }
-    //         Layout::Aftermath(side, rel) => { 
-    //             match side { 
-    //                 'a' => { v.push(format!("Also has Aftermath: {}", rel)); } 
-    //                 'b' => { v.push(format!("Aftermath of: {}", rel)); } 
-    //                 _ => {} 
-    //             }
-    //         }
-    //         Layout::Flip(side, rel) => { 
-    //             match side { 
-    //                 'a' => { v.push(format!("Also has Flip side: {}", rel)); } 
-    //                 'b' => { v.push(format!("Flip side of: {}", rel)); } 
-    //                 _ => {} 
-    //             }
-    //         }
-    //         Layout::ModalDfc(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
-    //         Layout::Split(_, rel) => { v.push(format!("You may instead cast: {}", rel)); }
-    //         Layout::Transform(side, rel) => { 
-    //             match side { 
-    //                 'a' => { v.push(format!("Transforms into: {}", rel)); } 
-    //                 'b' => { v.push(format!("Transforms from: {}", rel)); } 
-    //                 _ => {} 
-    //             }
-    //         }
-    //         Layout::Meld(side, face, meld) => { 
-    //             match side { 
-    //                 'a' => { v.push(format!("Melds with {} to form {}", face, meld)); } 
-    //                 'b' => { v.push(format!("Melds from {} and {}", face, meld)); } 
-    //                 _ => {} 
-    //             }
-    //         }
-    //         _ => {}
-    //     }
-        
-    //     v.push(String::new());
-
-    //     let mut v_final: Vec<Spans> = v.into_iter().map(| s| { 
-    //         let sc = s.clone();
-    //         Spans::from(sc.as_str()) 
-    //     } ).collect();
-
-    //     if let Some(p) = &self.price {
-    //         let a = Span::styled(format!("Price: ${}", p), Style::default().fg(Color::Yellow));
-    //         v_final.push(Spans::from(a));
-    //     }
-
-
-    //     if self.tags.len() > 0 {
-    //         v_final.push(Spans::from(format!("Tags: {}", self.tags.join(" "))));
-    //     }
-    //     v_final
-    // }
 
     pub fn is_commander(&self) -> CommanderType {
         if (self.types.contains("Legendary") && self.types.contains("Creature"))
