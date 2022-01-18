@@ -25,7 +25,7 @@ use tui::Terminal;
 use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
 // use crate::{Card, Deck, db::rcfndid};
-use crate::db;
+use crate::db::{self, CardFilter};
 use crate::util::*;
 // mod util;
 // use crate::util::{StatefulList, MainMenuItem, Screen, 
@@ -55,6 +55,7 @@ struct AppState {
     dirty_dbf: bool,
     dirty_cards: Vec<Card>,
     dbc: Arc<Mutex<Connection>>,
+    cf: db::CardFilter,
     config: Settings,
     quit: bool
 }
@@ -94,6 +95,7 @@ impl AppState {
             dirty_cards: Vec::new(),
             // dbc: conn,
             dbc: Arc::new(Mutex::new(conn)),
+            cf: CardFilter::new(),
             config
             // dsod: DeckScreen,
             // dsdb: DeckScreen,
@@ -579,6 +581,11 @@ impl AppState {
         } else {
             self.ac = None;
         }
+
+        let ord = self.config.get_sort_order(self.deck_id);
+        let df = self.config.get_default_filter(self.deck_id);
+
+        self.cf = CardFilter::from(&self.deck.as_ref().unwrap(), df, ord);
         
         self.mode = Screen::DeckOmni;
     }
@@ -666,11 +673,11 @@ impl AppState {
             )}
             _ => { panic!(); }
         };
-        let ord = self.config.get_sort_order(self.deck_id);
-        let df = self.config.get_default_filter(self.deck_id);
-        let cf = db::CardFilter::from(&self.deck.as_ref().unwrap(), & ss, df);
-        
-        let vcr = db::rvcfcf(&self.dbc.lock().unwrap(), cf, general, ord);
+        // let ord = self.config.get_sort_order(self.deck_id);
+        // let df = self.config.get_default_filter(self.deck_id);
+        // let cf = db::CardFilter::from(&self.deck.as_ref().unwrap(), & ss, df);
+        let query = self.cf.make_query(general, &ss);
+        let vcr = db::rvcfcf(&self.dbc.lock().unwrap(), &query);
         let vc = match vcr {
             Ok(vc) => { vc }
             _ => { Vec::new() }

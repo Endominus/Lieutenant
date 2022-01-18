@@ -1,12 +1,11 @@
 extern crate rusqlite;
 extern crate regex;
-// extern crate tokio;
+extern crate pest;
 
 use crate::util::{Layout, CardStat, Card, Deck, CommanderType};
 use crate::network::rvjc;
 
 use self::rusqlite::{params, Connection};
-// use std::io::BufRead;
 use std::{collections::HashMap, convert::TryInto, sync::Mutex};
 use rusqlite::{Row, named_params, Result, Error};
 use serde::{Deserialize, Serialize};
@@ -16,6 +15,8 @@ use std::sync::Arc;
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 use std::{thread, time};
 use chrono::{Datelike, Utc, Duration, TimeZone};
+use pest::{Parser, iterators::Pair};
+use pest_derive::Parser;
 
 // use anyhow::{};
 
@@ -31,6 +32,20 @@ use crate::network::rcostfcn;
 use crate::util::{SortOrder, DefaultFilter};
 
 const DB_FILE: &str = "lieutenant.db";
+
+#[derive(Default)]
+pub struct CardFilter {
+    did: i32,
+    color: String,
+    // fi: HashMap<&'a str, String>,
+    df: DefaultFilter, //Default field
+    so: SortOrder, //
+    filters: String,
+}
+
+#[derive(Parser)]
+#[grammar = "omni.pest"] // relative to src
+struct TestParser;
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Set {
@@ -54,158 +69,39 @@ enum ParseMode {
     Color
 }
 
+#[derive(PartialEq, Eq)]
+enum FilterField {
+    Name,
+    Text,
+    Tag,
+    Type,
+    CMC,
+    Power,
+    Toughness,
+    Color,
+    Identity,
+    None
+}
+
 impl PartialEq for ImportCard {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-#[derive(Default)]
-pub struct CardFilter<'a> {
-    did: i32,
-    color: String,
-    fi: HashMap<&'a str, String>
-}
-
-impl<'a> CardFilter<'a> {
-    pub fn new() -> CardFilter<'a> {
-        // CardFilter {
-        //     did,
-        //     name: String::new(),
-        //     text: String::new(),
-
-        // }
-
+impl CardFilter {
+    pub fn new() -> CardFilter {
         CardFilter::default()
     }
 
-    pub fn from(deck: &Deck, omni: &'a String, default_filter: DefaultFilter) -> CardFilter<'a> {
-        let mut cf = CardFilter::default();
-
-        cf.did = deck.id;
-        cf.color = deck.color.clone();
-        if omni.len() > 0 { 
-            cf.fi = CardFilter::parse_omni(omni.as_str(), default_filter); 
-        } else {
-            cf.fi = HashMap::new();
-        }
-
-        cf
+    pub fn from(deck: &Deck, default_filter: DefaultFilter, sort_order: SortOrder) -> CardFilter {
+        CardFilter { did: deck.id, color: deck.color.clone(), df: default_filter, so: sort_order, filters: String::new() }
     }
 
-    pub fn parse_omni(omni: &str, default_filter: DefaultFilter) -> HashMap<&str, String> {
-        let mut hm = HashMap::new();
-
-        // Abandon all hope, ye who enter here.
-        peg::parser!{
-            grammar omni_parser() for str {
-                pub rule root(hm: &mut HashMap<&str, String>)
-                = (fields(hm) / " "+)+ ![_]
-
-                pub rule default() -> String
-                =s:$((word() / " " / "+" / ":" / "/")+) ** " " { s.join(" ") }
-
-                rule fields(hm: &mut HashMap<&str, String>) = (
-                text(hm) 
-                / tag(hm)
-                / color(hm) 
-                / ctype(hm) 
-                / cmc(hm) 
-                / color_identity(hm) 
-                / power(hm) 
-                / toughness(hm)
-                / rarity(hm) 
-                / sort(hm)
-                / name(hm)
-                )
-
-                rule cmc(hm: &mut std::collections::HashMap<&str, String>)
-                = "cmc:" value:$number_range() { hm.insert("cmc", String::from(value)); }
-                rule tag(hm: &mut HashMap<&str, String>)
-                = tag_alias() ":" value:text_group() ** or_separator() { hm.insert("tag", value.join("|")); }
-                rule name(hm: &mut HashMap<&str, String>)
-                = name_alias() ":" value:ss_values() { hm.insert("name", value); }
-                rule text(hm: &mut HashMap<&str, String>)
-                = text_alias() ":" value:text_group() **<1,> or_separator() { if value[0] != String::default() { hm.insert("text", value.join("|")); }}
-                rule sort(hm: &mut HashMap<&str, String>)
-                = "sort:" value:$(['+' | '-'] ("name" / "cmc")) { hm.insert("sort", String::from(value)); }
-                rule color(hm: &mut HashMap<&str, String>)
-                = color_alias() ":" value:$(colors()+) ** or_separator() { if !value.is_empty() { hm.insert("color", value.join("|")); }}
-                rule ctype(hm: &mut HashMap<&str, String>)
-                = type_alias() ":" value:type_group() ** or_separator() { if value[0] != String::default() { hm.insert("type", value.join("|")); }}
-                rule power(hm: &mut std::collections::HashMap<&str, String>)
-                = power_alias() ":" value:$(number_range() / "*") { if value != "" { hm.insert("power", String::from(value)); }}
-                rule toughness(hm: &mut std::collections::HashMap<&str, String>)
-                = toughness_alias() ":" value:$(number_range() / "*") { if value != "" { hm.insert("toughness", String::from(value)); }}
-                rule color_identity(hm: &mut HashMap<&str, String>)
-                = color_identity_alias() ":" value:$(colors()+) ** or_separator() { if !value.is_empty() { hm.insert("color_identity", value.join("|")); }}
-                rule rarity(hm: &mut HashMap<&str, String>)
-                = rarity_alias() ":" value:$(['c' | 'u' | 'r' | 'm']+) { hm.insert("rarity", String::from(value)); }
-                rule ss_values() -> String
-                = v:$(phrase() / word()) { String::from(v) }
-                rule type_group() -> String
-                = and_types:word() ** and_separator() { and_types.join("&") }
-                rule text_group() -> String
-                = and_text:(phrase() / word()) **<1,> and_separator() { and_text.join("&") }
-                rule number_range() = ['-' | '>' | '<'] ['0'..='9']+ / ['0'..='9']+ "-"? (['0'..='9']+)?
-
-                rule name_alias() = ("name" / "n")
-                rule text_alias() = ("text" / "te")
-                rule type_alias() = ("type" / "ty")
-                rule color_alias() = ("color" / "c")
-                rule power_alias() = ("power" / "p")
-                rule toughness_alias() = ("toughness" / "t")
-                rule rarity_alias() = ("rarity" / "r")
-                rule color_identity_alias() = ("color_identity" / "coloridentity" / "ci")
-                rule tag_alias() = ("tag" / "tags")
-
-                rule word() -> String
-                // = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '.' | '_'| '\'']+) { String::from(s) }
-                = s:$("!"? ['a'..='z' | '0'..='9' | '{' | '}' | '.' | '_']*) { String::from(s) }
-                rule phrase() -> String
-                ="'" s:$("!"? (" " / "+" / ":" / "/" / word())+) "'" { String::from(s) }
-
-                rule colors() = ['c' | 'w' | 'u' | 'b' | 'g' | 'r']
-                rule all_separator() = ['|' | '/' | '+' | '&']
-                rule or_separator() = ['|' | '/' ]
-                rule and_separator() = ['+' | '&' ]
-                
-            }
-        }
-        let omni2 = omni.replace("\"", "\'");
-        let _a = omni_parser::root(&omni2, &mut hm);
-        if hm.is_empty() {
-            let mut ss = omni2.as_str();
-            //TODO: this is causing some issues. Find a better solution.
-            if let Some(i) = omni.find(" /") {
-                ss = omni2.get(0..i).unwrap();
-            }
-            
-            match default_filter {
-                DefaultFilter::Name => { hm.insert("name", String::from(ss.trim())); }
-                DefaultFilter::Text => { hm.insert("text", String::from(ss.trim())); }
-            }
-        }
-
-        // println!("{:?}", hm);
-        
-        hm
-    }
-
-    pub fn make_filter(&self, general: bool, sort_order: SortOrder) -> String {
+    pub fn make_query(&mut self, general: bool, omni: &str) -> String {
         let initial = match general {
             true => { 
-                // let com = rcomfdid(conn, self.did, false).unwrap();
                 let mut colors = String::from("WUBRG");
-                // for ci in com.color_identity {
-                //     colors = colors.replace(&ci, "");
-                // }
-
-                // if let Ok(com) = rcomfdid(conn, self.did, true) {
-                //     for ci in com.color_identity {
-                //         colors = colors.replace(&ci, "");
-                //     }
-                // }
                 for c in self.color.chars() {
                     colors = colors.replace(c, "");
                 }
@@ -227,243 +123,279 @@ WHERE deck_contents.deck = {}", self.did)
             }
         };
 
-        let (mut order, mut sort_on) = match sort_order {
-            SortOrder::NameAsc => { (String::from("ASC"), String::from("name")) }
-            SortOrder::NameDesc => { (String::from("DESC"), String::from("name")) }
-            SortOrder::CmcAsc => { (String::from("ASC"), String::from("cmc")) }
-            SortOrder::CmcDesc => { (String::from("DESC"), String::from("cmc")) }
+        let mut filters = String::new();
+        let mut ordering = match self.so {
+            SortOrder::NameAsc => "ORDER BY name ASC;".into(),
+            SortOrder::NameDesc => "ORDER BY name DESC;".into(),
+            SortOrder::CmcAsc => "ORDER BY cmc ASC;".into(),
+            SortOrder::CmcDesc => "ORDER BY cmc DESC;".into(),
         };
 
-        let mut vs = Vec::from([initial]);
-
-        for (key, value) in self.fi.clone() {
-            if value.len() > 0 {
-                match key {
-                    "name" => { vs.push(format!("AND (cards.name LIKE \"%{}%\")", value.trim_matches('\"'))); }
-                    "tag" => { 
-                        if !general {
-                            // vs.push(format!(r#"AND tags IS NOT NULL"#));
-                        //     let tags = value.split("&");
-                        //     for tag in tags {
-                        //         vs.push(format!(r#"AND tags REGEXP '\|?{}(?:$|\|)'"#, tag));
-                        //     }
-                            vs.push(parse_args("tags", ParseMode::Tags, &value));
-                        }
-                    }
-                    "text" => { 
-                        // let tegs = value.split("|"); 
-                        // let mut vteg = Vec::new();
-                        // for teg in tegs {
-                        //     let mut vf = Vec::new();
-                        //     for mut te in teg.split('&') {
-                        //         let include = match te.get(0..1) {
-                        //             Some("!") => { te = te.get(1..).unwrap(); "NOT LIKE" }
-                        //             Some(_) => { "LIKE" }
-                        //             None => { continue; }
-                        //         };
-                        //         vf.push(format!("card_text {} \"%{}%\"", include, te.trim_matches('\"')));
-                        //     }
-                        //     if vf.len() > 0 {
-                        //         vteg.push(format!("({})", vf.join(" AND ")));
-                        //     }
+        match TestParser::parse(Rule::input, omni) {
+            Ok(mut pairs) => {
+                let enclosed = pairs.next().unwrap();
+                let tokens = enclosed.into_inner();
+                for rule in tokens {
+                    if rule.as_rule() == Rule::sort {
+                        ordering = CardFilter::helper(rule, &FilterField::None);
+                    } else {
+                        let s = CardFilter::helper(rule, &FilterField::None);
+                        filters += &String::from(format!("\nAND ({})", s));
+                        // if r.len() > 0 {
+                            // println!("\t{}", r);
                         // }
-                        // vs.push(format!("AND ({})", vteg.join(" OR ")));
-                        vs.push(parse_args("card_text", ParseMode::Text, &value));
                     }
-                    "color" => { 
-                        vs.push(parse_args("mana_cost", ParseMode::Color, &value));
-                        // let cgs = value.split("|"); 
-                        // let mut vcg = Vec::new();
-                        // for cg in cgs {
-                            //     let mut vf = Vec::new();
-                            //     let mut include = ">";
-                            //     for c in cg.chars() {
-                                //         let f = match c {
-                        //             'w' => { format!("instr(mana_cost, 'W') {} 0", include) }
-                        //             'u' => { format!("instr(mana_cost, 'U') {} 0", include) }
-                        //             'b' => { format!("instr(mana_cost, 'B') {} 0", include) }
-                        //             'r' => { format!("instr(mana_cost, 'R') {} 0", include) }
-                        //             'g' => { format!("instr(mana_cost, 'G') {} 0", include) }
-                        //             'c' => { format!("mana_cost REGEXP \'^[^WUBRG]*$\'") }
-                        //             '!' => { include = "="; continue;}
-                        //             _ => { String::new() }
-                        //         };
-                        //         vf.push(f);
-                        //     }
-                        //     vcg.push(format!("({})", vf.join(" AND ")));
-                        // }
-                        // vs.push(format!("AND ({})", vcg.join(" OR ")));
-                    }
-                    "color_identity" => {
-                        vs.push(parse_args("color_identity", ParseMode::Color, &value));
-                        // let cigs = value.split("|"); 
-                        // let mut vcig = Vec::new();
-                        // for cig in cigs {
-                        //     let mut vf = Vec::new();
-                        //     let mut include = ">";
-                        //     for ci in cig.chars() {
-                        //         let f = match ci { //TODO: Speed test instr vs regex
-                        //             'w' => { format!("instr(color_identity, 'W') {} 0", include) }
-                        //             'u' => { format!("instr(color_identity, 'U') {} 0", include) }
-                        //             'b' => { format!("instr(color_identity, 'B') {} 0", include) }
-                        //             'r' => { format!("instr(color_identity, 'R') {} 0", include) }
-                        //             'g' => { format!("instr(color_identity, 'G') {} 0", include) }
-                        //             'c' => { format!("color_identity REGEXP \'^[^WUBRG]*$\'") }
-                        //             '!' => { include = "="; continue;}
-                        //             _ => { String::new() }
-                        //         };
-                        //         vf.push(f);
-                        //     }
-                        //     vcig.push(format!("({})", vf.join(" AND ")));
-                        // }
-                        // vs.push(format!("AND ({})", vcig.join(" OR ")));
-                    }
-                    "type" => {
-                        let tygs = value.split("|"); 
-                        let mut vtyg = Vec::new();
-                        for tyg in tygs {
-                            let mut vf = Vec::new();
-                            for mut ty in tyg.split('&') {
-                                let include = match ty.get(0..1) {
-                                    Some("!") => { ty = ty.get(1..).unwrap(); "NOT LIKE" }
-                                    Some(_) => { "LIKE" }
-                                    None => { "" }
-                                };
-                                match ty {
-                                    "per" => { 
-                                        // ty = "permanent"; 
-                                        vf.push(format!("types NOT LIKE \'%instant%\'"));
-                                        vf.push(format!("types NOT LIKE \'%sorcery%\'"));
-                                        continue;
-                                    }
-                                    "l" => { ty = "legendary";}
-                                    "e" => { ty = "enchantment";}
-                                    "p" => { ty = "planeswalker";}
-                                    "i" => { ty = "instant";}
-                                    "s" => { ty = "sorcery";}
-                                    "c" => { ty = "creature";}
-                                    "a" => { ty = "artifact";}
-                                    "" => { continue; }
-                                    _ => {}
-                                }
-                                vf.push(format!("types {} \'%{}%\'", include, ty));
-                            }
-                            if vf.len() > 0 {
-                                vtyg.push(format!("({})", vf.join(" AND ")));
-                            }
-                        }
-                        vs.push(format!("AND ({})", vtyg.join(" OR ")));
-                    }
-                    "cmc" => {
-                        match value.get(0..1) {
-                            Some(">") => { vs.push(format!("AND cmc > {}", value.get(1..).unwrap())); }
-                            Some("<") => { vs.push(format!("AND cmc < {}", value.get(1..).unwrap())); }
-                            Some("-") => { vs.push(format!("AND cmc <= {}", value.get(1..).unwrap())); }
-                            Some(_) => { 
-                                match value.find("-") {
-                                    Some(i) => {
-                                        let (min, max) = value.split_at(i);
-                                        // let max = if let Some("") = max.get(1..) { i } else { "1000" };
-                                        let max_raw = max.get(1..).unwrap();
-                                        let max = if "" == max_raw { "1000" } else { max_raw };
-                                        vs.push(format!("AND (cmc >= {} AND cmc <= {})", min, max));
-                                    }
-                                    None => {
-                                        vs.push(format!("AND cmc = {}", value));
-                                    }
-                                }
-                            }
-                            None => {}
-                        }
-                    }
-                    "sort" => {
-                        match value.get(0..1) {
-                            Some("+") => { order = String::from("ASC"); }
-                            Some("-") => { order = String::from("DESC"); }
-                            Some(_) => {}
-                            None => {}
-                        }
-                        sort_on = String::from(value.get(1..).unwrap());
-                    }
-                    "power" => {
-                        if value == "*" {
-                            vs.push(String::from("AND power LIKE \'%*%\'"));
-                        } else {
-                            match value.get(0..1) {
-                                Some(">") => { vs.push(format!("AND power > {}", value.get(1..).unwrap())); }
-                                Some("<") => { vs.push(format!("AND power < {}", value.get(1..).unwrap())); }
-                                Some("-") => { vs.push(format!("AND power <= {}", value.get(1..).unwrap())); }
-                                Some(_) => { 
-                                    match value.find("-") {
-                                        Some(i) => {
-                                            let (min, max) = value.split_at(i);
-                                            // let max = if let Some("") = max.get(1..) { i } else { "1000" };
-                                            let max_raw = max.get(1..).unwrap();
-                                            let max = if "" == max_raw { "1000" } else { max_raw };
-                                            vs.push(format!("AND (power >= {} AND power <= {})", min, max));
-                                        }
-                                        None => {
-                                            vs.push(format!("AND power = {}", value));
-                                        }
-                                    }
-                                }
-                                None => {}
-                            }
-                        }
-                    }
-                    "toughness" => {
-                        if value == "*" {
-                            vs.push(String::from("AND toughness LIKE \'%*%\'"));
-                        } else {
-                            match value.get(0..1) {
-                                Some(">") => { vs.push(format!("AND toughness > {}", value.get(1..).unwrap())); }
-                                Some("<") => { vs.push(format!("AND toughness < {}", value.get(1..).unwrap())); }
-                                Some("-") => { vs.push(format!("AND toughness <= {}", value.get(1..).unwrap())); }
-                                Some(_) => { 
-                                    match value.find("-") {
-                                        Some(i) => {
-                                            let (min, max) = value.split_at(i);
-                                            // let max = if let Some("") = max.get(1..) { i } else { "1000" };
-                                            let max_raw = max.get(1..).unwrap();
-                                            let max = if "" == max_raw { "1000" } else { max_raw };
-                                            vs.push(format!("AND (toughness >= {} AND toughness <= {})", min, max));
-                                        }
-                                        None => {
-                                            vs.push(format!("AND toughness = {}", value));
-                                        }
-                                    }
-                                }
-                                None => {}
-                            }
-                        }
-                    }
-                    "rarity" => {
-                        let mut vc = Vec::new();
-                        for r in value.chars() {
-                            let rarity = match r {
-                                'c' => { "common" }
-                                'u' => { "uncommon" }
-                                'r' => { "rare" }
-                                'm' => { "mythic" }
-                                _ => { continue; }
-                            };
-                            vc.push(format!("rarity == \'{}\'", rarity));
-                        }
-                        vs.push(format!("AND ({})", vc.join(" OR ")));
-                    }
-                    _ => {}
-                }   
+                }
+            }
+            Err(_) => {
+                let default = match self.df {
+                    DefaultFilter::Name => "name",
+                    DefaultFilter::Text => "card_text",
+                };
+                let error = omni.replace("\"", "");
+                filters += &String::from(format!("\nAND {default} LIKE \'%{error}%\'"));
             }
         }
-        vs.push(format!("ORDER BY {} {};", sort_on, order));
 
-        vs.join("\n")
+        String::from(format!("\n{initial}{filters}\n{ordering}"))
     }
 
-    pub fn printfilter(&self) {
-        for (k, v) in &self.fi {
-            println!("{}: {}", k, v);
+    fn helper(p: Pair<Rule>, mode: &FilterField) -> String {
+        let mut s = String::new();
+        match p.as_rule() {
+            Rule::name => {
+                let i = p.into_inner();
+                for r in i {
+                    s += &CardFilter::helper(r, &FilterField::Name);
+                }
+            },
+            Rule::text => {
+                let i = p.into_inner();
+                for r in i {
+                    s += &CardFilter::helper(r, &FilterField::Text);
+                }
+            },
+            Rule::ctyp => {
+                let i = p.into_inner();
+                for r in i {
+                    s += &CardFilter::helper(r, &FilterField::Type);
+                }
+            },
+            Rule::tag => {
+                //TODO: Check if brackets are necessary here.
+                let i = p.into_inner();
+                for r in i {
+                    if r.as_str() == "!" {
+                        s += "tags IS NULL";
+                    } else if r.as_rule() == Rule::text_token {
+                        s += "tags is IS NOT NULL AND ";
+                        s += &CardFilter::helper(r, &FilterField::Tag);
+                    } else {
+                        s += &CardFilter::helper(r, &FilterField::Tag);
+                    }
+                }
+            },
+            Rule::cmc => {
+                let r = p.into_inner().next().unwrap();
+                s += &CardFilter::helper(r, &FilterField::CMC);
+            },
+            Rule::power => {
+                let r = p.into_inner().next().unwrap();
+                s += &CardFilter::helper(r, &FilterField::Power);
+            },
+            Rule::toughness => {
+                let r = p.into_inner().next().unwrap();
+                s += &CardFilter::helper(r, &FilterField::Toughness);
+            },
+            Rule::color => {
+                let i = p.into_inner();
+                for r in i {
+                    s += &CardFilter::helper(r, &FilterField::Color);
+                }
+            },
+            Rule::identity => {
+                let i = p.into_inner();
+                for r in i {
+                    s += &CardFilter::helper(r, &FilterField::Identity);
+                }
+            },
+            Rule::rarity => {
+                let i = p.into_inner();
+                let mut flag = false;
+                for r in i {
+                    if flag {
+                        s.push_str(" OR ");
+                    } else {
+                        flag = true;
+                    }
+                    s += &CardFilter::helper(r, &FilterField::None);
+                }
+    
+            },
+            Rule::sort => {
+                let mut a: String = p.as_str().strip_prefix("sort:").unwrap().into();
+                let order = if a.remove(0) == '-' { "DESC" } else { "ASC" };
+                let field = if a.remove(0) == 'c' { "mana_cost" } else { "name" };
+                s = format!("ORDER BY {field} {order};");
+            }
+            Rule::text_token => {
+                let i = p.into_inner();
+                for r in i {
+                    s += &CardFilter::helper(r, mode);
+                }
+            },
+            Rule::bracketed_text => {
+                s.push('(');
+                let i = p.into_inner();
+                for r in i {
+                    s += &CardFilter::helper(r, mode);
+                }
+                s.push(')');
+            },
+            Rule::color_token => {
+                let i = p.into_inner();
+                let mut flag = false;
+                for r in i {
+                    if flag {
+                        s.push_str(" AND ");
+                    } else {
+                        flag = true;
+                    }
+                    s += &CardFilter::helper(r, mode);
+                }
+            }
+            Rule::word | Rule::phrase => {
+                let mut a = p.as_str().replace("\"", "");
+                let mut flag = " ";
+                if let Some(i) = p.into_inner().next() {
+                    if i.as_rule() == Rule::negation {
+                        a = String::from(a.trim_start_matches('!'));
+                        flag = " NOT ";
+                    }
+                }
+    
+                if mode == &FilterField::Type {
+                    match a.as_str() {
+                        "a" => a = String::from("artifact"),
+                        "c" => a = String::from("creature"),
+                        "e" => a = String::from("enchantment"),
+                        "i" => a = String::from("instant"),
+                        "l" => a = String::from("legendary"),
+                        "p" => a = String::from("planeswalker"),
+                        "s" => a = String::from("sorcery"),
+                        "per" => { //easiest thing to do is just return from here. Inelegant, though.
+                            if flag == " " {
+                                return String::from("types NOT LIKE \'%instant%\' AND types NOT LIKE \'%sorcery%\'")
+                            } else {
+                                return String::from("types LIKE \'%instant%\' OR types LIKE \'%sorcery%\'")
+                            }
+                        },
+                        _ => {},
+    
+                    }
+                }
+    
+                let (field, comparison, capture) = match mode {
+                    FilterField::Name => ("name", "LIKE", format!("\'%{a}%\'")),
+                    FilterField::Text => ("card_text", "LIKE", format!("\'%{a}%\'")),
+                    FilterField::Type => ("types", "LIKE", format!("\'%{a}%\'")),
+                    FilterField::Tag => ("tags", "REGEXP", format!(r#"'\|?{a}(?:$|\|)'"#)),
+                    _ => ("", "", String::new())
+                };
+    
+                s = format!("{field}{flag}{comparison} {capture}")
+            },
+            Rule::separator => {
+                let sep = p.into_inner().next().unwrap();
+                if sep.as_rule() == Rule::and_separator {
+                        s.push_str(" AND ");
+                } else {
+                        s.push_str(" OR ");
+                }
+            },
+            Rule::or_separator => {
+                s = " OR ".into();
+            },
+            Rule::number_range => {
+                let field = match mode {
+                    FilterField::CMC => "cmc",
+                    FilterField::Power => "power",
+                    FilterField::Toughness => "toughness",
+                    _ => "",
+                };
+    
+                let range = p.as_str();
+                if range == "*" {
+                    s = match mode {
+                        FilterField::CMC => String::from("mana_cost LIKE \'%X%\'"),
+                        FilterField::Power => String::from("power LIKE \'%*%\'"),
+                        FilterField::Toughness => String::from("toughness LIKE \'%*%\'"),
+                        _ => String::new(),
+                    }
+                } else if range.contains('-') {
+                    let (a, b) = range.split_once('-').unwrap();
+                    s = format!("{field} >= {} AND {field} <= {}", a, b);
+                } else if range.contains("..") {
+                    let (a, b) = range.split_once("..").unwrap();
+                    s = format!("{field} >= {} AND {field} <= {}", a, b);
+                } else if range.starts_with('>') {
+                    s = format!("{field} > {}", range.strip_prefix('>').unwrap());
+                } else if range.starts_with('<') {
+                    s = format!("{field} < {}", range.strip_prefix('<').unwrap());
+                } else {
+                    s = format!("{field} = {}", range);
+                }
+            },
+            Rule::color_val => {
+                let field = match mode {
+                    FilterField::Color => "mana_cost",
+                    FilterField::Identity => "color_identity",
+                    _ => "",
+                };
+    
+                let mut a = p.as_str();
+                let mut req = ">";
+                if let Some(i) = p.into_inner().next() {
+                    if i.as_rule() == Rule::negation {
+                        req = "=";
+                        a = a.trim_start_matches('!');
+                    }
+                }
+    
+                if a == "c" {
+                    if req == ">" {
+                        return String::from("color_identity = \'\'")
+                    } else {
+                        return String::from("color_identity != \'\'")
+                    }
+                }
+    
+                s = format!("instr({}, \'{}\') {} 0", field, a.to_uppercase(), req);
+            },
+            Rule::rarity_val => {
+                let mut a = p.as_str();
+                let req = if a.starts_with('!') {
+                    a = a.trim_start_matches('!');
+                    "!="
+                } else { "=" };
+    
+                let val = match a {
+                    "c" => "common",
+                    "u" => "uncommon",
+                    "r" => "rare",
+                    "m" => "mythic",
+                    _ => ""
+                };
+    
+                s = format!("rarity {req} {val}");
+            }
+            Rule::negation => {
+                s = "not ".into();
+            }
+            _ => {}
         }
+    
+        s
     }
 }
 
@@ -497,7 +429,7 @@ fn parse_args(column: &str, mode: ParseMode, items: &String) -> String {
     // debug!("In parse");
     
     let p = match &mode {
-        ParseMode::Text =>  { "{:col} {:req} \"%{:item}%\"" }
+        ParseMode::Text =>  { "{:col} {:req} \'%{:item}%\'" }
         ParseMode::Tags =>  { r#"{:col} {:req} '\|?{:item}(?:$|\|)'"# }
         ParseMode::Color => { "instr({:col}, '{:item}') {:req} 0" }
     };
@@ -1189,11 +1121,12 @@ pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec
     a.collect()
 }
 
-pub fn rvcfcf(conn: &Connection, cf: CardFilter, general: bool, sort_order: SortOrder) -> Result<Vec<Card>> {
+pub fn rvcfcf(conn: &Connection, query: &String) -> Result<Vec<Card>> {
     let fields = "cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity, price, date_price_retrieved";
     let qs = format!("SELECT {}
 FROM `cards`
-{}", fields, cf.make_filter(general, sort_order));
+{}", fields, query);
+// {}", fields, cf.make_filter(general, sort_order)); //TODO: Fix this up.
 
     // let mut stmt = conn.prepare(& qs).unwrap();
     let mut stmt = conn.prepare(& qs).expect("issue with filter string");

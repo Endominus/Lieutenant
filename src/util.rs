@@ -25,9 +25,9 @@ pub fn get_local_file(name: &str, file_must_exist: bool) -> PathBuf {
     p
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum SortOrder {
-    NameAsc,
+    #[default] NameAsc,
     NameDesc,
     CmcAsc,
     CmcDesc,
@@ -41,8 +41,9 @@ pub enum CommanderType {
     Invalid
 }
 
+#[derive(Default)]
 pub enum DefaultFilter {
-    Name,
+    #[default] Name,
     Text
 }
 
