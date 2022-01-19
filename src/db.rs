@@ -188,7 +188,7 @@ WHERE deck_contents.deck = {}", self.did)
                     if r.as_str() == "!" {
                         s += "tags IS NULL";
                     } else if r.as_rule() == Rule::text_token {
-                        s += "tags is IS NOT NULL AND ";
+                        s += "tags IS NOT NULL AND ";
                         s += &CardFilter::helper(r, &FilterField::Tag);
                     } else {
                         s += &CardFilter::helper(r, &FilterField::Tag);
