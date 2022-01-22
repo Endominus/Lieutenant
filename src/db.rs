@@ -235,7 +235,7 @@ WHERE deck_contents.deck = {}", self.did)
             Rule::sort => {
                 let mut a: String = p.as_str().strip_prefix("sort:").unwrap().into();
                 let order = if a.remove(0) == '-' { "DESC" } else { "ASC" };
-                let field = if a.remove(0) == 'c' { "mana_cost" } else { "name" };
+                let field = if a.remove(0) == 'c' { "cmc" } else { "name" };
                 s = format!("ORDER BY {field} {order};");
             }
             Rule::text_token => {
