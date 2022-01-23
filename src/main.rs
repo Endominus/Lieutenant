@@ -232,12 +232,14 @@ fn debug_parse_args() -> Result<()> {
     }
 
     // let config = util::Settings::new(&p).unwrap();
-    let deck = db::rdfdid(&conn, 1).unwrap();
+    let deck = db::rdfdid(&conn, 3).unwrap();
     let mut cf = CardFilter::from(&deck, util::DefaultFilter::Name, util::SortOrder::NameAsc);
 
     let s = String::from("na:elesh|norn");
     println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_query(false, &s));
     let s = String::from("tag:main");
+    println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_query(false, &s));
+    let s = String::from("tag:main ty:a sort:+cmc");
     println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_query(false, &s));
 
     Ok(())
