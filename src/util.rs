@@ -1,18 +1,15 @@
-// use std::collections::HashMap;
-
-// use crossterm::event::KeyCode;
-
+use crossterm::event::KeyCode;
 use regex::Regex;
 use rusqlite::Connection;
 use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap}};
 use tui::style::{Color, Modifier, Style};
-// use lazy_static::lazy_static;
 
 use std::{collections::HashMap, path::PathBuf, env};
 use serde::Deserialize;
 use serde_derive::Serialize;
 use config::{Config, ConfigError};
 use itertools::Itertools;
+use crate::db::{CardFilter, rvcfcf, ttindc};
 
 pub fn get_local_file(name: &str, file_must_exist: bool) -> PathBuf {
     let mut p = env::current_exe().unwrap();
@@ -47,6 +44,22 @@ pub enum DefaultFilter {
     Text
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum Screen {
+    MainMenu,
+    MakeDeck,
+    OpenDeck,
+    Settings(SettingsSection),
+    DeckView(DeckViewSection),
+    DatabaseView(DeckViewSection),
+    DeckOmni,
+    DeckCard,
+    DbFilter,
+    DbCards,
+    DeckStat,
+    Error(&'static str),
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct DeckSettings {
     tags: Option<Vec<String>>,
@@ -54,11 +67,27 @@ struct DeckSettings {
     default_filter: Option<String>
 }
 
+impl DeckSettings {
+    pub fn add_tag(&mut self, tag: String) {
+        if let Some(vs) = &self.tags {
+            if !vs.contains(&tag) {
+                let mut vs = vs.clone();
+                vs.push(tag);
+                vs.sort();
+                self.tags = Some(vs);
+            } else {
+                self.tags = Some(Vec::from([tag]));
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct GlobalSettings {
     tags: Vec<String>,
     ordering: String,
-    default_filter: String,
+    #[serde(rename = "default_filter")]
+    df: String,
     version: f64,
     recent: i32,
     open_into_recent: bool,
@@ -75,10 +104,10 @@ impl Settings {
         let mut s = Config::default();
         let tags = Vec::from([
             String::from("main"), 
-            String::from("draw"), 
             String::from("board_wipe"), 
-            String::from("removal"), 
+            String::from("draw"), 
             String::from("ramp"), 
+            String::from("removal"), 
             String::from("side"), 
         ]);
         let ds: HashMap<String, String> = HashMap::new();
@@ -141,7 +170,7 @@ impl Settings {
             }
         }
 
-        if self.global.default_filter == String::from("text") { return DefaultFilter::Text }
+        if self.global.df == String::from("text") { return DefaultFilter::Text }
         else { return DefaultFilter::Name }
     }
 
@@ -153,27 +182,18 @@ impl Settings {
         self.global.recent = did;
     }
 
-    pub fn add_tag(&mut self, deck: i32, tag: String) -> Option<Vec<String>> {
-        let vt = self.get_tags_deck(deck);
-        if !vt.contains(&tag) {
-            let mut o = None;
-            let mut df = None;
-            let mut nvt = Vec::from([tag]);
-            if let Some(d) = &mut self.decks.get(&deck) {
-                o = d.ordering.clone();
-                df = d.default_filter.clone();
-                if let Some(vt) = &d.tags {
-                    nvt.append(&mut vt.clone());
-                    nvt.sort();
-                }
-            }
-            let d = DeckSettings { tags: Some(nvt.clone()), ordering: o, default_filter: df };
+    pub fn add_deck_tag(&mut self, deck: i32, tag: String) -> Option<Vec<String>> {
+        if let Some(d) = self.decks.get_mut(&deck) {
+            d.add_tag(tag);
+        } else {
+            let d = DeckSettings { 
+                tags: Some(Vec::from([tag])), 
+                ordering: Some(String::from("+name")), 
+                default_filter: Some(String::from("name")) 
+            };
             self.decks.insert(deck, d);
-            // vt.append(&mut nvt);
-            return Some(self.get_tags_deck(deck))
         }
-
-        None
+        return Some(self.get_tags_deck(deck))
     }
 
     pub fn remove(&mut self, deck: i32) {
@@ -190,7 +210,7 @@ impl Settings {
         }
         vr.push(String::from("]"));
         vr.push(format!("ordering = \"{}\"", self.global.ordering));
-        vr.push(format!("default_filter = \"{}\"", self.global.default_filter));
+        vr.push(format!("default_filter = \"{}\"", self.global.df));
         vr.push(format!("recent = {}", self.global.recent));
         vr.push(format!("open_into_recent = {}", self.global.open_into_recent));
         vr.push(String::from("\n[decks]"));
@@ -220,29 +240,6 @@ impl Settings {
         vr.join("\n")
     }
 }
-
-// lazy_static! {
-//     static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::new().unwrap());
-// }
-
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Screen {
-    MainMenu,
-    MakeDeck,
-    OpenDeck,
-    Settings,
-    DeckOmni,
-    DeckCard,
-    DbFilter,
-    DbCards,
-    DeckStat,
-    Error(&'static str),
-}
-
-// pub enum WidgetState {
-//     Lis
-// }
 
 pub struct StatefulList<T: ToString + PartialEq> {
     // pub state: ListState,
@@ -607,8 +604,6 @@ pub struct MakeDeckContents {
     pub commander2: String,
     pub commander_names: Vec<String>,
 }
-
-// impl MakeDeckContents {}
 pub struct MakeDeckScreen<'a> {
     pub title_entry: Paragraph<'a>,
     pub commander_entry: Paragraph<'a>,
@@ -666,7 +661,6 @@ impl<'a> MakeDeckScreen<'a> {
         }
     }
 }
-
 pub struct DeckScreen<'a> {
     pub omni: Paragraph<'a>,
     pub tags: Paragraph<'a>,
@@ -747,7 +741,6 @@ impl<'a> DeckScreen<'a> {
         self.lc = self.lc.clone().block(nb);
     }
 }
-
 pub struct DeckStatScreen<'a> {
     pub mana_curve: BarChart<'a>,
     pub prices: Table<'a>,
@@ -1023,3 +1016,185 @@ pub struct Deck {
 }
 
 impl ToString for Deck { fn to_string(& self) -> String { self.name.clone() } }
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum SettingsSection {
+    Tags,
+    DefaultFilter,
+    Ordering,
+    OpenIntoRecent,
+    Exit,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum DeckViewSection {
+    Omni,
+    Cards,
+}
+
+pub struct DeckView {
+    omni: String,
+    omniprev: String,
+    omnipos: usize,
+    omnihistory: Vec<String>,
+    vcde: Vec<Card>,
+    vcdb: Vec<Card>,
+    vt: Vec<String>,
+    st: usize,
+    ac: Option<Card>,
+    vcdels: ListState,
+    vcdbls: ListState,
+    // vtls: ListState,
+    cf: CardFilter,
+}
+
+impl DeckView {
+    pub fn handle_input(&mut self, screen: Screen, c: KeyCode, conn: &Connection) -> Screen {
+        match screen {
+            Screen::DeckView(DeckViewSection::Omni) | Screen::DatabaseView(DeckViewSection::Omni) => {
+                match c {
+                    KeyCode::Left => {
+                        if self.omnipos > 0 {
+                            self.omnipos -= 1;
+                        }
+                    },
+                    KeyCode::Right => {
+                        if self.omnipos < self.omni.len() {
+                            self.omnipos += 1;
+                        }
+                    },
+                    KeyCode::Delete => {
+                        if self.omnipos < self.omni.len() {
+                            self.omni.remove(self.omnipos);
+                        }
+                    },
+                    KeyCode::Backspace => {
+                        if self.omnipos > 0 {
+                            self.omni.remove(self.omnipos - 1);
+                            self.omnipos -= 1;
+                        }
+                    },
+                    KeyCode::Enter => {
+                        let so = self.omni.trim();
+                        if so == "/stat" {
+                            return Screen::DeckStat;
+                        } else {
+                            let re = Regex::new(r"/tag:(\w*)").unwrap();
+                            let omni = if let Some(cap) = re.captures(so) { 
+                                // return Some(String::from(&cap[1])) 
+                                let tag = String::from(&cap[1]);
+                                let s = format!("/tag:{}", tag);
+                                let s = so.replace(&s, "");
+                                let s = s.replace("  ", " ");
+                                self.insert_tag(tag);
+                                s
+                            } else {
+                                so.into()
+                            };
+
+                            if !self.omnihistory.contains(&omni) {
+                                self.omnihistory.push(omni.clone());
+                            }
+                            if screen == Screen::DatabaseView(DeckViewSection::Omni) {
+                                self.vcdb = rvcfcf(&conn, &self.cf.make_query(true, &omni)).unwrap();
+                                if self.vcdb.len() > 0 {
+                                    self.vcdbls.select(Some(0));
+                                    return Screen::DatabaseView(DeckViewSection::Cards)
+                                } else {
+                                    self.vcdbls.select(None);
+                                }
+                            } else if self.vcde.len() > 0 {
+                                // self.vcde = rvcfcf(&conn, &self.cf.make_query(false, &omni)).unwrap();
+                                return Screen::DeckView(DeckViewSection::Cards)
+                            }
+                        }
+                    },
+                    KeyCode::Esc => {
+                        return Screen::MainMenu
+                    },
+                    KeyCode::Tab => {
+                        (self.omni, self.omniprev) = (self.omniprev.clone(), self.omni.clone());
+                        if screen == Screen::DatabaseView(DeckViewSection::Omni) {
+                            return Screen::DeckView(DeckViewSection::Omni)
+                        } else {
+                            return Screen::DatabaseView(DeckViewSection::Omni)
+                        }
+                    },
+                    KeyCode::Char(c) => {
+                        self.omni.insert(self.omnipos, c);
+                        self.omnipos += 1;
+                        if screen == Screen::DeckView(DeckViewSection::Omni) {
+                            self.vcde = rvcfcf(&conn, &self.cf.make_query(false, &self.omni)).unwrap();
+                            if self.vcde.len() > 0 {
+                                self.vcdels.select(Some(0));
+                            } else {
+                                self.vcdels.select(None);
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+            },
+            Screen::DeckView(DeckViewSection::Cards) => {
+                match c {
+                    KeyCode::Up => {
+                        let i = match self.vcdels.selected() {
+                            Some(i) => {
+                                if i == 0 {
+                                    self.vcde.len() - 1
+                                } else {
+                                    i - 1
+                                }
+                            }
+                            None => 0,
+                        };
+                        self.vcdels.select(Some(i))
+                    },
+                    KeyCode::Down => {
+                        let i = match self.vcdels.selected() {
+                            Some(i) => {
+                                if i >= self.vcde.len() - 1 {
+                                    0
+                                } else {
+                                    i + 1
+                                }
+                            }
+                            None => 0,
+                        };
+                        self.vcdels.select(Some(i));
+                    },
+                    KeyCode::Right => {
+                        self.st += 1;
+                        if self.st >= self.vt.len() { self.st = 0; }
+                    },
+                    KeyCode::Left => {
+                        self.st -= 1;
+                        if self.st < 0 { self.st = self.vt.len() - 1; }
+                    },
+                    KeyCode::Delete => todo!(),
+                    KeyCode::Enter => todo!(),
+                    KeyCode::Esc => todo!(),
+                    KeyCode::Char(' ') => todo!(),
+                    KeyCode::Char('u') => todo!(),
+                    _ => {}
+                }
+            },
+            Screen::DatabaseView(DeckViewSection::Cards) => todo!(),
+            _ => {}
+        }
+        screen
+    }
+
+    fn insert_tag(&mut self, tag: String) {
+        if !self.vt.contains(&tag) {
+            self.vt.push(tag.clone());
+            self.vt.sort(); //Yeah, it would be slightly faster to insert it in the correct position first, but these are microseconds.
+        }
+        self.st = self.vt.iter().position(|s| s == &tag).unwrap();
+    }
+
+    fn toggle_tag(&mut self, conn: &Connection) {
+        ttindc(conn, &self.ac.as_ref().unwrap().to_string(), &self.vt[self.st], self.cf.did);
+        todo!()
+    }
+}

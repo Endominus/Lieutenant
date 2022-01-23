@@ -18,11 +18,6 @@ use chrono::{Datelike, Utc, Duration, TimeZone};
 use pest::{Parser, iterators::Pair};
 use pest_derive::Parser;
 
-// use anyhow::{};
-
-// use futures::{io::BufReader, prelude::*};
-// use tokio::prelude::*;
-
 // pub struct DbContext<'a> {
 //     conn: Connection,
 //     stmts: HashMap<&'a str, Statement<'a>>
@@ -35,12 +30,10 @@ const DB_FILE: &str = "lieutenant.db";
 
 #[derive(Default)]
 pub struct CardFilter {
-    did: i32,
+    pub did: i32,
     color: String,
-    // fi: HashMap<&'a str, String>,
     df: DefaultFilter, //Default field
-    so: SortOrder, //
-    filters: String,
+    so: SortOrder,
 }
 
 #[derive(Parser)]
@@ -95,7 +88,7 @@ impl CardFilter {
     }
 
     pub fn from(deck: &Deck, default_filter: DefaultFilter, sort_order: SortOrder) -> CardFilter {
-        CardFilter { did: deck.id, color: deck.color.clone(), df: default_filter, so: sort_order, filters: String::new() }
+        CardFilter { did: deck.id, color: deck.color.clone(), df: default_filter, so: sort_order }
     }
 
     pub fn make_query(&mut self, general: bool, omni: &str) -> String {

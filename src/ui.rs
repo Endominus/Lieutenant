@@ -24,15 +24,8 @@ use tui::style::{Color, Modifier, Style};
 use tui::Terminal;
 use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
-// use crate::{Card, Deck, db::rcfndid};
 use crate::db::{self, CardFilter};
 use crate::util::*;
-// mod util;
-// use crate::util::{StatefulList, MainMenuItem, Screen, 
-//     DeckScreen, MakeDeckScreen, MakeDeckContents, 
-//     Omnitext, DeckStatInfo, DeckStatScreen, 
-//     MakeDeckFocus, Card, Deck,
-//     OpenDeckTable, Settings};
 
 struct AppState {
     mode: Screen,
@@ -158,7 +151,7 @@ impl AppState {
                             if self.sldc.items.len() > 0 {
                                 self.mode = Screen::DeckCard;
                                 if let Some(tag) = self.omnitext.rt() {
-                                    if let Some(vt) = self.config.add_tag(self.deck_id, tag.clone()) {
+                                    if let Some(vt) = self.config.add_deck_tag(self.deck_id, tag.clone()) {
                                         self.slt = StatefulList::with_items(vt);
                                     };
                                     self.slt.select(&tag);
@@ -548,7 +541,7 @@ impl AppState {
             Some(Screen::MakeDeck) => { self.mode = Screen::MakeDeck; }
             Some(Screen::OpenDeck) => { self.init_open_view(); }
             Some(Screen::DeckOmni) => { self.init_deck_view(); }
-            Some(Screen::Settings) => { self.init_settings(); }
+            Some(Screen::Settings(_)) => { self.init_settings(); }
             Some(Screen::DeckCard) => {  }
             Some(Screen::MainMenu) => { self.reset(); self.mode = Screen::MainMenu;}
             Some(_) => {}
@@ -605,7 +598,7 @@ impl AppState {
         if self.config.get_recent() > 0 { items.push(MainMenuItem::from_with_screen(String::from("Load most recent deck"), Screen::DeckOmni)); }
         items.push(MainMenuItem::from_with_screen(String::from("Create a new deck"), Screen::MakeDeck));
         items.push(MainMenuItem::from_with_screen(String::from("Load a deck"), Screen::OpenDeck));
-        items.push(MainMenuItem::from_with_screen(String::from("Settings"), Screen::Settings));
+        items.push(MainMenuItem::from_with_screen(String::from("Settings"), Screen::Settings(SettingsSection::Tags)));
         items.push(MainMenuItem::from(String::from("Quit")));
         
         self.slmm = StatefulList::with_items(items);
@@ -960,7 +953,7 @@ fn draw<'a>(
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                     .split(f.size())
             }
-            Screen::Settings => { Vec::new() }
+            Screen::Settings(_) => { Vec::new() }
             Screen::DeckStat => {
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
@@ -1033,7 +1026,7 @@ fn draw<'a>(
                     
                 f.render_stateful_widget(table, chunks[0], &mut ts);
             }
-            Screen::Settings => {}
+            Screen::Settings(_) => {}
             Screen::Error(s) => {
                 let (title, mut message) = s.split_once("\n").unwrap();
                 let s = message.replace("{DECK}", state.stod.get().unwrap().name.as_str());
@@ -1100,9 +1093,6 @@ fn draw<'a>(
                 let tag_data: Vec<ListItem> = dsi.tag_data.iter()
                     .map(|(k, v)| ListItem::new(format!("{}: {}", k, v)))
                     .collect(); 
-                // let price_data = dsi.price_data.iter()
-                //     .map(|(n, v)| Row::new(vec![n.as_str(), v.to_string().as_str()]))
-                //     .collect();
 
                 let dss = DeckStatScreen::from(&cmc_data, &dsi.price_data, &type_data, tag_data);
                 let mg = generate_deckstat_managroup(&vcs);
@@ -1173,7 +1163,6 @@ pub fn run() -> Result<()> {
                     let did = state.deck_id.clone();
                     let arc = Arc::clone(&state.dbc);
                     thread::spawn(move || {
-                        // db::add_regexp_function(&conn).unwrap();
                         db::ucfd(&arc, did).unwrap();
                     });
                 }

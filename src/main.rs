@@ -9,7 +9,6 @@ extern crate serde;
 extern crate crossterm;
 extern crate tui;
 extern crate serde_json;
-extern crate peg;
 extern crate lazy_static;
 extern crate csv;
 extern crate self_update;
@@ -30,9 +29,7 @@ use self_update::cargo_crate_version;
 use std::time::Instant;
 
 pub enum Command {
-    RetrieveCardOnline(String),
     RetrieveCard(String),
-    FullPull,
     Update,
     Draw,
     ImportDeck(String, Vec<String>, PathBuf),
@@ -41,31 +38,10 @@ pub enum Command {
 
 pub fn run(command: Command) -> Result<()> {
     match command {
-        Command::RetrieveCardOnline(_card) => {
-            // let a = db::rpfdc(&card);
-            // println!("Card price is: {}", a)
-            // for card in a {
-            //     println!("{:?}", card);
-            // }
-
-            // Ok(())
-        },
         Command::RetrieveCard(card) => {
-            // let cf = CardFilter::from(-1, &card);
             let conn = Connection::open("lieutenant.db")?;
             let a = db::rcfn(&conn, &card, None)?;
-            // for card in a {
             println!("{:?}", a);
-            // }
-
-            // Ok(())
-        },
-        Command::FullPull => {
-            // db::create_db()?;
-            // db::full_pull()?;
-            // network::rs();
-            // println!("{:?}", a);
-            // Ok(())
         },
         Command::Update => {
             let status = self_update::backends::github::Update::configure()

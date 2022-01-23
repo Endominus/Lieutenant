@@ -2,10 +2,10 @@
 version = 1.0
 tags = [
     "main", 
-    "draw", 
     "board_wipe", 
-    "removal",
+    "draw", 
     "ramp",
+    "removal",
     "side",
 ]
 ordering = "+name"
