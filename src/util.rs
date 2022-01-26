@@ -935,7 +935,7 @@ pub struct DeckView {
     omni: String,
     omniprev: String,
     omnipos: usize,
-    omnihistory: Vec<String>,
+    vsomni: Vec<String>,
     vcde: Vec<String>,
     vcdec: Vec<String>,
     vcdb: Vec<String>,
@@ -961,7 +961,7 @@ impl DeckView {
             omni: String::new(), 
             omniprev: String::new(), 
             omnipos: 0, 
-            omnihistory: Vec::new(), 
+            vsomni: Vec::new(), 
             vcde: vcdec.clone(), 
             vcdec, 
             vcdb: Vec::new(), 
@@ -986,6 +986,34 @@ impl DeckView {
                     KeyCode::Right => {
                         if self.omnipos < self.omni.len() {
                             self.omnipos += 1;
+                        }
+                    },
+                    KeyCode::Up => {
+                        if let Some(i) = self.vsomni.iter().position(|s| s == &self.omni) {
+                            if i > 0 {
+                                self.omni = self.vsomni[i-1].clone();
+                                self.omnipos = self.omni.len();
+                                if screen == &Screen::DeckView(DeckViewSection::Omni) { self.uvc(conn, screen); }
+                            }
+                        } else {
+                            if let Some(s) = self.vsomni.last() {
+                                self.omni = s.clone();
+                                self.omnipos = self.omni.len();
+                                if screen == &Screen::DeckView(DeckViewSection::Omni) { self.uvc(conn, screen); }
+                            }
+                        }
+                    },
+                    KeyCode::Down => {
+                        if let Some(i) = self.vsomni.iter().position(|s| s == &self.omni) {
+                            if i < self.vsomni.len() - 1 {
+                                self.omni = self.vsomni[i+1].clone();
+                                self.omnipos = self.omni.len();
+                                if screen == &Screen::DeckView(DeckViewSection::Omni) { self.uvc(conn, screen); }
+                            } else {
+                                self.omni = String::new();
+                                self.omnipos = 0;
+                                if screen == &Screen::DeckView(DeckViewSection::Omni) { self.uvc(conn, screen); }
+                            }
                         }
                     },
                     KeyCode::Delete => {
@@ -1023,9 +1051,13 @@ impl DeckView {
                             };
                             self.omni = omni.clone();
 
-                            if !self.omnihistory.contains(&omni) {
-                                self.omnihistory.push(omni.clone());
+                            if omni.len() > 0 {
+                                if let Some(i) = self.vsomni.iter().position(|s| s == &omni) {
+                                    self.vsomni.remove(i);
+                                };
+                                self.vsomni.push(omni.clone());
                             }
+                            
                             if screen == &Screen::DatabaseView(DeckViewSection::Omni) {
                                 self.uvc(conn, screen);
                                 if self.vcdb.len() > 0 {
