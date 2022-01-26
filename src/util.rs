@@ -1016,6 +1016,8 @@ impl DeckView {
                             }
                         }
                     },
+                    KeyCode::Home => self.omnipos = 0,
+                    KeyCode::End => self.omnipos = self.omni.len(),
                     KeyCode::Delete => {
                         if self.omnipos < self.omni.len() {
                             self.omni.remove(self.omnipos);
@@ -1057,7 +1059,7 @@ impl DeckView {
                                 };
                                 self.vsomni.push(omni.clone());
                             }
-                            
+
                             if screen == &Screen::DatabaseView(DeckViewSection::Omni) {
                                 self.uvc(conn, screen);
                                 if self.vcdb.len() > 0 {
