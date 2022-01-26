@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 use regex::Regex;
 use rusqlite::Connection;
-use tui::{layout::Constraint, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap}};
+use tui::{layout::{Constraint, Direction, Layout}, text::{Span, Spans}, widgets::{BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState}, backend::CrosstermBackend};
 use tui::style::{Color, Modifier, Style};
 
 use std::{collections::HashMap, path::PathBuf, env};
@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_derive::Serialize;
 use config::{Config, ConfigError};
 use itertools::Itertools;
-use crate::db::{CardFilter, rvcfcf, ttindc};
+use crate::db::{CardFilter, rvcnfcf, ttindc, rcfn, dcntodc};
 
 pub fn get_local_file(name: &str, file_must_exist: bool) -> PathBuf {
     let mut p = env::current_exe().unwrap();
@@ -22,7 +22,7 @@ pub fn get_local_file(name: &str, file_must_exist: bool) -> PathBuf {
     p
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub enum SortOrder {
     #[default] NameAsc,
     NameDesc,
@@ -38,7 +38,7 @@ pub enum CommanderType {
     Invalid
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub enum DefaultFilter {
     #[default] Name,
     Text
@@ -52,10 +52,6 @@ pub enum Screen {
     Settings(SettingsSection),
     DeckView(DeckViewSection),
     DatabaseView(DeckViewSection),
-    DeckOmni,
-    DeckCard,
-    DbFilter,
-    DbCards,
     DeckStat,
     Error(&'static str),
 }
@@ -215,7 +211,7 @@ impl Settings {
         vr.push(format!("open_into_recent = {}", self.global.open_into_recent));
         vr.push(String::from("\n[decks]"));
 
-        // Explore using a BTreeMap instead to lose dependence on itertools
+        // TODO: Explore using a BTreeMap instead to lose dependence on itertools
         let vk = self.decks.keys().sorted();
         
         for k in vk {
@@ -242,7 +238,6 @@ impl Settings {
 }
 
 pub struct StatefulList<T: ToString + PartialEq> {
-    // pub state: ListState,
     pub state: ListState,
     pub items: Vec<T>,
 }
@@ -373,7 +368,6 @@ impl<T: ToString + PartialEq> StatefulList<T> {
         let vs: Vec<String> = pl.iter().map(|f| f.to_string()).collect();
 
         self.items.iter().map(|f| 
-            // let fs = f.to_string();
             if vs.contains(&f.to_string()) {
                 ListItem::new(f.to_string()).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))
             } else {
@@ -412,7 +406,6 @@ impl OpenDeckTable {
             .add_modifier(Modifier::BOLD)
             .fg(Color::Cyan));
         let mut rows = Vec::new();
-        // rows.push(headers);
 
         for deck in decks {
             let (height, com2) = match deck.commander2 {
@@ -434,7 +427,7 @@ impl OpenDeckTable {
 
         let table = Table::new(rows)
             .header(headers)
-            .block(Block::default()//.title("Open Deck")
+            .block(Block::default()
                 .borders(Borders::ALL))
             .widths(&[Constraint::Length(4), Constraint::Percentage(40), Constraint::Percentage(40), Constraint::Length(7)])
             .column_spacing(1)
@@ -494,13 +487,7 @@ impl OpenDeckTable {
         if self.decks.len() == 0 {
             self.state = TableState::default();
         } else if self.decks.len() == a { self.state.select(Some(a-1)); }
-            // if a+1 == self.decks.len() { 
-            //     self.state.select(Some(a-1)); 
-            // }
-            // else { self.state.select(Some(a+1)); }
-        // } else {
-        //     self.state = TableState::default();
-        // }
+
         Some(d)
     }
 }
@@ -661,86 +648,7 @@ impl<'a> MakeDeckScreen<'a> {
         }
     }
 }
-pub struct DeckScreen<'a> {
-    pub omni: Paragraph<'a>,
-    pub tags: Paragraph<'a>,
-    pub lc: List<'a>,
-    pub fc: Paragraph<'a>,
-    len: usize,
-}
 
-impl<'a> DeckScreen<'a> {
-    pub fn new(
-        omnitext: Spans<'a>, 
-        tag: &StatefulList<String>,
-        vli: Vec<ListItem<'a>>, 
-        cardtext: Paragraph<'a>, 
-        mode: Screen) -> DeckScreen<'a> {
-        let (omni_title, list_title) = match mode {
-            Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", "Card List") }
-            Screen::DbFilter | Screen::DbCards => { ("Filter Database", "Database") }
-            _ => { panic!(); }
-        };
-        
-        let len = vli.len();
-        let input = Paragraph::new(omnitext)
-            .style(Style::default())
-            .block(Block::default().borders(Borders::ALL).title(omni_title));
-        let tag = Paragraph::new(Span::from(tag.get().unwrap().clone()))
-            .style(Style::default())
-            .block(Block::default().borders(Borders::ALL).title("Tags"));
-        let list = List::new(vli)
-            .block(Block::default().title(list_title).borders(Borders::ALL))
-            .style(Style::default().fg(Color::White))
-            .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
-        let card = Paragraph::from(cardtext)
-            .style(Style::default())
-            .wrap(Wrap { trim: false } )
-            .block(Block::default().borders(Borders::ALL).title("Card Info"));
-            
-        DeckScreen {
-            omni: input,
-            tags: tag,
-            lc: list,
-            fc: card,
-            len
-        }
-    }
-
-    pub fn focus_omni(&mut self, mode: Screen) {
-        let (omni_title, list_title) = match mode {
-            Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", format!("Card List ({})", self.len)) }
-            Screen::DbFilter | Screen::DbCards => { ("Filter Database", format!("Database ({})", self.len)) }
-            _ => { panic!(); }
-        };
-
-        let nb = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
-            .title(omni_title);
-        self.omni = self.omni.clone().block(nb);
-        let nb = Block::default().title(list_title).borders(Borders::ALL);
-        self.lc = self.lc.clone().block(nb);
-    }
-
-    pub fn focus_lc(&mut self, mode: Screen) {
-        let (omni_title, list_title) = match mode {
-            Screen::DeckOmni | Screen::DeckCard => { ("Filter Deck", format!("Card List ({})", self.len)) }
-            Screen::DbFilter | Screen::DbCards => { ("Filter Database", format!("Database ({})", self.len)) }
-            _ => { panic!(); }
-        };
-
-        let nb = Block::default()
-            .borders(Borders::ALL)
-            .title(omni_title);
-        self.omni = self.omni.clone().block(nb);
-        let nb = Block::default()
-            .title(list_title)
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow));
-        self.lc = self.lc.clone().block(nb);
-    }
-}
 pub struct DeckStatScreen<'a> {
     pub mana_curve: BarChart<'a>,
     pub prices: Table<'a>,
@@ -772,15 +680,6 @@ impl<'a> DeckStatScreen<'a> {
             .value_style(Style::default().fg(Color::Black).add_modifier(Modifier::BOLD))
             .label_style(Style::default().fg(Color::Cyan))
             .data(cmc_data.as_slice());
-
-        // let type_breakdown = BarChart::default()
-        //     .block(Block::default().title("Type Breakdown").borders(Borders::ALL))
-        //     .bar_width(3)
-        //     .bar_gap(1)
-        //     .bar_style(Style::default().fg(Color::White).bg(Color::Black))
-        //     .value_style(Style::default().fg(Color::Black).add_modifier(Modifier::BOLD))
-        //     .label_style(Style::default().fg(Color::Cyan))
-        //     .data(type_data.as_slice());
 
         let type_breakdown = BarChart::default()
             .block(Block::default().title("Type Breakdown").borders(Borders::ALL))
@@ -838,7 +737,7 @@ pub struct Card {
     pub text: String,
     pub toughness: String,
     pub types: String,
-    pub lo: Layout,
+    pub lo: CardLayout,
     pub rarity: String,
     pub price: Option<f64>,
     pub stale: bool,
@@ -874,7 +773,7 @@ impl Card {
         }
         
         let s = match &self.lo {
-            Layout::Adventure(side, rel) => { 
+            CardLayout::Adventure(side, rel) => { 
                 v.push(Spans::from(String::new()));
                 match side { 
                     'a' => { format!("Also has Adventure: {}", rel) } 
@@ -882,7 +781,7 @@ impl Card {
                     _ => { String::new() } 
                 }
             }
-            Layout::Aftermath(side, rel) => { 
+            CardLayout::Aftermath(side, rel) => { 
                 v.push(Spans::from(String::new()));
                 match side { 
                     'a' => { format!("Also has Aftermath: {}", rel) } 
@@ -890,7 +789,7 @@ impl Card {
                     _ => { String::new() } 
                 }
             }
-            Layout::Flip(side, rel) => { 
+            CardLayout::Flip(side, rel) => { 
                 v.push(Spans::from(String::new()));
                 match side { 
                     'a' => { format!("Also has Flip side: {}", rel) } 
@@ -898,15 +797,15 @@ impl Card {
                     _ => { String::new() } 
                 }
             }
-            Layout::ModalDfc(_, rel) => { 
+            CardLayout::ModalDfc(_, rel) => { 
                 v.push(Spans::from(String::new()));
                 format!("You may instead cast: {}", rel) 
             }
-            Layout::Split(_, rel) => { 
+            CardLayout::Split(_, rel) => { 
                 v.push(Spans::from(String::new()));
                 format!("You may instead cast: {}", rel) 
             }
-            Layout::Transform(side, rel) => { 
+            CardLayout::Transform(side, rel) => { 
                 v.push(Spans::from(String::new()));
                 match side { 
                     'a' => { 
@@ -918,7 +817,7 @@ impl Card {
                     _ => { String::new() } 
                 }
             }
-            Layout::Meld(side, face, meld) => { 
+            CardLayout::Meld(side, face, meld) => { 
                 v.push(Spans::from(String::new()));
                 match side { 
                     'a' => { 
@@ -948,7 +847,6 @@ impl Card {
         }
         
         if self.tags.len() > 0 {
-            // v.push(Spans::from(String::new()));
             v.push(Spans::from(format!("Tags: {}", self.tags.join(" "))));
         }
 
@@ -970,7 +868,8 @@ impl Card {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Layout {
+pub enum CardLayout {
+    //TODO: can probably collapse Adventure, Aftermath, etc into one class
     Adventure(char, String),
     Aftermath(char, String),
     Flip(char, String),
@@ -983,9 +882,9 @@ pub enum Layout {
     Transform(char, String),
 }
 
-impl Default for Layout {
+impl Default for CardLayout {
     fn default() -> Self {
-        Layout::Normal
+        CardLayout::Normal
     }
 }
 
@@ -1037,19 +936,45 @@ pub struct DeckView {
     omniprev: String,
     omnipos: usize,
     omnihistory: Vec<String>,
-    vcde: Vec<Card>,
-    vcdb: Vec<Card>,
+    vcde: Vec<String>,
+    vcdec: Vec<String>,
+    vcdb: Vec<String>,
     vt: Vec<String>,
     st: usize,
     ac: Option<Card>,
     vcdels: ListState,
     vcdbls: ListState,
-    // vtls: ListState,
     cf: CardFilter,
 }
 
 impl DeckView {
-    pub fn handle_input(&mut self, screen: Screen, c: KeyCode, conn: &Connection) -> Screen {
+    pub fn new(did: i32, conn: &Connection, vt: Vec<String>, default_filter: DefaultFilter, sort_order: SortOrder) -> DeckView {
+        let deck = crate::db::rdfdid(conn, did).unwrap();
+        let cf = CardFilter::from(did, &deck.color, default_filter, sort_order);
+        let vcdec = rvcnfcf(conn, &cf.make_query(false, "")).unwrap();
+        let st = vt.iter().position(|s| s == &String::from("main")).unwrap();
+        let mut ls = ListState::default();
+        ls.select(Some(0));
+        let ac = Some(crate::db::rcfn(conn, &vcdec[0], Some(cf.did)).unwrap());
+
+        DeckView { 
+            omni: String::new(), 
+            omniprev: String::new(), 
+            omnipos: 0, 
+            omnihistory: Vec::new(), 
+            vcde: vcdec.clone(), 
+            vcdec, 
+            vcdb: Vec::new(), 
+            vt,
+            st, 
+            ac, 
+            vcdels: ls, 
+            vcdbls: ListState::default(), 
+            cf,
+        }
+    }
+
+    pub fn handle_input(&mut self, screen: &Screen, c: KeyCode, conn: &Connection) -> Screen {
         match screen {
             Screen::DeckView(DeckViewSection::Omni) | Screen::DatabaseView(DeckViewSection::Omni) => {
                 match c {
@@ -1067,11 +992,17 @@ impl DeckView {
                         if self.omnipos < self.omni.len() {
                             self.omni.remove(self.omnipos);
                         }
+                        if screen == &Screen::DeckView(DeckViewSection::Omni) {
+                            self.uvc(conn, screen);
+                        }
                     },
                     KeyCode::Backspace => {
                         if self.omnipos > 0 {
                             self.omni.remove(self.omnipos - 1);
                             self.omnipos -= 1;
+                        }
+                        if screen == &Screen::DeckView(DeckViewSection::Omni) {
+                            self.uvc(conn, screen);
                         }
                     },
                     KeyCode::Enter => {
@@ -1081,7 +1012,6 @@ impl DeckView {
                         } else {
                             let re = Regex::new(r"/tag:(\w*)").unwrap();
                             let omni = if let Some(cap) = re.captures(so) { 
-                                // return Some(String::from(&cap[1])) 
                                 let tag = String::from(&cap[1]);
                                 let s = format!("/tag:{}", tag);
                                 let s = so.replace(&s, "");
@@ -1091,20 +1021,17 @@ impl DeckView {
                             } else {
                                 so.into()
                             };
+                            self.omni = omni.clone();
 
                             if !self.omnihistory.contains(&omni) {
                                 self.omnihistory.push(omni.clone());
                             }
-                            if screen == Screen::DatabaseView(DeckViewSection::Omni) {
-                                self.vcdb = rvcfcf(&conn, &self.cf.make_query(true, &omni)).unwrap();
+                            if screen == &Screen::DatabaseView(DeckViewSection::Omni) {
+                                self.uvc(conn, screen);
                                 if self.vcdb.len() > 0 {
-                                    self.vcdbls.select(Some(0));
                                     return Screen::DatabaseView(DeckViewSection::Cards)
-                                } else {
-                                    self.vcdbls.select(None);
                                 }
                             } else if self.vcde.len() > 0 {
-                                // self.vcde = rvcfcf(&conn, &self.cf.make_query(false, &omni)).unwrap();
                                 return Screen::DeckView(DeckViewSection::Cards)
                             }
                         }
@@ -1114,46 +1041,51 @@ impl DeckView {
                     },
                     KeyCode::Tab => {
                         (self.omni, self.omniprev) = (self.omniprev.clone(), self.omni.clone());
-                        if screen == Screen::DatabaseView(DeckViewSection::Omni) {
+                        self.omnipos = 0;
+                        if screen == &Screen::DatabaseView(DeckViewSection::Omni) {
+                            self.uac(conn, &Screen::DeckView(DeckViewSection::Omni));
                             return Screen::DeckView(DeckViewSection::Omni)
                         } else {
+                            self.uac(conn, &Screen::DatabaseView(DeckViewSection::Omni));
                             return Screen::DatabaseView(DeckViewSection::Omni)
                         }
                     },
                     KeyCode::Char(c) => {
                         self.omni.insert(self.omnipos, c);
                         self.omnipos += 1;
-                        if screen == Screen::DeckView(DeckViewSection::Omni) {
-                            self.vcde = rvcfcf(&conn, &self.cf.make_query(false, &self.omni)).unwrap();
-                            if self.vcde.len() > 0 {
-                                self.vcdels.select(Some(0));
-                            } else {
-                                self.vcdels.select(None);
-                            }
+                        if screen == &Screen::DeckView(DeckViewSection::Omni) {
+                            self.uvc(conn, screen);
                         }
                     },
                     _ => {}
                 }
             },
-            Screen::DeckView(DeckViewSection::Cards) => {
+            Screen::DeckView(DeckViewSection::Cards) | Screen::DatabaseView(DeckViewSection::Cards) => {
+                let (vcd, vcdls) = match screen {
+                    Screen::DeckView(DeckViewSection::Cards) => (&mut self.vcde, &mut self.vcdels),
+                    Screen::DatabaseView(DeckViewSection::Cards) => (&mut self.vcdb, &mut self.vcdbls),
+                    _ => todo!(),
+                };
+                
                 match c {
                     KeyCode::Up => {
-                        let i = match self.vcdels.selected() {
+                        let i = match vcdls.selected() {
                             Some(i) => {
                                 if i == 0 {
-                                    self.vcde.len() - 1
+                                    vcd.len() - 1
                                 } else {
                                     i - 1
                                 }
                             }
                             None => 0,
                         };
-                        self.vcdels.select(Some(i))
+                        vcdls.select(Some(i));
+                        self.uac(&conn, &screen);
                     },
                     KeyCode::Down => {
-                        let i = match self.vcdels.selected() {
+                        let i = match vcdls.selected() {
                             Some(i) => {
-                                if i >= self.vcde.len() - 1 {
+                                if i >= vcd.len() - 1 {
                                     0
                                 } else {
                                     i + 1
@@ -1161,40 +1093,353 @@ impl DeckView {
                             }
                             None => 0,
                         };
-                        self.vcdels.select(Some(i));
+                        vcdls.select(Some(i));
+
+                        self.uac(&conn, &screen);
                     },
                     KeyCode::Right => {
                         self.st += 1;
                         if self.st >= self.vt.len() { self.st = 0; }
                     },
                     KeyCode::Left => {
-                        self.st -= 1;
-                        if self.st < 0 { self.st = self.vt.len() - 1; }
+                        if self.st > 0 { self.st -= 1; }
+                        else { self.st = self.vt.len() - 1; }
                     },
-                    KeyCode::Delete => todo!(),
-                    KeyCode::Enter => todo!(),
-                    KeyCode::Esc => todo!(),
-                    KeyCode::Char(' ') => todo!(),
-                    KeyCode::Char('u') => todo!(),
+                    KeyCode::Delete => {
+                        let i = vcdls.selected().unwrap();
+                        let cn = &vcd.get(i).unwrap().clone();
+                        let c = rcfn(&conn, cn, None).unwrap();
+                        let d = crate::db::rdfdid(conn, self.cf.did).unwrap();
+                        if d.commander == c { return *screen; }
+                        if let Some(com) = d.commander2 {
+                            if com == c { return *screen; }
+                        };
+
+                        if let Some(j) = self.vcdec.iter().position(|s| s == cn) {
+                            self.vcdec.remove(j);
+                            let flag = screen == &Screen::DeckView(DeckViewSection::Cards);
+                            dcntodc(conn, cn, self.cf.did).unwrap();
+                            
+                            if flag { vcd.remove(i); }
+                            match &c.lo {
+                                CardLayout::Flip(_, n) | 
+                                CardLayout::Split(_, n) | 
+                                CardLayout::ModalDfc(_, n) | 
+                                CardLayout::Aftermath(_, n) | 
+                                CardLayout::Adventure(_, n) | 
+                                CardLayout::Transform(_, n) => { 
+                                    if flag { 
+                                        let pos = vcd.iter().position(| s| s == n).unwrap();
+                                        vcd.remove(pos);
+                                        if i > pos { vcdls.select(Some(i-1)); }
+                                    }
+                                    dcntodc(conn, &n, self.cf.did).unwrap();
+                                }
+                                CardLayout::Meld(s, n, m) => { 
+                                    if flag {
+                                        let opos = vcd.iter().position(| s| s == m);
+                                        if let Some(pos) = opos {
+                                            vcd.remove(pos);
+                                            if i > pos { vcdls.select(Some(i-1)); }
+                                        };
+                                    }
+                                    let _a = dcntodc(conn, &m, self.cf.did);
+    
+                                    if s == &'b' { 
+                                        if flag {
+                                            let pos = vcd.iter().position(| s| s == n).unwrap();
+                                            vcd.remove(pos);
+                                            if i > pos { vcdls.select(Some(i-1)); }
+                                        }
+                                        dcntodc(conn, &n, self.cf.did).unwrap();
+                                    } 
+                                }
+                                _ => {}
+                            }
+
+                            self.vcdec = rvcnfcf(conn, &self.cf.make_query(false, "")).unwrap();
+
+                            if vcd.len() == 0 { //Can only happen in Deck view
+                                vcdls.select(None);
+                                self.ac = None;
+                                return Screen::DeckView(DeckViewSection::Omni);
+                            }
+
+                            if !flag {                        
+                                let vc = rvcnfcf(&conn, &self.cf.make_query(false, &self.omniprev)).unwrap();
+                                if vc.len() > 0 {
+                                    self.vcdels.select(Some(0));
+
+                                } else {
+                                    self.vcdels.select(None);
+                                }
+                                self.vcde = vc;
+                            } else {
+                                self.uac(conn, screen);
+                            }
+                        }
+                    },
+                    KeyCode::Enter => {
+                        let cn = &self.ac.as_ref().unwrap().name;
+                        if self.vcdec.contains(cn) {
+                            self.toggle_tag(conn)
+                        } else {
+                            if let Ok(vc) = crate::db::ictodc(conn, &self.ac.as_ref().unwrap(), self.cf.did) {
+                                for c in vc {
+                                    self.vcdec.push(c.name);
+                                }
+                            }
+                            let vc = rvcnfcf(&conn, &self.cf.make_query(false, &self.omniprev)).unwrap();
+                            if vc.len() > 0 {
+                                self.vcdels.select(Some(0));
+                            } else {
+                                self.vcdels.select(None);
+                            }
+                            self.vcde = vc;
+                        }
+                    },
+                    KeyCode::Esc => {
+                        return Screen::MainMenu
+                    },
+                    KeyCode::Tab => {
+                        if screen == &Screen::DeckView(DeckViewSection::Cards) {
+                            return Screen::DeckView(DeckViewSection::Omni);
+                        } else {
+                            return Screen::DatabaseView(DeckViewSection::Omni);
+                        }
+                    }
+                    KeyCode::Char(' ') => self.uacr(conn),
+                    KeyCode::Char('u') => {
+                        if let Some(ac) = &self.ac {
+                            if ac.stale {
+                                if let Ok(card) = crate::db::ucfcn(conn, &ac.name, &ac.lo, Some(self.cf.did)) {
+                                    self.ac = Some(card);
+                                }
+                            }
+                        };
+                    },
                     _ => {}
                 }
             },
-            Screen::DatabaseView(DeckViewSection::Cards) => todo!(),
             _ => {}
         }
-        screen
+        *screen
     }
 
     fn insert_tag(&mut self, tag: String) {
         if !self.vt.contains(&tag) {
-            self.vt.push(tag.clone());
-            self.vt.sort(); //Yeah, it would be slightly faster to insert it in the correct position first, but these are microseconds.
+            match self.vt.iter().position(| s| s > &tag) {
+                Some(i) => {
+                    self.st = i;
+                    self.vt.insert(i, tag);
+                },
+                None => {
+                    self.st = self.vt.len();
+                    self.vt.push(tag);
+                }
+            }
+        } else {
+            self.st = self.vt.iter().position(|s| s == &tag).unwrap();
         }
-        self.st = self.vt.iter().position(|s| s == &tag).unwrap();
     }
 
     fn toggle_tag(&mut self, conn: &Connection) {
-        ttindc(conn, &self.ac.as_ref().unwrap().to_string(), &self.vt[self.st], self.cf.did);
-        todo!()
+        let cn = self.ac.as_ref().unwrap().to_string();
+        self.ac = ttindc(conn, &cn, &self.vt[self.st], self.cf.did);
+    }
+
+    fn uvc(&mut self, conn: &Connection, screen: &Screen) {
+        let (vc, general, ls) = match screen {
+            Screen::DeckView(_) => (&mut self.vcde, false, &mut self.vcdels),
+            Screen::DatabaseView(_) => (&mut self.vcdb, true, &mut self.vcdbls),
+            _ => todo!()
+        };
+
+        *vc = rvcnfcf(&conn, &self.cf.make_query(general, &self.omni)).unwrap();
+        if vc.len() > 0 {
+            ls.select(Some(0));
+
+        } else {
+            ls.select(None);
+        }
+        self.uac(conn, screen);
+    }
+    
+    fn uacfn(&mut self, conn: &Connection, cn: &String) {
+        self.ac = Some(crate::db::rcfndid(conn, cn, self.cf.did).unwrap());
+    }
+
+    fn uac(&mut self, conn: &Connection, screen: &Screen) {
+        let mm = String::new(); //this is dumb, but it works. Otherwise complains of temp value dropped.
+        let cn = match screen {
+            Screen::DeckView(dvs) => {
+                if self.vcde.len() == 0 { &mm 
+                } else {
+                    match dvs {
+                        DeckViewSection::Omni => &self.vcde[0],
+                        DeckViewSection::Cards => &self.vcde[self.vcdels.selected().unwrap()],
+                    }
+                }
+            },
+            Screen::DatabaseView(dvs) => {
+                if self.vcdb.len() == 0 { &mm 
+                } else {
+                    match dvs {
+                        DeckViewSection::Omni => &self.vcdb[0],
+                        DeckViewSection::Cards => &self.vcdb[self.vcdbls.selected().unwrap()],
+                    }
+                }
+            },
+            _ => { &mm }
+        };
+        if cn == &mm { 
+            self.ac = None; 
+        } else { 
+            self.ac = Some(crate::db::rcfn(conn, cn, Some(self.cf.did)).unwrap()); 
+        }
+    }
+
+    fn uacr(&mut self, conn: &Connection) {
+        let c = self.ac.as_ref().unwrap();
+        let cn = match &c.lo {
+            crate::util::CardLayout::Flip(_, n) | 
+            crate::util::CardLayout::Split(_, n) | 
+            crate::util::CardLayout::ModalDfc(_, n) | 
+            crate::util::CardLayout::Aftermath(_, n) | 
+            crate::util::CardLayout::Adventure(_, n) | 
+            crate::util::CardLayout::Transform(_, n) => { n },
+            crate::util::CardLayout::Meld(s, n, m) => { 
+                // side = s; rel = n.clone(); rel2 = m.clone(); 
+                if s == &'b' { n }
+                else { 
+                    let meld = rcfn(conn, &m, None).unwrap();
+                    if let crate::util::CardLayout::Meld(_, face, _) = meld.lo {
+                        if &face == n {
+                            m
+                        } else {
+                            n
+                        }
+                    } else {
+                        n //Should never occur, but need to complete if statement
+                    }
+                }
+            },
+            _ => { return; }
+        };
+
+        self.ac = Some(crate::db::rcfn(conn, cn, Some(self.cf.did)).unwrap());
+    }
+    
+    fn vlifself(&self, screen: &Screen) -> Vec<ListItem> {
+        match screen {
+            Screen::DeckView(_) => self.vcde.iter().map(|s| ListItem::new(s as &str)).collect(),
+            Screen::DatabaseView(_) => self.vcdb.iter().map(|s|
+                if self.vcdec.contains(s) {
+                    ListItem::new(s as &str).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))
+                } else {
+                    ListItem::new(s as &str)
+                }).collect(),
+            _ => todo!(),
+        }
+    }
+    
+    pub fn render(&self, screen: &Screen, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
+        let mut vrct = Vec::new();
+        let cut = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(5)].as_ref())
+            .split(frame.size());
+
+        vrct.append(&mut Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(20), Constraint::Length(18)].as_ref())
+            .split(cut[0]));
+        
+        vrct.append(&mut Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(26),Constraint::Min(18)].as_ref())
+            .split(cut[1]));
+
+        let mut bdef = Block::default().borders(Borders::ALL);
+        let mut bfoc = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow));
+
+        let spans = if self.omnipos < self.omni.len() {
+            let (s1, s2) = self.omni.split_at(self.omnipos);
+            let (s2, s3) = s2.split_at(1);
+            vec![
+                Span::styled(s1, Style::default()),
+                Span::styled(s2, Style::default().add_modifier(Modifier::UNDERLINED)),
+                Span::styled(s3, Style::default()),
+            ]
+        } else {
+            vec![
+                Span::styled(self.omni.as_str(), Style::default()),
+                Span::styled(" ", Style::default().add_modifier(Modifier::UNDERLINED)),
+            ]
+        };
+
+        let mut po = Paragraph::new(Spans::from(spans));
+        let pt = Paragraph::new(self.vt[self.st].clone()).block(bdef.clone());
+        let pc = match &self.ac {
+            Some(card) => card.display().block(bdef.clone()),
+            None => Paragraph::new("No card found!").block(bdef.clone()),
+        };
+
+        let (lc, ls) = match screen {
+            Screen::DeckView(DeckViewSection::Omni) => {
+                bfoc = bfoc.title("Filter Deck");
+                po = po.block(bfoc);
+                let vli: Vec<ListItem> = self.vcde.iter().map(|s| ListItem::new(s as &str)).collect();
+                let lc = List::new(vli)
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))
+                    .block(bdef.title(format!("Deck View ({})", self.vcde.len())));
+                (lc, &self.vcdels)
+            },
+            Screen::DeckView(DeckViewSection::Cards) => {
+                bdef = bdef.title("Filter Deck");
+                po = po.block(bdef);
+                let vli: Vec<ListItem> = self.vcde.iter().map(|s| ListItem::new(s as &str)).collect();
+                let lc = List::new(vli)
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))
+                    .block(bfoc.title(format!("Deck View ({})", self.vcde.len())));
+                (lc, &self.vcdels)
+            },
+            Screen::DatabaseView(DeckViewSection::Omni) => {
+                bfoc = bfoc.title("Filter Database");
+                po = po.block(bfoc);
+                let vli: Vec<ListItem> = self.vcdb.iter().map(|s|
+                        if self.vcdec.contains(s) {
+                            ListItem::new(s as &str).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))
+                        } else {
+                            ListItem::new(s as &str)
+                        }).collect();
+                let lc = List::new(vli)
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))
+                    .block(bdef.title(format!("Database ({})", self.vcdb.len())));
+                (lc, &self.vcdbls)
+            },
+            Screen::DatabaseView(DeckViewSection::Cards) => {
+                bdef = bdef.title("Filter Database");
+                po = po.block(bdef);
+                let vli: Vec<ListItem> = self.vcdb.iter().map(|s|
+                        if self.vcdec.contains(s) {
+                            ListItem::new(s as &str).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))
+                        } else {
+                            ListItem::new(s as &str)
+                        }).collect();
+                let lc = List::new(vli)
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))
+                    .block(bfoc.title(format!("Database ({})", self.vcdb.len())));
+                (lc, &self.vcdbls)
+            },
+            _ => todo!()
+        };
+
+        frame.render_widget(po, vrct[0]);
+        frame.render_widget(pt, vrct[1]);
+        frame.render_stateful_widget(lc, vrct[2], &mut ls.clone());
+        frame.render_widget(pc, vrct[3]);
     }
 }

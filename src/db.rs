@@ -2,7 +2,7 @@ extern crate rusqlite;
 extern crate regex;
 extern crate pest;
 
-use crate::util::{Layout, CardStat, Card, Deck, CommanderType};
+use crate::util::{CardLayout, CardStat, Card, Deck, CommanderType};
 use crate::network::rvjc;
 
 use self::rusqlite::{params, Connection};
@@ -32,13 +32,13 @@ const DB_FILE: &str = "lieutenant.db";
 pub struct CardFilter {
     pub did: i32,
     color: String,
-    df: DefaultFilter, //Default field
+    df: DefaultFilter, 
     so: SortOrder,
 }
 
 #[derive(Parser)]
 #[grammar = "omni.pest"] // relative to src
-struct TestParser;
+struct OmniParser;
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Set {
@@ -87,11 +87,11 @@ impl CardFilter {
         CardFilter::default()
     }
 
-    pub fn from(deck: &Deck, default_filter: DefaultFilter, sort_order: SortOrder) -> CardFilter {
-        CardFilter { did: deck.id, color: deck.color.clone(), df: default_filter, so: sort_order }
+    pub fn from(did: i32, color: &String, default_filter: DefaultFilter, sort_order: SortOrder) -> CardFilter {
+        CardFilter { did, color: color.clone(), df: default_filter, so: sort_order }
     }
 
-    pub fn make_query(&mut self, general: bool, omni: &str) -> String {
+    pub fn make_query(&self, general: bool, omni: &str) -> String {
         let initial = match general {
             true => { 
                 let mut colors = String::from("WUBRG");
@@ -124,7 +124,7 @@ WHERE deck_contents.deck = {}", self.did)
             SortOrder::CmcDesc => "ORDER BY cmc DESC;".into(),
         };
 
-        match TestParser::parse(Rule::input, omni) {
+        match OmniParser::parse(Rule::input, omni) {
             Ok(mut pairs) => {
                 let enclosed = pairs.next().unwrap();
                 let tokens = enclosed.into_inner();
@@ -134,9 +134,6 @@ WHERE deck_contents.deck = {}", self.did)
                     } else {
                         let s = CardFilter::helper(rule, &FilterField::None);
                         filters += &String::from(format!("\nAND ({})", s));
-                        // if r.len() > 0 {
-                            // println!("\t{}", r);
-                        // }
                     }
                 }
             }
@@ -419,7 +416,6 @@ pub fn add_regexp_function(db: &Connection) -> Result<()> {
 
 fn parse_args(column: &str, mode: ParseMode, items: &String) -> String {
     let mut v_or_conditions = Vec::new();
-    // debug!("In parse");
     
     let p = match &mode {
         ParseMode::Text =>  { "{:col} {:req} \'%{:item}%\'" }
@@ -446,7 +442,6 @@ fn parse_args(column: &str, mode: ParseMode, items: &String) -> String {
                     continue;
                 }
                 v_and_conditions.push(format!(r#"tags IS NOT NULL"#));
-                // let words = group.split("&");
                 match negation {
                     Some("!") => { 
                         group = group.get(1..).unwrap(); 
@@ -457,7 +452,6 @@ fn parse_args(column: &str, mode: ParseMode, items: &String) -> String {
                 }
             }
             ParseMode::Color => {
-                // println!("In color");
                 match negation {
                     Some("!") => { 
                         _g = group.get(1..).unwrap().to_uppercase(); 
@@ -637,7 +631,6 @@ pub fn ucfsqlite(conn_primary: &Connection, conn_secondary: &Connection,) -> Res
             Ok(_) => { success += 1; },
             Err(_) => { 
                 failure += 1;
-                // println!("Failed for {}", name);
              },
         }
     }
@@ -712,9 +705,9 @@ pub fn ivcfjsmap(conn: &Connection, vjc: Vec<JsonCard>) -> Result<(usize, usize)
         }) {
             Ok(_) => { success += 1; },
             Err(_) => { 
-                // Usually an unset
+                // Usually an unset or duplicate cards
                 failure += 1;
-                println!("Failed for {}", name);
+                // println!("Failed for {}", name);
              },
         }
     }
@@ -741,26 +734,26 @@ pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
     r.push(rcfn(conn, &c.name, None).unwrap());
     
     match &c.lo {
-        Layout::Flip(_, n) | 
-        Layout::Split(_, n) | 
-        Layout::ModalDfc(_, n) | 
-        Layout::Aftermath(_, n) | 
-        Layout::Adventure(_, n) | 
-        Layout::Transform(_, n) => { 
+        CardLayout::Flip(_, n) | 
+        CardLayout::Split(_, n) | 
+        CardLayout::ModalDfc(_, n) | 
+        CardLayout::Aftermath(_, n) | 
+        CardLayout::Adventure(_, n) | 
+        CardLayout::Transform(_, n) => { 
             stmt.execute(named_params!{":card_name": n, ":deck_id": did as u32} )?;
-            r.push(rcfn(conn, &c.name, None).unwrap());
+            r.push(rcfn(conn, n, None).unwrap());
         }
-        Layout::Meld(s, n, m) => { 
+        CardLayout::Meld(s, n, m) => { 
             if s == &'b' {  
                 stmt.execute(named_params!{":card_name": n, ":deck_id": did as u32} )?;
-                r.push(rcfn(conn, &c.name, None).unwrap()); 
+                r.push(rcfn(conn, n, None).unwrap()); 
                 stmt.execute(named_params!{":card_name": m, ":deck_id": did as u32} )?;
-                r.push(rcfn(conn, &c.name, None).unwrap());
+                r.push(rcfn(conn, m, None).unwrap());
             } else {
                 let names: Vec<String> =  rvcfdid(conn, did, SortOrder::NameAsc).unwrap().iter().map(|c| c.to_string()).collect();
                 if names.contains(&n) {  
                     stmt.execute(named_params!{":card_name": m, ":deck_id": did as u32} )?;
-                    r.push(rcfn(conn, &c.name, None).unwrap());
+                    r.push(rcfn(conn, m, None).unwrap());
                 }
             }
         }
@@ -786,12 +779,12 @@ pub fn ttindc(conn: &Connection, c: &String, t: &String, did: i32) -> Option<Car
     let mut card = rcfndid(conn, c, did).unwrap();
     let cc = if t.eq(&String::from("main")) || t.eq(&String::from("main")) {
         match &card.lo {
-            Layout::Adventure(_, n) | 
-            Layout::Aftermath(_, n) | 
-            Layout::Flip(_, n) | 
-            Layout::ModalDfc(_, n) | 
-            Layout::Split(_, n) | 
-            Layout::Transform(_, n) => { 
+            CardLayout::Adventure(_, n) | 
+            CardLayout::Aftermath(_, n) | 
+            CardLayout::Flip(_, n) | 
+            CardLayout::ModalDfc(_, n) | 
+            CardLayout::Split(_, n) | 
+            CardLayout::Transform(_, n) => { 
                 Some(rcfndid(conn, n, did).unwrap())
             },
             _ => { None }
@@ -807,6 +800,7 @@ pub fn ttindc(conn: &Connection, c: &String, t: &String, did: i32) -> Option<Car
         }
     } else {
         card.tags.push(t.clone());
+        card.tags.sort();
         Some(card.tags.join("|"))
     };
 
@@ -834,8 +828,6 @@ pub fn cindid(conn: &Connection, c: &String, did: i32) -> bool {
 }
 
 pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &str) -> Result<i32> {
-    // if c2 == &String::new() { let c2 = None; }
-    // let c2 = c2.unwrap_or(rusqlite::types::Null);
     match c2 {
         Some(c2) => {
             let mut stmt = conn.prepare(
@@ -865,7 +857,6 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &
             Ok(rid.try_into().unwrap())
         }
     }
-    // println!("Row ID is {}", rid);
 }
 
 pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, cards: Vec<ImportCard>) -> Result<()> {
@@ -900,7 +891,6 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
                     let partner = ImportCard { name: ss.clone(), tags: None};
                     if cards.contains(&partner) {
                         println!("Valid commanders found: {} and {}", c.name, &ss);
-                        // let ss = ss.clone();
                         (&cards.first().unwrap().name, Some(ss))
                     } else {
                         println!("Valid commander found: {}", c.name);
@@ -909,7 +899,6 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
                     }
                 }
                 CommanderType::Invalid  => { 
-                    // (coms.first().unwrap(), None)
                     println!("No valid commander found! Please ensure you pass in your commander name or include it at the top of the import file.");
                     return Ok(())
                 }
@@ -928,14 +917,12 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
         conn.execute_batch("BEGIN TRANSACTION;")?;
         let deck = rdfdid(conn, deck_id).unwrap();
         for ic in cards {
-            // println!("Adding {}", c);
             let c = ic.name.trim().to_string();
             if c.len() == 0 { continue }
             let card = if let Some(i) = c.find(" // ") {
                 let c = c.get(0..i).unwrap();
                 rcfn(conn, &c.to_string(), None).unwrap()
             } else {
-                // rcfn(conn, &c).unwrap()
                 match rcfn(conn, &c, None) {
                     Ok(a) => { a }
                     Err(_) => { println!("Error on card {}", c); return Ok(()) }
@@ -993,8 +980,6 @@ pub fn rcfndid(conn: &Connection, name: &String, did: i32) -> Result<Card> {
 }
 
 pub fn rcomfdid(conn: &Connection, did: i32, secondary: bool) -> Result<Card> {
-    // let mut stmt = conn.prepare("SELECT commander FROM decks WHERE id = ?;")?;
-
     let name = if secondary { 
         conn.query_row("SELECT commander2 FROM decks WHERE id = ?;",
         params![did], 
@@ -1051,8 +1036,6 @@ pub fn rvd (conn: &Connection) -> Result<Vec<Deck>> {
         })
     })?;
     a.collect()
-
-    // decks
 }
 
 pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
@@ -1086,8 +1069,6 @@ pub fn rdfdid(conn: &Connection, id: i32) -> Result<Deck> {
             color
         })
     })
-
-    // let a = stmt.query_row(params, f)
 }
 
 pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec<Card>> {
@@ -1119,16 +1100,26 @@ pub fn rvcfcf(conn: &Connection, query: &String) -> Result<Vec<Card>> {
     let qs = format!("SELECT {}
 FROM `cards`
 {}", fields, query);
-// {}", fields, cf.make_filter(general, sort_order)); //TODO: Fix this up.
 
-    // let mut stmt = conn.prepare(& qs).unwrap();
     let mut stmt = conn.prepare(& qs).expect("issue with filter string");
 
     let cards = stmt.query_map([], |row| {
         cfr(row)
     })?.collect();
 
-    // println!("{:?}", cards);
+    cards
+}
+
+pub fn rvcnfcf(conn: &Connection, query: &String) -> Result<Vec<String>> {
+    let fields = "name";
+    let qs = format!("SELECT {}
+FROM `cards`
+{}", fields, query);
+    let mut stmt = conn.prepare(& qs).expect("issue with filter string");
+
+    let cards = stmt.query_map([], |row| {
+        row.get(0)
+    })?.collect();
 
     cards
 }
@@ -1187,8 +1178,8 @@ fn stovch(sch: String) -> Vec<char> {
 
     for ch in sch.split("|") {
         vch.push(ch.chars().next().unwrap_or_default());
-        // println!("{:?}", vch);
     }
+
     vch
 }
 
@@ -1199,47 +1190,47 @@ fn cfr(row:& Row) -> Result<Card> {
                 "adventure" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    Layout::Adventure(side, rel)    
+                    CardLayout::Adventure(side, rel)    
                 }
                 "aftermath" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    Layout::Aftermath(side, rel)    
+                    CardLayout::Aftermath(side, rel)    
                 }
                 "flip" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    Layout::Flip(side, rel)    
+                    CardLayout::Flip(side, rel)    
                 }
-                "leveler" => { Layout::Leveler }
+                "leveler" => { CardLayout::Leveler }
                 "meld" => { 
                     let rel = row.get::<usize, String>(11)?;
                     let rels = rel.split_once("|").unwrap();
                     let (face, transform) = (String::from(rels.0), String::from(rels.1));
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    Layout::Meld(side, face, transform)
+                    CardLayout::Meld(side, face, transform)
                 }
                 "modal_dfc" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    Layout::ModalDfc(side, rel)    
+                    CardLayout::ModalDfc(side, rel)    
                 }
-                "normal" => { Layout::Normal }
-                "saga" => { Layout::Saga }
+                "normal" => { CardLayout::Normal }
+                "saga" => { CardLayout::Saga }
                 "split" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    Layout::Split(side, rel)    
+                    CardLayout::Split(side, rel)    
                 }
                 "transform" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    Layout::Transform(side, rel)
+                    CardLayout::Transform(side, rel)
                 }
-                _ => { Layout::Normal }
+                _ => { CardLayout::Normal }
             }
          }
-        Err(_) => { Layout::Normal }
+        Err(_) => { CardLayout::Normal }
     };
     
     let tags: Vec<String> = match row.get::<usize, String>(13) {
@@ -1252,12 +1243,12 @@ fn cfr(row:& Row) -> Result<Card> {
         Err(_) => { None }
     };
 
-    let staleness = match row.get::<usize, String>(16) {
+    let stale = match row.get::<usize, String>(16) {
         Ok(a) => { 
             let date = Utc::today();
             let vs: Vec<u32> = a.split('-').map(|s| s.parse::<u32>().unwrap() ).collect();
             let ret = Utc.ymd(vs[0] as i32, vs[1], vs[2]);
-            // let retrieved = chrono::DateTime::parse_from_str(a.as_str(), "%Y-%m-%d").unwrap();
+
             if date - ret > Duration::days(30) {
                 true
             } else {
@@ -1281,15 +1272,12 @@ fn cfr(row:& Row) -> Result<Card> {
         lo,
         tags,
         rarity: row.get(14)?,
-        // price: Some(0.0),
-        // stale: false
-        price: price,
-        stale: staleness
+        price,
+        stale,
     })
 }
 
 pub fn rvicfdid(conn: &Connection, did: i32) -> Result<Vec<ImportCard>> {
-    // let mut r = Vec::new();
     let mut stmt = conn.prepare(r#"SELECT
         card_name, tags
         FROM deck_contents
@@ -1367,14 +1355,14 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
     Ok(())
 }
 
-pub fn ucfcn(conn: &Connection, cn: &String, layout: &Layout, did: i32) -> Result<Card> {
+pub fn ucfcn(conn: &Connection, cn: &String, layout: &CardLayout, odid: Option<i32>) -> Result<Card> {
     let s = match layout {
-        Layout::Adventure(_, rel) 
-        | Layout::Aftermath(_, rel) 
-        | Layout::Flip(_, rel) 
-        | Layout::ModalDfc(_, rel) 
-        | Layout::Split(_, rel) 
-        | Layout::Transform(_, rel) => format!("{} // {}", cn, rel),
+        CardLayout::Adventure(_, rel) 
+        | CardLayout::Aftermath(_, rel) 
+        | CardLayout::Flip(_, rel) 
+        | CardLayout::ModalDfc(_, rel) 
+        | CardLayout::Split(_, rel) 
+        | CardLayout::Transform(_, rel) => format!("{} // {}", cn, rel),
         _ => cn.clone()
     };
     let price = rcostfcn(&s).unwrap();
@@ -1385,7 +1373,7 @@ pub fn ucfcn(conn: &Connection, cn: &String, layout: &Layout, did: i32) -> Resul
         WHERE name = :name;", 
         named_params!{":price": price, ":name": cn})?;
 
-    rcfn(conn, cn, Some(did))
+    rcfn(conn, cn, odid)
 }
 
 pub fn dd(conn: &Connection, did: i32) -> Result<()> {

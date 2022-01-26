@@ -233,7 +233,7 @@ fn debug_parse_args() -> Result<()> {
 
     // let config = util::Settings::new(&p).unwrap();
     let deck = db::rdfdid(&conn, 3).unwrap();
-    let mut cf = CardFilter::from(&deck, util::DefaultFilter::Name, util::SortOrder::NameAsc);
+    let cf = CardFilter::from(deck.id, &deck.color, util::DefaultFilter::Name, util::SortOrder::NameAsc);
 
     let s = String::from("na:elesh|norn");
     println!("For \"{}\", Cardfilter produces: \n{}", &s, cf.make_query(false, &s));

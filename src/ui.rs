@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::time::Duration; 
 use std::io::stdout;
 use std::thread;
@@ -14,7 +13,6 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use itertools::Itertools;
-use tui::text::Spans;
 use tui::widgets::{BarChart, ListItem, Paragraph, Table, Wrap};
 use tui::layout::Rect;
 use rusqlite::Connection;
@@ -31,6 +29,7 @@ struct AppState {
     mode: Screen,
     mode_p: Screen,
     title: String,
+    deckview: Option<DeckView>,
     deck_id: i32,
     deck: Option<Deck>,
     contents: Option<Vec<Card>>,
@@ -69,6 +68,7 @@ impl AppState {
             mode: Screen::MainMenu,
             mode_p: Screen::MainMenu,
             title: String::from("Main Menu"),
+            deckview: None,
             deck_id: -1,
             deck: None,
             contents: None,
@@ -86,12 +86,9 @@ impl AppState {
             dirty_deck: true,
             dirty_dbf: true,
             dirty_cards: Vec::new(),
-            // dbc: conn,
             dbc: Arc::new(Mutex::new(conn)),
             cf: CardFilter::new(),
             config
-            // dsod: DeckScreen,
-            // dsdb: DeckScreen,
         };
 
         app.init_main_menu();
@@ -106,8 +103,6 @@ impl AppState {
                     KeyCode::Up => { self.slmm.previous(); }
                     KeyCode::Down => { self.slmm.next(); }
                     KeyCode::Enter => { 
-                        // let next = self.main_menu.get()?;
-                        // let b = next.next;
                         self.switch_mode(self.slmm.get().unwrap().next);
                     }
                     _ => {}
@@ -127,203 +122,9 @@ impl AppState {
                         };
                     }
                     KeyCode::Delete => {
-                        // if let Some(deck) = self.stod.remove() {
-                        //     db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
-                        //     self.config.remove(deck.id);
-                        // };
                         self.mode_p = self.mode;
                         self.mode = Screen::Error("Confirm Deletion\nAre you sure you want to delete the below deck?\n{DECK}\nPress Enter to confirm.");
                     }
-                    _ => {}
-                }
-            }
-            Screen::DeckOmni => {
-                match c {
-                    KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
-                    // KeyCode::Up => { self.slod.previous(); }
-                    // KeyCode::Down => { self.slod.next(); }
-                    KeyCode::Left => { self.omnitext.left(); }
-                    KeyCode::Right => { self.omnitext.right(); }
-                    KeyCode::Enter => { 
-                        if self.omnitext.text == String::from("/stat") {
-                            self.mode = Screen::DeckStat;
-                        } else {
-                            if self.sldc.items.len() > 0 {
-                                self.mode = Screen::DeckCard;
-                                if let Some(tag) = self.omnitext.rt() {
-                                    if let Some(vt) = self.config.add_deck_tag(self.deck_id, tag.clone()) {
-                                        self.slt = StatefulList::with_items(vt);
-                                    };
-                                    self.slt.select(&tag);
-                                }
-                                // self.tag = self.slt.get().unwrap().clone();
-                            }
-                        }
-                    }
-                    KeyCode::Tab => {
-                        self.mode = Screen::DbFilter;
-                        if self.dirty_deck {
-                            let ord = self.config.get_sort_order(self.deck_id);
-                            self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id, ord).unwrap());
-
-                            self.dirty_deck = false;
-                            self.dirty_cards = Vec::new();
-                        }
-                        if let Some(c) = self.sldbc.get_string() {
-                            // self.ac = Some(db::rcfn(&self.dbc, &c).unwrap());
-                            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &c, Some(self.deck_id)).unwrap());
-                        } else {
-                            self.ac = None;
-                        }
-                    }
-                    KeyCode::Backspace => { 
-                        let cur = self.omnitext.rt();
-                        self.omnitext.backspace(); 
-                        if cur == None || cur == self.omnitext.rt() {
-                            self.uslvc();
-                        } 
-                    }
-                    KeyCode::Delete => { self.omnitext.delete(); self.uslvc(); }
-                    KeyCode::Char(c) => {
-                        let cur = self.omnitext.rt();
-                        self.omnitext.insert(c); 
-                        if cur == None || cur == self.omnitext.rt() {
-                            self.uslvc(); 
-                            if let Some(s) = self.sldc.get_string() {
-                                self.ac = Some(db::rcfndid(
-                                    // &self.dbc, 
-                                    &self.dbc.lock().unwrap(), 
-                                    &s, 
-                                    self.deck_id).unwrap());
-                            } else {
-                                self.ac = None;
-                            } 
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Screen::DeckCard => {
-                match c {
-                    KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
-                    KeyCode::Up => { 
-                        self.ac = Some(db::rcfndid(
-                            // &self.dbc, 
-                            &self.dbc.lock().unwrap(), 
-                            &self.sldc.previous(), 
-                            self.deck_id).unwrap()); 
-                    }
-                    KeyCode::Down => { 
-                        self.ac = Some(db::rcfndid(
-                            // &self.dbc, 
-                            &self.dbc.lock().unwrap(), 
-                            &self.sldc.next().unwrap(), 
-                            self.deck_id).unwrap());  
-                    }
-                    KeyCode::Tab => { self.mode = Screen::DeckOmni; }
-                    KeyCode::Char(' ') => { self.ac_switch(false); }
-                    KeyCode::Char('u') => { 
-                        if let Some(ac) = &self.ac {
-                            if ac.stale {
-                                if let Ok(card) = db::ucfcn(&self.dbc.lock().unwrap(), &ac.name, &ac.lo, self.deck_id) {
-                                    self.sldc.replace(card.clone());
-                                    self.ac = Some(card);
-                                }
-                            }
-                        }
-                    }
-                    KeyCode::Delete => { self.remove_from_deck(); }
-                    KeyCode::Enter => {
-                        if let Some(card) = db::ttindc(
-                            &self.dbc.lock().unwrap(), 
-                            &self.sldc.get().unwrap().name, 
-                            &self.slt.get().unwrap(), 
-                            self.deck_id) {
-                                self.sldc.replace(card.clone());
-                                self.ac = Some(card);
-                        };
-                    }
-                    KeyCode::Right => { self.slt.next().unwrap(); }
-                    KeyCode::Left => { self.slt.previous(); }
-                    _ => {}
-                }
-            }
-            Screen::DbFilter => {
-                match c {
-                    KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
-                    // KeyCode::Up => { self.slod.previous(); }
-                    // KeyCode::Down => { self.slod.next(); }
-                    KeyCode::Left => { self.dbftext.left(); }
-                    KeyCode::Right => { self.dbftext.right(); }
-                    KeyCode::Enter => { 
-                        if self.dirty_dbf {
-                            self.uslvc();
-                            self.dirty_dbf = false;
-                        }
-                        if self.sldbc.items.len() > 0 {
-                            self.mode = Screen::DbCards;
-                            // self.ac = Some(db::rcfn(&self.dbc, &self.sldbc.get_string().unwrap()).unwrap());
-                            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &self.sldbc.get_string().unwrap(), Some(self.deck_id)).unwrap());
-                        }
-                    }
-                    KeyCode::Tab => {
-                        // self.mode = Screen::DeckOmni;
-                        self.switch_mode(Some(Screen::DeckOmni));
-                    }
-                    KeyCode::Backspace => { self.dbftext.backspace(); self.dirty_dbf = true; }
-                    KeyCode::Delete => { self.dbftext.delete(); self.dirty_dbf = true; }
-                    KeyCode::Char(c) => {self.dbftext.insert(c); self.dirty_dbf = true; }
-                    _ => {}
-                }
-            }
-            Screen::DbCards => {
-                match c {
-                    KeyCode::Esc => { self.switch_mode(Some(Screen::MainMenu)); }
-                    KeyCode::Up => { 
-                        self.ac = Some(db::rcfn(
-                            // &self.dbc, 
-                            &self.dbc.lock().unwrap(), 
-                            &self.sldbc.previous(), 
-                            Some(self.deck_id)).unwrap());  
-                        //TODO: Move to the below model instead
-                        // self.sldbc.previous();
-                        // self.ac = self.sldbc.get();
-                    }
-                    KeyCode::Down => { 
-                        self.ac = Some(db::rcfn(
-                            // &self.dbc, 
-                            &self.dbc.lock().unwrap(), 
-                            &self.sldbc.next().unwrap(), 
-                            Some(self.deck_id)).unwrap()); 
-                        //TODO: Move to the below model instead
-                        // self.sldbc.next();
-                        // self.ac = self.sldbc.get();
-                     }
-                    KeyCode::Tab => { self.mode = Screen::DbFilter; }
-                    KeyCode::Enter => {
-                        let card = self.sldbc.get().unwrap().clone();
-                        // if db::cindid(&self.dbc, &card.name, self.deck_id) {
-                        if db::cindid(&self.dbc.lock().unwrap(), &card.name, self.deck_id) {
-                            if let Some(card) = db::ttindc(
-                                // &self.dbc, 
-                                &self.dbc.lock().unwrap(), 
-                                &self.sldbc.get().unwrap().name, 
-                                &self.slt.get().unwrap(), 
-                                self.deck_id) {
-                                    self.sldbc.replace(card.clone());
-                                    self.ac = Some(card);
-                            };
-                        } else {
-                            // let mut dc = db::ictodc(&self.dbc, &card, self.deck_id.try_into().unwrap()).unwrap();
-                            let mut dc = db::ictodc(&self.dbc.lock().unwrap(), &card, self.deck_id.try_into().unwrap()).unwrap();
-                            self.dirty_deck = true;
-                            self.dirty_cards.append(&mut dc);
-                        }
-                    }
-                    KeyCode::Delete => { self.remove_from_deck(); }
-                    KeyCode::Char(' ') => { self.ac_switch(true); }
-                    KeyCode::Right => { self.slt.next().unwrap(); }
-                    KeyCode::Left => { self.slt.previous(); }
                     _ => {}
                 }
             }
@@ -449,7 +250,7 @@ impl AppState {
             }
             Screen::DeckStat => {
                 match c {
-                    _ => { self.mode = Screen::DeckOmni; }
+                    _ => { self.mode = Screen::DeckView(DeckViewSection::Omni); }
                 }
             }
             Screen::Error(s) => {
@@ -466,61 +267,17 @@ impl AppState {
                 }
                 self.mode = self.mode_p;
             }
-            _ => {}
+            Screen::Settings(_) => todo!(),
+            Screen::DeckView(_)
+            | Screen::DatabaseView(_) => {
+                if let Some(dv) = &mut self.deckview {
+                    self.mode = dv.handle_input(&self.mode, c, &self.dbc.lock().unwrap());
+                }
+            },
+            
         }
 
         Ok(())
-    }
-
-    fn remove_from_deck(&mut self) {
-        // let card = self.sldc.get().unwrap().clone();
-        let card = match self.mode {
-            Screen::DeckCard => { self.sldc.get().unwrap().clone() }
-            Screen::DbCards => { self.sldbc.get().unwrap().clone() }
-            _ => { Card::default() }
-        };
-        match &card.lo {
-            crate::util::Layout::Flip(_, n) | 
-            crate::util::Layout::Split(_, n) | 
-            crate::util::Layout::ModalDfc(_, n) | 
-            crate::util::Layout::Aftermath(_, n) | 
-            crate::util::Layout::Adventure(_, n) | 
-            crate::util::Layout::Transform(_, n) => { 
-                self.sldc.remove_named(&n); 
-                db::dcntodc(&self.dbc.lock().unwrap(), &n, self.deck_id).unwrap();
-            }
-            crate::util::Layout::Meld(s, n, m) => { 
-                self.sldc.remove_named(&m);
-                // This should be the only database call that could result in an error.
-                let _a = db::dcntodc(&self.dbc.lock().unwrap(), &m, self.deck_id);
-                if s == &'b' { 
-                    self.sldc.remove_named(&n); 
-                    db::dcntodc(&self.dbc.lock().unwrap(), &n, self.deck_id).unwrap();
-                } 
-            }
-            _ => {}
-        }
-        db::dcntodc(&self.dbc.lock().unwrap(), &card.name, self.deck_id).unwrap();
-        match self.mode {
-            Screen::DeckCard => {
-                if let Some(s) = self.sldc.remove() {
-                    self.ac = Some(db::rcfndid(
-                        &self.dbc.lock().unwrap(), 
-                        &s, 
-                        self.deck_id).unwrap());
-                } else {
-                    self.ac = None;
-                    self.mode = Screen::DeckOmni;
-                }
-            }
-            Screen::DbCards => {
-                //TODO: Finish this
-                self.dirty_cards = self.dirty_cards.iter().filter(|&c| c.ne(&card)).cloned().collect();
-            }
-            _ => {}
-        }
-        
-        self.dirty_deck = true;
     }
 
     fn reset(&mut self) {
@@ -540,10 +297,11 @@ impl AppState {
         match next {
             Some(Screen::MakeDeck) => { self.mode = Screen::MakeDeck; }
             Some(Screen::OpenDeck) => { self.init_open_view(); }
-            Some(Screen::DeckOmni) => { self.init_deck_view(); }
+            // Some(Screen::DeckOmni) => { self.init_deck_view(); }
             Some(Screen::Settings(_)) => { self.init_settings(); }
-            Some(Screen::DeckCard) => {  }
+            // Some(Screen::DeckCard) => {  }
             Some(Screen::MainMenu) => { self.reset(); self.mode = Screen::MainMenu;}
+            Some(Screen::DeckView(DeckViewSection::Omni)) => { self.init_deck_view(); }
             Some(_) => {}
             None => { self.quit = true }
         }
@@ -578,9 +336,16 @@ impl AppState {
         let ord = self.config.get_sort_order(self.deck_id);
         let df = self.config.get_default_filter(self.deck_id);
 
-        self.cf = CardFilter::from(&self.deck.as_ref().unwrap(), df, ord);
+        self.cf = CardFilter::from(self.deck_id, &self.deck.as_ref().unwrap().color, df, ord);
         
-        self.mode = Screen::DeckOmni;
+        self.deckview = Some(DeckView::new(
+            self.deck_id, 
+            &self.dbc.lock().unwrap(), 
+            self.config.get_tags_deck(self.deck_id),
+            df,
+            ord
+        ));
+        self.mode = Screen::DeckView(DeckViewSection::Omni);
     }
     
     fn init_settings(&mut self) {}
@@ -595,7 +360,7 @@ impl AppState {
 
     fn init_main_menu(&mut self) {
         let mut items = Vec::new();
-        if self.config.get_recent() > 0 { items.push(MainMenuItem::from_with_screen(String::from("Load most recent deck"), Screen::DeckOmni)); }
+        if self.config.get_recent() > 0 { items.push(MainMenuItem::from_with_screen(String::from("Load most recent deck"), Screen::DeckView(DeckViewSection::Omni))); }
         items.push(MainMenuItem::from_with_screen(String::from("Create a new deck"), Screen::MakeDeck));
         items.push(MainMenuItem::from_with_screen(String::from("Load a deck"), Screen::OpenDeck));
         items.push(MainMenuItem::from_with_screen(String::from("Settings"), Screen::Settings(SettingsSection::Tags)));
@@ -605,120 +370,23 @@ impl AppState {
         self.slmm.next();
     }
 
-    fn ac_switch(&mut self, general: bool) {
-        let mut rel = String::new();
-        let mut rel2 = String::new();
-        let mut side = &'a';
-        if let Some(card) = &self.ac {
-            match &card.lo {
-                crate::util::Layout::Flip(_, n) | 
-                crate::util::Layout::Split(_, n) | 
-                crate::util::Layout::ModalDfc(_, n) | 
-                crate::util::Layout::Aftermath(_, n) | 
-                crate::util::Layout::Adventure(_, n) | 
-                crate::util::Layout::Transform(_, n) => { rel = n.clone() }
-                crate::util::Layout::Meld(s, n, m) => { side = s; rel = n.clone(); rel2 = m.clone(); }
-                _ => { return; }
-            }
-        }
-        
-        if rel2 != String::new() {
-            if side == &'a' {
-                // let meld = db::rcfn(&self.dbc, &rel2).unwrap();
-                let meld = db::rcfn(&self.dbc.lock().unwrap(), &rel2, Some(self.deck_id)).unwrap();
-                match meld.lo {
-                    crate::util::Layout::Meld(_, face, _) => {
-                        if face.clone() == rel {
-                            rel = rel2;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if general {
-            // self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
-            self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &rel, Some(self.deck_id)).unwrap());
-        } else {
-            // if let Ok(c) = db::rcfndid(&self.dbc, &rel, self.deck_id) {
-            if let Ok(c) = db::rcfndid(&self.dbc.lock().unwrap(), &rel, self.deck_id) {
-                self.ac = Some(c);
-            } else {
-                // self.ac = Some(db::rcfn(&self.dbc, &rel).unwrap());
-                self.ac = Some(db::rcfn(&self.dbc.lock().unwrap(), &rel, Some(self.deck_id)).unwrap());
-            }
-        }
-    }
-
-    //TODO: Investigate making this return the first item of the new list for self.ac?
-    fn uslvc(&mut self) {
-
-        let (ss, general, target) = match self.mode {
-            Screen::DeckOmni => { (
-                self.omnitext.get(),
-                false,
-                &mut self.sldc
-            )}
-            Screen::DbFilter => { (
-                self.dbftext.get(),
-                true,
-                &mut self.sldbc
-            )}
-            _ => { panic!(); }
-        };
-        // let ord = self.config.get_sort_order(self.deck_id);
-        // let df = self.config.get_default_filter(self.deck_id);
-        // let cf = db::CardFilter::from(&self.deck.as_ref().unwrap(), & ss, df);
-        let query = self.cf.make_query(general, &ss);
-        let vcr = db::rvcfcf(&self.dbc.lock().unwrap(), &query);
-        let vc = match vcr {
-            Ok(vc) => { vc }
-            _ => { Vec::new() }
-        };
-        *target = StatefulList::with_items(vc);
-        target.next();
-    }
-
+    //TODO: See about refactoring away?
     pub fn rvli(&self) -> Vec<ListItem> {
-        match self.mode {
-            Screen::DbCards | Screen::DbFilter => { self.sldbc.rvli() }
-            Screen::DeckCard | Screen::DeckOmni => { self.sldc.rvli() }
-            Screen::MainMenu => { self.slmm.rvli() }
-            // Screen::OpenDeck => { self.slod.rvli() }
-            _ => { Vec::new() }
-        }
+        self.slmm.rvli()
     }
 
-    pub fn rvlis(&self) -> Vec<ListItem> {
-        let mut a = self.contents.clone().unwrap();
-        a.append(&mut self.dirty_cards.clone());
-
-        self.sldbc.rvlis(a)
-    }
-
-    pub fn get_card_para(&self) -> Paragraph {
-        match &self.ac {
-            Some(card) => { 
-                card.display()
-            }
-            None => { 
-                Paragraph::new(Spans::from("No card found!")) 
-            }
-        }
-    }
-
+    //TODO: See about refactoring away?
     pub fn get_main_cards(&self) -> Vec<CardStat> {
         db::rvmcfd(&self.dbc.lock().unwrap(), self.deck_id).unwrap()
     }
-
+    
+    //TODO: See about refactoring into DeckView?
     pub fn generate_dss_info(& self) -> DeckStatInfo {
         let mut dsi = DeckStatInfo::default();
-        // let vc = db::rvmcfd(&self.dbc, self.deck_id).unwrap();
         let vc = db::rvmcfd(&self.dbc.lock().unwrap(), self.deck_id).unwrap();
         let types = vec!["Legendary", "Land", "Creature", "Planeswalker", "Enchantment", "Instant", "Sorcery", "Artifact"];
         let mut hm_type: HashMap<String, u64> = HashMap::new();
         let mut hm_cmc: HashMap<String, u64> = HashMap::new();
-        // let mut hm_price: HashMap<String, f64> = HashMap::new();
         let mut hm_tag: HashMap<String, u64> = HashMap::new();
 
         for s in types.clone() { hm_type.insert(String::from(s), 0); }
@@ -768,9 +436,6 @@ impl AppState {
         for (k, v) in hm_cmc {
             dsi.cmc_data.push((k.clone(), v));
         }
-        // for (k, v) in hm_price {
-        //     dsi.price_data.push((k.clone(), v));
-        // }
         for (k, v) in hm_type {
             dsi.type_data.push((k.clone(), v));
         }
@@ -793,16 +458,15 @@ impl AppState {
     pub fn generate_deck_table(&mut self) -> Table {
         self.stod.rdt()
     }
+
+    pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
+        match self.mode {
+            Screen::DeckView(_) => self.deckview.as_ref().unwrap().render(&self.mode, frame),
+            Screen::DatabaseView(_) => self.deckview.as_ref().unwrap().render(&self.mode, frame),
+            _ => todo!(),
+        }
+    }
 }
-
-// impl<'a> WidgetOwner<'a> {
-
-//     pub fn new() -> WidgetOwner<'a> {
-//         WidgetOwner {
-//             odt: None
-//         }
-//     }
-// }
 
 fn generate_deckstat_managroup<'a>(vcs: &'a Vec<CardStat>) -> List<'a> {
     let mut cc = HashMap::new();
@@ -908,25 +572,6 @@ fn draw<'a>(
             Screen::MainMenu | Screen::OpenDeck => {
                 Layout::default().constraints([Constraint::Percentage(100)]).split(f.size())
             }
-            Screen::DeckOmni | Screen::DbFilter | Screen::DbCards | Screen::DeckCard => { 
-                let mut vrct = Vec::new();
-                let cut = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(3), Constraint::Min(5)].as_ref())
-                    .split(f.size());
-
-                vrct.append(&mut Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Min(20), Constraint::Length(18)].as_ref())
-                    .split(cut[0]));
-                // vrct.push(cut[0]);
-                
-                vrct.append(&mut Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Length(26),Constraint::Min(18)].as_ref())
-                    .split(cut[1]));
-                vrct
-            }
             Screen::MakeDeck => { 
                 let mut vrct = Vec::new();
                 let cut = Layout::default()
@@ -974,6 +619,8 @@ fn draw<'a>(
                 top_chunks.append(&mut bottom_chunks);
                 top_chunks
             }
+            Screen::DeckView(_) => Vec::new(),
+            Screen::DatabaseView(_) => Vec::new(),
         };        
             
         match state.mode {
@@ -985,42 +632,7 @@ fn draw<'a>(
                 
                 f.render_stateful_widget(list, chunks[0], &mut state.slmm.state.clone());
             }
-            Screen::DbFilter => {
-                // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = state.get_card_para();
-                let mut ds = DeckScreen::new(
-                    state.dbftext.get_styled(), 
-                    &state.slt,
-                    state.rvlis(), 
-                    text, 
-                    state.mode);
-                
-                ds.focus_omni(state.mode);
-                f.render_widget(ds.omni, chunks[0]);
-                f.render_widget(ds.tags, chunks[1]);
-                f.render_stateful_widget(ds.lc, chunks[2], &mut state.sldbc.state.clone());
-                f.render_widget(ds.fc, chunks[3]);
-            }
-            Screen::DeckOmni => {
-                // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = state.get_card_para();
-                let mut ds = DeckScreen::new(
-                    state.omnitext.get_styled(), 
-                    &state.slt,
-                    state.rvli(), 
-                    text, state.mode);
-                
-                ds.focus_omni(state.mode);
-                f.render_widget(ds.omni, chunks[0]);
-                f.render_widget(ds.tags, chunks[1]);
-                f.render_stateful_widget(ds.lc, chunks[2], &mut state.sldc.state.clone());
-                f.render_widget(ds.fc, chunks[3]);
-            }
             Screen::OpenDeck => {
-                // if widgets.odt == None {
-                //     widgets.odt = Some(state.generate_deck_table());
-                // }
-
                 let mut ts = state.stod.state.clone();
                 let table = state.generate_deck_table();
                     
@@ -1050,36 +662,6 @@ fn draw<'a>(
                 f.render_widget(mds.commander_entry, chunks[2]);
                 f.render_widget(mds.commander2_entry, chunks[3]);
             }
-            Screen::DbCards => {
-                let text = state.get_card_para();
-                let mut ds = DeckScreen::new(
-                    state.dbftext.get_styled(), 
-                    &state.slt,
-                    state.rvlis(), 
-                    text, 
-                    state.mode);
-                
-                ds.focus_lc(state.mode);
-                f.render_widget(ds.omni, chunks[0]);
-                f.render_widget(ds.tags, chunks[1]);
-                f.render_stateful_widget(ds.lc, chunks[2], &mut state.sldbc.state.clone());
-                f.render_widget(ds.fc, chunks[3]);
-            }
-            Screen::DeckCard => {
-                // if chunks.len() < 3 { println!("something went wrong"); state.quit = true; return; }
-                let text = state.get_card_para();
-                let mut ds = DeckScreen::new(
-                    state.omnitext.get_styled(), 
-                    &state.slt,
-                    state.rvli(), 
-                    text, state.mode);
-                
-                ds.focus_lc(state.mode);
-                f.render_widget(ds.omni, chunks[0]);
-                f.render_widget(ds.tags, chunks[1]);
-                f.render_stateful_widget(ds.lc, chunks[2], &mut state.sldc.state.clone());
-                f.render_widget(ds.fc, chunks[3]);
-            }
             Screen::DeckStat => {
                 let dsi = state.generate_dss_info();
                 let vcs = state.get_main_cards();
@@ -1107,6 +689,8 @@ fn draw<'a>(
                 f.render_widget(dss.tag_list, chunks[4]);
                 f.render_widget(recs, chunks[5]);
             }
+            Screen::DeckView(_) => state.render(f),
+            Screen::DatabaseView(_) => state.render(f),
         }
     })?;
     Ok(())
