@@ -30,6 +30,7 @@ struct AppState {
     mode_p: Screen,
     title: String,
     deckview: Option<DeckView>,
+    settingsview: Option<views::SettingsView>,
     deck_id: i32,
     deck: Option<Deck>,
     contents: Option<Vec<Card>>,
@@ -52,9 +53,9 @@ struct AppState {
     quit: bool
 }
 
-struct WidgetOwner<'a> {
-    odt: Option<Table<'a>>
-}
+// struct WidgetOwner<'a> {
+//     odt: Option<Table<'a>>
+// }
 
 impl AppState {
     fn new() -> AppState {
@@ -69,6 +70,7 @@ impl AppState {
             mode_p: Screen::MainMenu,
             title: String::from("Main Menu"),
             deckview: None,
+            settingsview: None,
             deck_id: -1,
             deck: None,
             contents: None,
@@ -267,7 +269,16 @@ impl AppState {
                 }
                 self.mode = self.mode_p;
             }
-            Screen::Settings(_) => todo!(),
+            Screen::Settings => {
+                if let Some(sv) = &mut self.settingsview {
+                    match sv.handle_input(c) {
+                        views::SettingsExit::SaveGlobal(_) => todo!(),
+                        views::SettingsExit::SaveDeck(_) => todo!(),
+                        views::SettingsExit::Hold => {},
+                        views::SettingsExit::Cancel => self.mode = Screen::MainMenu,
+                    }
+                }
+            },
             Screen::DeckView(_)
             | Screen::DatabaseView(_) => {
                 if let Some(dv) = &mut self.deckview {
@@ -298,7 +309,7 @@ impl AppState {
             Some(Screen::MakeDeck) => { self.mode = Screen::MakeDeck; }
             Some(Screen::OpenDeck) => { self.init_open_view(); }
             // Some(Screen::DeckOmni) => { self.init_deck_view(); }
-            Some(Screen::Settings(_)) => { self.init_settings(); }
+            Some(Screen::Settings) => { self.init_settings(); }
             // Some(Screen::DeckCard) => {  }
             Some(Screen::MainMenu) => { self.reset(); self.mode = Screen::MainMenu;}
             Some(Screen::DeckView(DeckViewSection::Omni)) => { self.init_deck_view(); }
@@ -313,7 +324,7 @@ impl AppState {
         self.deck_id = self.config.get_recent();
 
         if self.dirty_deck {
-            let ord = self.config.get_sort_order(self.deck_id);
+            let ord = self.config.get_sort_order(Some(self.deck_id));
             self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id, ord).unwrap());
             self.dirty_deck = false;
             self.dirty_cards = Vec::new();
@@ -333,7 +344,7 @@ impl AppState {
             self.ac = None;
         }
 
-        let ord = self.config.get_sort_order(self.deck_id);
+        let ord = self.config.get_sort_order(Some(self.deck_id));
         let df = self.config.get_default_filter(self.deck_id);
 
         self.cf = CardFilter::from(self.deck_id, &self.deck.as_ref().unwrap().color, df, ord);
@@ -348,7 +359,15 @@ impl AppState {
         self.mode = Screen::DeckView(DeckViewSection::Omni);
     }
     
-    fn init_settings(&mut self) {}
+    fn init_settings(&mut self) {
+        let sv = views::SettingsView::new(
+            self.config.get_tags(), 
+            self.config.get_default_filter(-1), 
+            self.config.get_sort_order(None), 
+            String::from("GlobalSettings"), Some(false));
+        self.settingsview = Some(sv);
+        self.mode = Screen::Settings;
+    }
     
     fn init_open_view(&mut self) {
         self.mode = Screen::OpenDeck;
@@ -363,7 +382,7 @@ impl AppState {
         if self.config.get_recent() > 0 { items.push(MainMenuItem::from_with_screen(String::from("Load most recent deck"), Screen::DeckView(DeckViewSection::Omni))); }
         items.push(MainMenuItem::from_with_screen(String::from("Create a new deck"), Screen::MakeDeck));
         items.push(MainMenuItem::from_with_screen(String::from("Load a deck"), Screen::OpenDeck));
-        items.push(MainMenuItem::from_with_screen(String::from("Settings"), Screen::Settings(SettingsSection::Tags)));
+        items.push(MainMenuItem::from_with_screen(String::from("Settings"), Screen::Settings));
         items.push(MainMenuItem::from(String::from("Quit")));
         
         self.slmm = StatefulList::with_items(items);
@@ -463,6 +482,7 @@ impl AppState {
         match self.mode {
             Screen::DeckView(_) => self.deckview.as_ref().unwrap().render(&self.mode, frame),
             Screen::DatabaseView(_) => self.deckview.as_ref().unwrap().render(&self.mode, frame),
+            Screen::Settings => self.settingsview.as_ref().unwrap().render(frame),
             _ => todo!(),
         }
     }
@@ -598,7 +618,7 @@ fn draw<'a>(
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                     .split(f.size())
             }
-            Screen::Settings(_) => { Vec::new() }
+            Screen::Settings => { Vec::new() }
             Screen::DeckStat => {
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
@@ -638,7 +658,7 @@ fn draw<'a>(
                     
                 f.render_stateful_widget(table, chunks[0], &mut ts);
             }
-            Screen::Settings(_) => {}
+            Screen::Settings => state.render(f),
             Screen::Error(s) => {
                 let (title, mut message) = s.split_once("\n").unwrap();
                 let s = message.replace("{DECK}", state.stod.get().unwrap().name.as_str());

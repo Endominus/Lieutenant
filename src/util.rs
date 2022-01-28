@@ -49,18 +49,70 @@ pub enum Screen {
     MainMenu,
     MakeDeck,
     OpenDeck,
-    Settings(SettingsSection),
+    Settings,
     DeckView(DeckViewSection),
     DatabaseView(DeckViewSection),
     DeckStat,
     Error(&'static str),
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum DeckViewSection {
+    Omni,
+    Cards,
+}
+
+#[derive(Clone)]
+pub enum MakeDeckFocus {
+    Title,
+    Commander,
+    SecondaryCommander,
+    // Type
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub enum CardLayout {
+    //TODO: can probably collapse Adventure, Aftermath, etc into one class
+    Adventure(char, String),
+    Aftermath(char, String),
+    Flip(char, String),
+    Leveler,
+    Meld(char, String, String),
+    ModalDfc(char, String),
+    #[default] Normal,
+    Saga,
+    Split(char, String),
+    Transform(char, String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Relation {
+    Single(String),
+    Meld {face: String, transform: String },
+}
+
 #[derive(Debug, Deserialize, Serialize)]
-struct DeckSettings {
+pub struct DeckSettings {
     tags: Option<Vec<String>>,
     ordering: Option<String>,
-    default_filter: Option<String>
+    #[serde(rename = "default_filter")]
+    df: Option<String>
+}
+
+pub struct DeckView {
+    omni: String,
+    omniprev: String,
+    omnipos: usize,
+    vsomni: Vec<String>,
+    vcde: Vec<String>,
+    vcdec: Vec<String>,
+    vcdb: Vec<String>,
+    vt: Vec<String>,
+    st: usize,
+    ac: Option<Card>,
+    vcdels: ListState,
+    vcdbls: ListState,
+    cf: CardFilter,
 }
 
 impl DeckSettings {
@@ -79,7 +131,7 @@ impl DeckSettings {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct GlobalSettings {
+pub struct GlobalSettings {
     tags: Vec<String>,
     ordering: String,
     #[serde(rename = "default_filter")]
@@ -134,31 +186,37 @@ impl Settings {
         r
     }
 
-    pub fn get_sort_order(&self, deck: i32) -> SortOrder {
-        if let Some(d) = self.decks.get(&deck) {
-            if let Some(o) = &d.ordering {
-                match o.as_str() {
-                    "+name" => { return SortOrder::NameAsc }
-                    "-name" => { return SortOrder::NameDesc }
-                    "+cmc" => { return SortOrder::CmcAsc }
-                    "-cmc" => { return SortOrder::CmcDesc }
-                    _ => { return SortOrder::NameAsc }
+    pub fn get_sort_order(&self, deck: Option<i32>) -> SortOrder {
+        if let Some(deck) = deck {
+            if let Some(d) = self.decks.get(&deck) {
+                if let Some(o) = &d.ordering {
+                    match o.as_str() {
+                        "+name" => { SortOrder::NameAsc }
+                        "-name" => { SortOrder::NameDesc }
+                        "+cmc" => { SortOrder::CmcAsc }
+                        "-cmc" => { SortOrder::CmcDesc }
+                        _ => { SortOrder::NameAsc }
+                    }
+                } else {
+                    SortOrder::default()
                 }
+            } else {
+                SortOrder::default()
             }
-        }
-
-        match self.global.ordering.as_str() {
-            "+name" => { return SortOrder::NameAsc }
-            "-name" => { return SortOrder::NameDesc }
-            "+cmc" => { return SortOrder::CmcAsc }
-            "-cmc" => { return SortOrder::CmcDesc }
-            _ => { return SortOrder::NameAsc }
+        } else {
+            match self.global.ordering.as_str() {
+                "+name" => { SortOrder::NameAsc }
+                "-name" => { SortOrder::NameDesc }
+                "+cmc" => { SortOrder::CmcAsc }
+                "-cmc" => { SortOrder::CmcDesc }
+                _ => { SortOrder::NameAsc }
+            }
         }
     }
 
     pub fn get_default_filter(&self, deck: i32) -> DefaultFilter {
         if let Some(d) = self.decks.get(&deck) {
-            if let Some(f) = &d.default_filter {
+            if let Some(f) = &d.df {
                 match f.as_str() {
                     "text" => { return DefaultFilter::Text }
                     _ => { return DefaultFilter::Name }
@@ -185,7 +243,7 @@ impl Settings {
             let d = DeckSettings { 
                 tags: Some(Vec::from([tag])), 
                 ordering: Some(String::from("+name")), 
-                default_filter: Some(String::from("name")) 
+                df: Some(String::from("name")) 
             };
             self.decks.insert(deck, d);
         }
@@ -227,7 +285,7 @@ impl Settings {
             if let Some(o) = &v.ordering {
                 vr.push(format!("\tordering = \"{}\"", o));
             }
-            if let Some(df) = &v.default_filter {
+            if let Some(df) = &v.df {
                 vr.push(format!("\tdefault_filter = \"{}\"", df));
             }
             vr.push(String::new());
@@ -573,14 +631,6 @@ impl MainMenuItem {
 
 impl ToString for MainMenuItem { fn to_string(&self) -> String { self.text.clone() } }
 
-#[derive(Clone)]
-pub enum MakeDeckFocus {
-    Title,
-    Commander,
-    SecondaryCommander,
-    // Type
-}
-
 impl Default for MakeDeckFocus {fn default() -> Self { Self::Title } }
 
 #[derive(Default)]
@@ -867,33 +917,6 @@ impl Card {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum CardLayout {
-    //TODO: can probably collapse Adventure, Aftermath, etc into one class
-    Adventure(char, String),
-    Aftermath(char, String),
-    Flip(char, String),
-    Leveler,
-    Meld(char, String, String),
-    ModalDfc(char, String),
-    Normal,
-    Saga,
-    Split(char, String),
-    Transform(char, String),
-}
-
-impl Default for CardLayout {
-    fn default() -> Self {
-        CardLayout::Normal
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Relation {
-    Single(String),
-    Meld {face: String, transform: String },
-}
-
 #[derive(Clone)]
 pub struct CardStat {
     pub cmc: u8,
@@ -915,37 +938,6 @@ pub struct Deck {
 }
 
 impl ToString for Deck { fn to_string(& self) -> String { self.name.clone() } }
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum SettingsSection {
-    Tags,
-    DefaultFilter,
-    Ordering,
-    OpenIntoRecent,
-    Exit,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum DeckViewSection {
-    Omni,
-    Cards,
-}
-
-pub struct DeckView {
-    omni: String,
-    omniprev: String,
-    omnipos: usize,
-    vsomni: Vec<String>,
-    vcde: Vec<String>,
-    vcdec: Vec<String>,
-    vcdb: Vec<String>,
-    vt: Vec<String>,
-    st: usize,
-    ac: Option<Card>,
-    vcdels: ListState,
-    vcdbls: ListState,
-    cf: CardFilter,
-}
 
 impl DeckView {
     pub fn new(did: i32, conn: &Connection, vt: Vec<String>, default_filter: DefaultFilter, sort_order: SortOrder) -> DeckView {
@@ -1475,5 +1467,327 @@ impl DeckView {
         frame.render_widget(pt, vrct[1]);
         frame.render_stateful_widget(lc, vrct[2], &mut ls.clone());
         frame.render_widget(pc, vrct[3]);
+    }
+}
+
+pub mod views {
+    use crossterm::event::KeyCode;
+    use tui::{backend::CrosstermBackend, layout::{Layout, Direction, Constraint, Alignment, Rect}, widgets::{Paragraph, Block, Borders}, text::{Span, Spans}, style::{Style, Modifier, Color}};
+
+    use super::{DefaultFilter, SortOrder, GlobalSettings, DeckSettings};
+
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum SettingsSection {
+        Tags,
+        TagText,
+        DefaultFilter,
+        Ordering,
+        OpenIntoRecent,
+        Save,
+        Exit,
+    }
+    
+    pub enum SettingsExit {
+        SaveGlobal(GlobalSettings),
+        SaveDeck(DeckSettings),
+        Hold,
+        Cancel
+    }
+
+    pub struct SettingsView {
+        section: SettingsSection,
+        title: String,
+        vt: Vec<String>,
+        vpos: usize,
+        tpos: usize,
+        df: DefaultFilter,
+        ord: SortOrder,
+        oir: Option<bool>,
+    }
+
+
+    impl SettingsView {
+        pub fn new(
+            vt: Vec<String>, 
+            df: DefaultFilter, 
+            ord: SortOrder, 
+            n: String, 
+            oir: Option<bool>) -> SettingsView {
+
+            SettingsView {
+                section: SettingsSection::Tags,
+                title: n,
+                vt,
+                vpos: 0,
+                tpos: 0,
+                df,
+                ord,
+                oir,
+            }
+        }
+
+        pub fn handle_input(&mut self, c: KeyCode) -> SettingsExit {
+            match c {
+                KeyCode::Esc => SettingsExit::Cancel,
+                KeyCode::Right => {
+                    match self.section {
+                        SettingsSection::Tags => self.vpos = (self.vpos + 1) % self.vt.len(),
+                        SettingsSection::TagText => {
+                            let max = self.vt[self.vpos].len();
+                            if self.tpos < max {
+                                self.tpos += 1;
+                            }
+                        },
+                        SettingsSection::DefaultFilter => {
+                            self.df = match self.df {
+                                DefaultFilter::Name => DefaultFilter::Text,
+                                DefaultFilter::Text => DefaultFilter::Name,
+                            }
+                        },
+                        SettingsSection::Ordering => {
+                            self.ord = match self.ord {
+                                SortOrder::NameAsc => SortOrder::NameDesc,
+                                SortOrder::NameDesc => SortOrder::CmcAsc,
+                                SortOrder::CmcAsc => SortOrder::CmcDesc,
+                                SortOrder::CmcDesc => SortOrder::NameAsc,
+                            }
+                        },
+                        SettingsSection::OpenIntoRecent => {
+                            if let Some(f) = self.oir {
+                                self.oir = Some(!f);
+                            };
+                        },
+                        SettingsSection::Save => self.section = SettingsSection::Exit,
+                        SettingsSection::Exit => self.section = SettingsSection::Save,
+                    };
+                    SettingsExit::Hold
+                },
+                KeyCode::Down => {
+                    self.section = match self.section {
+                        SettingsSection::Tags => SettingsSection::DefaultFilter,
+                        SettingsSection::TagText => SettingsSection::TagText,
+                        SettingsSection::DefaultFilter => SettingsSection::Ordering,
+                        SettingsSection::Ordering => {
+                            if self.oir == None { SettingsSection::Save } 
+                            else { SettingsSection::OpenIntoRecent }
+                        },
+                        SettingsSection::OpenIntoRecent => SettingsSection::Save,
+                        SettingsSection::Save => SettingsSection::Tags,
+                        SettingsSection::Exit => SettingsSection::Tags,
+                    };
+                    SettingsExit::Hold
+                }
+                KeyCode::Enter => {
+                    match self.section {
+                        SettingsSection::Tags => {
+                            self.section = SettingsSection::TagText;
+                            SettingsExit::Hold
+                        },
+                        SettingsSection::TagText => {
+                            self.tpos = 0;
+                            self.section = SettingsSection::Tags;
+                            SettingsExit::Hold
+                        },
+                        SettingsSection::DefaultFilter => SettingsExit::Hold,
+                        SettingsSection::Ordering => SettingsExit::Hold,
+                        SettingsSection::OpenIntoRecent => SettingsExit::Hold,
+                        SettingsSection::Save => {
+                            let ord = match self.ord {
+                                SortOrder::NameAsc => String::from("+name"),
+                                SortOrder::NameDesc => String::from("-name"),
+                                SortOrder::CmcAsc => String::from("+cmc"),
+                                SortOrder::CmcDesc => String::from("-cmc"),
+                            };
+
+                            let df = match self.df {
+                                DefaultFilter::Name => String::from("name"),
+                                DefaultFilter::Text => String::from("text"),
+                            };
+
+                            match self.oir {
+                                Some(oir) => {
+                                    let gs = GlobalSettings {
+                                        tags: self.vt.clone(),
+                                        ordering: ord,
+                                        df,
+                                        version: 1.0,
+                                        recent: 0,
+                                        open_into_recent: oir,
+                                    };
+                                    SettingsExit::SaveGlobal(gs)
+                                },
+                                None => {
+                                    let ds = DeckSettings {
+                                        tags: Some(self.vt.clone()),
+                                        ordering: Some(ord),
+                                        df: Some(df),
+                                    };
+                                    SettingsExit::SaveDeck(ds)
+                                },
+                            }
+                            
+                        },
+                        SettingsSection::Exit => SettingsExit::Cancel,
+                    }
+                },
+                _=> SettingsExit::Hold,
+            }
+        }
+
+        pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
+            let mut vrct = Vec::new();
+            let constraints = [
+                Constraint::Length(4), 
+                Constraint::Length(3), 
+                Constraint::Length(3), 
+                Constraint::Length(3), 
+                // Constraint::Length(3), 
+                Constraint::Length(3)];
+            let mut cut = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(constraints.as_ref())
+                .margin(1)
+                .split(frame.size());
+            let last = cut.pop().unwrap();
+            let buttons = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(10), Constraint::Length(10)].as_ref())
+                .margin(1)
+                .split(last);
+            vrct.append(&mut cut);
+            for r in buttons {
+                vrct.push(Rect {
+                    x: r.x-1,
+                    y: r.y-1,
+                    width: 10,
+                    height: 3,
+                })
+            }
+            // vrct.append(&mut Layout::default()
+            //     .direction(Direction::Horizontal)
+            //     .constraints([Constraint::Length(10), Constraint::Length(10)].as_ref())
+            //     .margin(1)
+            //     .split(last));
+            
+            let mut st = self.vt.get(self.vpos).unwrap().clone();
+            let mut vsp: Vec<Span> = self.vt.clone().into_iter().map(|mut s| -> Span {
+                if s == st {
+                    s.push(' ');
+                    let s = Span::styled(s, Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
+                    Span::from(s)
+                } else {
+                    s.push(' ');
+                    Span::from(s)
+                }
+            }).collect();
+            if self.section == SettingsSection::TagText {
+                vsp.remove(self.vpos);
+                st.push(' ');
+                let (s1, s2) = st.split_at(self.tpos);
+                let (s2, s3) = s2.split_at(1);
+                let vs = vec![
+                    // Span::from(" "),
+                    Span::styled(s3, Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
+                    Span::styled(s2, Style::default().add_modifier(Modifier::UNDERLINED).add_modifier(Modifier::BOLD).fg(Color::Cyan)),
+                    Span::styled(s1, Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan)),
+                ];
+
+                for s in vs {
+                    vsp.insert(self.vpos, s);
+                }
+            }
+            let mut ts = Paragraph::new(Spans::from(vsp))
+                .wrap(tui::widgets::Wrap { trim: true })
+                .block(Block::default().borders(Borders::ALL).title("Tags"));
+
+            let dfpt = match self.df {
+                DefaultFilter::Name => "Default filter uses card name",
+                DefaultFilter::Text => "Default filter uses card text",
+            };
+            let mut dfp = Paragraph::new(dfpt)
+                .block(Block::default().borders(Borders::ALL).title("Default Filter"));
+
+            let ordt = match self.ord {
+                SortOrder::NameAsc => "Cards ordered by name ascending.",
+                SortOrder::CmcAsc => "Cards ordered by mana cost ascending.",
+                SortOrder::NameDesc => "Cards ordered by name descending.",
+                SortOrder::CmcDesc => "Cards ordered by mana cost descending.",
+            };
+            let mut ordp = Paragraph::new(ordt)
+                .block(Block::default().borders(Borders::ALL).title("Default Ordering"));
+
+            let mut oirp = match self.oir {
+                Some(true) => Paragraph::new("Open into most recent deck (if it exists)")
+                    .block(Block::default().borders(Borders::ALL).title("Quickstart?")),
+                Some(false) => Paragraph::new("Open into the main menu")
+                    .block(Block::default().borders(Borders::ALL).title("Quickstart?")),
+                None => Paragraph::new(""),
+            };
+
+            let mut sp = Paragraph::new("Save")
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL));
+
+            let mut cp = Paragraph::new("Cancel")
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL));
+                
+            match self.section {
+                SettingsSection::Tags => {
+                    ts = ts.block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("Tags")
+                        .border_style(Style::default()
+                        .fg(Color::Yellow)));
+                },
+                SettingsSection::TagText => {
+                    ts = ts.block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("Tags")
+                        .border_style(Style::default()
+                        .fg(Color::Yellow)));
+                },
+                SettingsSection::DefaultFilter => {
+                    dfp = dfp.block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("Default Filter")
+                        .border_style(Style::default()
+                        .fg(Color::Yellow)));
+                },
+                SettingsSection::Ordering => {
+                    ordp = ordp.block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("Default Ordering")
+                        .border_style(Style::default()
+                        .fg(Color::Yellow)));
+                    },
+                SettingsSection::OpenIntoRecent => {
+                    oirp = oirp.block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("Quickstart?")
+                        .border_style(Style::default()
+                        .fg(Color::Yellow)));
+                },
+                SettingsSection::Save => {
+                    sp = sp.block(Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default()
+                        .fg(Color::Yellow)));
+                },
+                SettingsSection::Exit => {
+                    cp = cp.block(Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default()
+                        .fg(Color::Yellow)));
+                },
+            }
+
+            frame.render_widget(ts, vrct[0]);
+            frame.render_widget(dfp, vrct[1]);
+            frame.render_widget(ordp, vrct[2]);
+            frame.render_widget(oirp, vrct[3]);
+            frame.render_widget(sp, vrct[4]);
+            frame.render_widget(cp, vrct[5]);
+        }
     }
 }
