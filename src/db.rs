@@ -3,7 +3,7 @@ extern crate regex;
 extern crate pest;
 
 use crate::util::{CardLayout, CardStat, Card, Deck, CommanderType};
-use crate::network::rvjc;
+use crate::network::{rvjc, rextcostfcn};
 
 use self::rusqlite::{params, Connection};
 use std::{collections::HashMap, convert::TryInto, sync::Mutex};
@@ -43,7 +43,7 @@ struct OmniParser;
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Set {
     pub code: String,
-    name: String,
+    pub name: String,
     #[serde(alias = "releaseDate")]
     pub date: String,
     #[serde(alias = "type")]
@@ -576,10 +576,11 @@ pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<()> {
     let mut set_stmt = conn.prepare("INSERT INTO sets (code, name, date, set_type) VALUES (:code, :name, :date, :set_type);")?;
 
     let now = Utc::now();
-    let date = format!("{}-{}-{}", now.year(), now.month(), now.day());
+    let date = format!("{}-{:02}-{:02}", now.year(), now.month(), now.day());
 
     for set in sets {
         if !existing_sets.contains(&set) && set.date <= date {
+            println!{"Set {} was printed on {}, which is apparently less than {}", set.name, set.date, date};
             println!("Adding {} to existing sets.", set.name);
 
             let vjc = rvjc(&set.code).unwrap();
@@ -650,7 +651,7 @@ pub fn ivcfjsmap(conn: &Connection, vjc: Vec<JsonCard>) -> Result<(usize, usize)
     )")?;
     let (mut success, mut failure) = (0, 0);
 
-    println!("Found {} cards. Adding them to card database.", vjc.len());
+    print!("Found {} cards. ", vjc.len());
     conn.execute_batch("BEGIN TRANSACTION;")?;
 
     for c in vjc {
@@ -707,23 +708,19 @@ pub fn ivcfjsmap(conn: &Connection, vjc: Vec<JsonCard>) -> Result<(usize, usize)
             Err(_) => { 
                 // Usually an unset or duplicate cards
                 failure += 1;
-                // println!("Failed for {}", name);
              },
         }
     }
 
-    println!("Added all cards.");
     
-    let _a = conn.execute("DELETE
-        FROM cards
-        WHERE legalities = \"\"", [])?;
+    let illegal = conn.execute("DELETE
+FROM cards
+WHERE legalities = \"\"", [])?;
     
-    println!("Deleted illegal cards.");
+    println!("Added {} to database. {} were not added (duplicate or illegal).", success, failure+illegal);
     
     conn.execute_batch("COMMIT TRANSACTION;")?;
     
-    println!("Committed transaction.");
-
     Ok((success, failure))
 }
 
@@ -1355,8 +1352,9 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
     Ok(())
 }
 
-pub fn ucfcn(conn: &Connection, cn: &String, layout: &CardLayout, odid: Option<i32>) -> Result<Card> {
-    let s = match layout {
+pub fn upfcn_quick(conn: &Connection, cn: &String) {
+    let c = rcfn(conn, cn, None).unwrap();
+    let s = match c.lo {
         CardLayout::Adventure(_, rel) 
         | CardLayout::Aftermath(_, rel) 
         | CardLayout::Flip(_, rel) 
@@ -1365,16 +1363,58 @@ pub fn ucfcn(conn: &Connection, cn: &String, layout: &CardLayout, odid: Option<i
         | CardLayout::Transform(_, rel) => format!("{} // {}", cn, rel),
         _ => cn.clone()
     };
-    let price = rcostfcn(&s).unwrap();
+
+    let price = rcostfcn(&s, c.price).unwrap();
+
+    let _ = conn.execute("UPDATE cards 
+        SET price = :price, 
+        date_price_retrieved = date()
+        WHERE name = :name;", 
+        named_params!{":price": price, ":name": cn});
+}
+
+pub fn upfcn_detailed(conn: &Connection, c: &Card, odid: Option<i32>) -> Result<Card> {
+    let s = match &c.lo {
+        CardLayout::Adventure(_, rel) 
+        | CardLayout::Aftermath(_, rel) 
+        | CardLayout::Flip(_, rel) 
+        | CardLayout::ModalDfc(_, rel) 
+        | CardLayout::Split(_, rel) 
+        | CardLayout::Transform(_, rel) => format!("{} // {}", &c.name, rel),
+        _ => c.name.clone()
+    };
+
+    let price = rextcostfcn(&s).unwrap();
 
     conn.execute("UPDATE cards 
         SET price = :price, 
         date_price_retrieved = date()
         WHERE name = :name;", 
-        named_params!{":price": price, ":name": cn})?;
+        named_params!{":price": price, ":name": &s})?;
 
-    rcfn(conn, cn, odid)
+    rcfn(conn, &s, odid)
 }
+
+// pub fn ucfcn(conn: &Connection, cn: &String, layout: &CardLayout, odid: Option<i32>) -> Result<Card> {
+//     let s = match layout {
+//         CardLayout::Adventure(_, rel) 
+//         | CardLayout::Aftermath(_, rel) 
+//         | CardLayout::Flip(_, rel) 
+//         | CardLayout::ModalDfc(_, rel) 
+//         | CardLayout::Split(_, rel) 
+//         | CardLayout::Transform(_, rel) => format!("{} // {}", cn, rel),
+//         _ => cn.clone()
+//     };
+//     let price = rcostfcn(&s).unwrap();
+
+//     conn.execute("UPDATE cards 
+//         SET price = :price, 
+//         date_price_retrieved = date()
+//         WHERE name = :name;", 
+//         named_params!{":price": price, ":name": cn})?;
+
+//     rcfn(conn, cn, odid)
+// }
 
 pub fn dd(conn: &Connection, did: i32) -> Result<()> {
     conn.execute("DELETE FROM decks WHERE id = :did", named_params!{":did": did})?;
@@ -1388,7 +1428,7 @@ pub fn rpfdc(name: &String, layout: &String, related: &String) -> Result<f64> {
     } else {
         name.clone()
     };
-    let res = rcostfcn(&s).unwrap();
+    let res = rcostfcn(&s, None).unwrap();
 
     Ok(res)
 }

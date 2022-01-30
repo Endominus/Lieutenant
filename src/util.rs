@@ -50,16 +50,25 @@ pub enum Screen {
     MakeDeck,
     OpenDeck,
     Settings,
-    DeckView(DeckViewSection),
-    DatabaseView(DeckViewSection),
+    DeckView,
     DeckStat,
     Error(&'static str),
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum DeckViewSection {
-    Omni,
-    Cards,
+    DeckOmni,
+    DeckCards,
+    DbOmni,
+    DbCards
+}
+
+pub enum DeckViewExit {
+    Hold,
+    MainMenu,
+    Stats,
+    Settings(i32),
+    NewTag(String, i32),
 }
 
 #[derive(Clone)]
@@ -113,6 +122,7 @@ pub struct DeckView {
     vcdels: ListState,
     vcdbls: ListState,
     cf: CardFilter,
+    dvs: DeckViewSection,
 }
 
 impl DeckSettings {
@@ -236,7 +246,7 @@ impl Settings {
         self.global.recent = did;
     }
 
-    pub fn add_deck_tag(&mut self, deck: i32, tag: String) -> Option<Vec<String>> {
+    pub fn add_deck_tag(&mut self, deck: i32, tag: String) {
         if let Some(d) = self.decks.get_mut(&deck) {
             d.add_tag(tag);
         } else {
@@ -247,7 +257,6 @@ impl Settings {
             };
             self.decks.insert(deck, d);
         }
-        return Some(self.get_tags_deck(deck))
     }
 
     pub fn remove(&mut self, deck: i32) {
@@ -963,12 +972,13 @@ impl DeckView {
             vcdels: ls, 
             vcdbls: ListState::default(), 
             cf,
+            dvs: DeckViewSection::DeckOmni,
         }
     }
 
-    pub fn handle_input(&mut self, screen: &Screen, c: KeyCode, conn: &Connection) -> Screen {
-        match screen {
-            Screen::DeckView(DeckViewSection::Omni) | Screen::DatabaseView(DeckViewSection::Omni) => {
+    pub fn handle_input(&mut self, c: KeyCode, conn: &Connection) -> DeckViewExit {
+        match self.dvs {
+            DeckViewSection::DeckOmni | DeckViewSection::DbOmni => {
                 match c {
                     KeyCode::Left => {
                         if self.omnipos > 0 {
@@ -985,13 +995,13 @@ impl DeckView {
                             if i > 0 {
                                 self.omni = self.vsomni[i-1].clone();
                                 self.omnipos = self.omni.len();
-                                if screen == &Screen::DeckView(DeckViewSection::Omni) { self.uvc(conn, screen); }
+                                if self.dvs == DeckViewSection::DeckOmni { self.uvc(conn); }
                             }
                         } else {
                             if let Some(s) = self.vsomni.last() {
                                 self.omni = s.clone();
                                 self.omnipos = self.omni.len();
-                                if screen == &Screen::DeckView(DeckViewSection::Omni) { self.uvc(conn, screen); }
+                                if self.dvs == DeckViewSection::DeckOmni { self.uvc(conn); }
                             }
                         }
                     },
@@ -1000,11 +1010,11 @@ impl DeckView {
                             if i < self.vsomni.len() - 1 {
                                 self.omni = self.vsomni[i+1].clone();
                                 self.omnipos = self.omni.len();
-                                if screen == &Screen::DeckView(DeckViewSection::Omni) { self.uvc(conn, screen); }
+                                if self.dvs == DeckViewSection::DeckOmni { self.uvc(conn); }
                             } else {
                                 self.omni = String::new();
                                 self.omnipos = 0;
-                                if screen == &Screen::DeckView(DeckViewSection::Omni) { self.uvc(conn, screen); }
+                                if self.dvs == DeckViewSection::DeckOmni { self.uvc(conn); }
                             }
                         }
                     },
@@ -1014,8 +1024,8 @@ impl DeckView {
                         if self.omnipos < self.omni.len() {
                             self.omni.remove(self.omnipos);
                         }
-                        if screen == &Screen::DeckView(DeckViewSection::Omni) {
-                            self.uvc(conn, screen);
+                        if self.dvs == DeckViewSection::DeckOmni {
+                            self.uvc(conn);
                         }
                     },
                     KeyCode::Backspace => {
@@ -1023,22 +1033,25 @@ impl DeckView {
                             self.omni.remove(self.omnipos - 1);
                             self.omnipos -= 1;
                         }
-                        if screen == &Screen::DeckView(DeckViewSection::Omni) {
-                            self.uvc(conn, screen);
+                        if self.dvs == DeckViewSection::DeckOmni {
+                            self.uvc(conn);
                         }
                     },
                     KeyCode::Enter => {
                         let so = self.omni.trim();
                         if so == "/stat" {
-                            return Screen::DeckStat;
+                            return DeckViewExit::Stats;
+                        } else if so == "/settings" || so == "/config" {
+                            return DeckViewExit::Settings(self.cf.did);
                         } else {
+                            let mut tag = String::new();
                             let re = Regex::new(r"/tag:(\w*)").unwrap();
                             let omni = if let Some(cap) = re.captures(so) { 
-                                let tag = String::from(&cap[1]);
+                                tag = String::from(&cap[1]);
                                 let s = format!("/tag:{}", tag);
                                 let s = so.replace(&s, "");
                                 let s = s.replace("  ", " ");
-                                self.insert_tag(tag);
+                                self.insert_tag(tag.clone());
                                 s
                             } else {
                                 so.into()
@@ -1052,44 +1065,48 @@ impl DeckView {
                                 self.vsomni.push(omni.clone());
                             }
 
-                            if screen == &Screen::DatabaseView(DeckViewSection::Omni) {
-                                self.uvc(conn, screen);
+                            if self.dvs == DeckViewSection::DbOmni {
+                                self.uvc(conn);
                                 if self.vcdb.len() > 0 {
-                                    return Screen::DatabaseView(DeckViewSection::Cards)
+                                    self.dvs = DeckViewSection::DbCards;
                                 }
                             } else if self.vcde.len() > 0 {
-                                return Screen::DeckView(DeckViewSection::Cards)
+                                self.dvs = DeckViewSection::DeckCards;
+                            }
+
+                            if tag.len() > 0 {
+                                return DeckViewExit::NewTag(tag, self.cf.did)
                             }
                         }
                     },
                     KeyCode::Esc => {
-                        return Screen::MainMenu
+                        return DeckViewExit::MainMenu
                     },
                     KeyCode::Tab => {
                         (self.omni, self.omniprev) = (self.omniprev.clone(), self.omni.clone());
                         self.omnipos = 0;
-                        if screen == &Screen::DatabaseView(DeckViewSection::Omni) {
-                            self.uac(conn, &Screen::DeckView(DeckViewSection::Omni));
-                            return Screen::DeckView(DeckViewSection::Omni)
+                        if self.dvs == DeckViewSection::DbOmni {
+                            self.uac(conn);
+                            self.dvs =  DeckViewSection::DeckOmni
                         } else {
-                            self.uac(conn, &Screen::DatabaseView(DeckViewSection::Omni));
-                            return Screen::DatabaseView(DeckViewSection::Omni)
+                            self.uac(conn);
+                            self.dvs = DeckViewSection::DbOmni
                         }
                     },
                     KeyCode::Char(c) => {
                         self.omni.insert(self.omnipos, c);
                         self.omnipos += 1;
-                        if screen == &Screen::DeckView(DeckViewSection::Omni) {
-                            self.uvc(conn, screen);
+                        if self.dvs == DeckViewSection::DeckOmni {
+                            self.uvc(conn);
                         }
                     },
                     _ => {}
                 }
             },
-            Screen::DeckView(DeckViewSection::Cards) | Screen::DatabaseView(DeckViewSection::Cards) => {
-                let (vcd, vcdls) = match screen {
-                    Screen::DeckView(DeckViewSection::Cards) => (&mut self.vcde, &mut self.vcdels),
-                    Screen::DatabaseView(DeckViewSection::Cards) => (&mut self.vcdb, &mut self.vcdbls),
+            DeckViewSection::DeckCards | DeckViewSection::DbCards => {
+                let (vcd, vcdls) = match self.dvs {
+                    DeckViewSection::DeckCards => (&mut self.vcde, &mut self.vcdels),
+                    DeckViewSection::DbCards => (&mut self.vcdb, &mut self.vcdbls),
                     _ => todo!(),
                 };
                 
@@ -1106,7 +1123,7 @@ impl DeckView {
                             None => 0,
                         };
                         vcdls.select(Some(i));
-                        self.uac(&conn, &screen);
+                        self.uac(&conn);
                     },
                     KeyCode::Down => {
                         let i = match vcdls.selected() {
@@ -1121,7 +1138,7 @@ impl DeckView {
                         };
                         vcdls.select(Some(i));
 
-                        self.uac(&conn, &screen);
+                        self.uac(&conn);
                     },
                     KeyCode::Right => {
                         self.st += 1;
@@ -1136,14 +1153,14 @@ impl DeckView {
                         let cn = &vcd.get(i).unwrap().clone();
                         let c = rcfn(&conn, cn, None).unwrap();
                         let d = crate::db::rdfdid(conn, self.cf.did).unwrap();
-                        if d.commander == c { return *screen; }
+                        if d.commander == c { return DeckViewExit::Hold; }
                         if let Some(com) = d.commander2 {
-                            if com == c { return *screen; }
+                            if com == c { return DeckViewExit::Hold; }
                         };
 
                         if let Some(j) = self.vcdec.iter().position(|s| s == cn) {
                             self.vcdec.remove(j);
-                            let flag = screen == &Screen::DeckView(DeckViewSection::Cards);
+                            let flag = self.dvs == DeckViewSection::DeckCards;
                             dcntodc(conn, cn, self.cf.did).unwrap();
                             
                             if flag { vcd.remove(i); }
@@ -1188,7 +1205,7 @@ impl DeckView {
                             if vcd.len() == 0 { //Can only happen in Deck view
                                 vcdls.select(None);
                                 self.ac = None;
-                                return Screen::DeckView(DeckViewSection::Omni);
+                                self.dvs = DeckViewSection::DeckOmni;
                             }
 
                             if !flag {                        
@@ -1201,7 +1218,7 @@ impl DeckView {
                                 }
                                 self.vcde = vc;
                             } else {
-                                self.uac(conn, screen);
+                                self.uac(conn);
                             }
                         }
                     },
@@ -1225,20 +1242,20 @@ impl DeckView {
                         }
                     },
                     KeyCode::Esc => {
-                        return Screen::MainMenu
+                        return DeckViewExit::MainMenu
                     },
                     KeyCode::Tab => {
-                        if screen == &Screen::DeckView(DeckViewSection::Cards) {
-                            return Screen::DeckView(DeckViewSection::Omni);
+                        if self.dvs == DeckViewSection::DeckCards {
+                            self.dvs = DeckViewSection::DeckOmni;
                         } else {
-                            return Screen::DatabaseView(DeckViewSection::Omni);
+                            self.dvs = DeckViewSection::DbOmni;
                         }
                     }
                     KeyCode::Char(' ') => self.uacr(conn),
                     KeyCode::Char('u') => {
                         if let Some(ac) = &self.ac {
                             if ac.stale {
-                                if let Ok(card) = crate::db::ucfcn(conn, &ac.name, &ac.lo, Some(self.cf.did)) {
+                                if let Ok(card) = crate::db::upfcn_detailed(conn, &ac, Some(self.cf.did)) {
                                     self.ac = Some(card);
                                 }
                             }
@@ -1246,10 +1263,9 @@ impl DeckView {
                     },
                     _ => {}
                 }
-            },
-            _ => {}
+            }
         }
-        *screen
+        DeckViewExit::Hold
     }
 
     fn insert_tag(&mut self, tag: String) {
@@ -1274,11 +1290,10 @@ impl DeckView {
         self.ac = ttindc(conn, &cn, &self.vt[self.st], self.cf.did);
     }
 
-    fn uvc(&mut self, conn: &Connection, screen: &Screen) {
-        let (vc, general, ls) = match screen {
-            Screen::DeckView(_) => (&mut self.vcde, false, &mut self.vcdels),
-            Screen::DatabaseView(_) => (&mut self.vcdb, true, &mut self.vcdbls),
-            _ => todo!()
+    fn uvc(&mut self, conn: &Connection) {
+        let (vc, general, ls) = match self.dvs {
+            DeckViewSection::DeckOmni | DeckViewSection::DeckCards => (&mut self.vcde, false, &mut self.vcdels),
+            DeckViewSection::DbOmni | DeckViewSection::DbCards => (&mut self.vcdb, true, &mut self.vcdbls)
         };
 
         *vc = rvcnfcf(&conn, &self.cf.make_query(general, &self.omni)).unwrap();
@@ -1288,35 +1303,39 @@ impl DeckView {
         } else {
             ls.select(None);
         }
-        self.uac(conn, screen);
+        self.uac(conn);
     }
     
-    fn uacfn(&mut self, conn: &Connection, cn: &String) {
-        self.ac = Some(crate::db::rcfndid(conn, cn, self.cf.did).unwrap());
-    }
+    // fn uacfn(&mut self, conn: &Connection, cn: &String) {
+    //     self.ac = Some(crate::db::rcfndid(conn, cn, self.cf.did).unwrap());
+    // }
 
-    fn uac(&mut self, conn: &Connection, screen: &Screen) {
+    fn uac(&mut self, conn: &Connection) {
         let mm = String::new(); //this is dumb, but it works. Otherwise complains of temp value dropped.
-        let cn = match screen {
-            Screen::DeckView(dvs) => {
-                if self.vcde.len() == 0 { &mm 
-                } else {
-                    match dvs {
-                        DeckViewSection::Omni => &self.vcde[0],
-                        DeckViewSection::Cards => &self.vcde[self.vcdels.selected().unwrap()],
-                    }
-                }
-            },
-            Screen::DatabaseView(dvs) => {
-                if self.vcdb.len() == 0 { &mm 
-                } else {
-                    match dvs {
-                        DeckViewSection::Omni => &self.vcdb[0],
-                        DeckViewSection::Cards => &self.vcdb[self.vcdbls.selected().unwrap()],
-                    }
-                }
-            },
-            _ => { &mm }
+        let cn = match self.dvs {
+            // Screen::DeckView(dvs) => {
+            //     if self.vcde.len() == 0 { &mm 
+            //     } else {
+            //         match dvs {
+            //             DeckViewSection::Omni => &self.vcde[0],
+            //             DeckViewSection::Cards => &self.vcde[self.vcdels.selected().unwrap()],
+            //         }
+            //     }
+            // },
+            // Screen::DatabaseView(dvs) => {
+            //     if self.vcdb.len() == 0 { &mm 
+            //     } else {
+            //         match dvs {
+            //             DeckViewSection::Omni => &self.vcdb[0],
+            //             DeckViewSection::Cards => &self.vcdb[self.vcdbls.selected().unwrap()],
+            //         }
+            //     }
+            // },
+            // _ => { &mm }
+            DeckViewSection::DeckOmni => self.vcde.get(0).unwrap_or(&mm),
+            DeckViewSection::DeckCards => self.vcde.get(self.vcdels.selected().unwrap()).unwrap_or(&mm),
+            DeckViewSection::DbOmni => self.vcdb.get(0).unwrap_or(&mm),
+            DeckViewSection::DbCards => self.vcdb.get(self.vcdbls.selected().unwrap()).unwrap_or(&mm),
         };
         if cn == &mm { 
             self.ac = None; 
@@ -1356,20 +1375,7 @@ impl DeckView {
         self.ac = Some(crate::db::rcfn(conn, cn, Some(self.cf.did)).unwrap());
     }
     
-    fn vlifself(&self, screen: &Screen) -> Vec<ListItem> {
-        match screen {
-            Screen::DeckView(_) => self.vcde.iter().map(|s| ListItem::new(s as &str)).collect(),
-            Screen::DatabaseView(_) => self.vcdb.iter().map(|s|
-                if self.vcdec.contains(s) {
-                    ListItem::new(s as &str).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC))
-                } else {
-                    ListItem::new(s as &str)
-                }).collect(),
-            _ => todo!(),
-        }
-    }
-    
-    pub fn render(&self, screen: &Screen, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
+    pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
         let mut vrct = Vec::new();
         let cut = Layout::default()
             .direction(Direction::Vertical)
@@ -1413,8 +1419,8 @@ impl DeckView {
             None => Paragraph::new("No card found!").block(bdef.clone()),
         };
 
-        let (lc, ls) = match screen {
-            Screen::DeckView(DeckViewSection::Omni) => {
+        let (lc, ls) = match self.dvs {
+            DeckViewSection::DeckOmni => {
                 bfoc = bfoc.title("Filter Deck");
                 po = po.block(bfoc);
                 let vli: Vec<ListItem> = self.vcde.iter().map(|s| ListItem::new(s as &str)).collect();
@@ -1423,7 +1429,7 @@ impl DeckView {
                     .block(bdef.title(format!("Deck View ({})", self.vcde.len())));
                 (lc, &self.vcdels)
             },
-            Screen::DeckView(DeckViewSection::Cards) => {
+            DeckViewSection::DeckCards => {
                 bdef = bdef.title("Filter Deck");
                 po = po.block(bdef);
                 let vli: Vec<ListItem> = self.vcde.iter().map(|s| ListItem::new(s as &str)).collect();
@@ -1432,7 +1438,7 @@ impl DeckView {
                     .block(bfoc.title(format!("Deck View ({})", self.vcde.len())));
                 (lc, &self.vcdels)
             },
-            Screen::DatabaseView(DeckViewSection::Omni) => {
+            DeckViewSection::DbOmni => {
                 bfoc = bfoc.title("Filter Database");
                 po = po.block(bfoc);
                 let vli: Vec<ListItem> = self.vcdb.iter().map(|s|
@@ -1446,7 +1452,7 @@ impl DeckView {
                     .block(bdef.title(format!("Database ({})", self.vcdb.len())));
                 (lc, &self.vcdbls)
             },
-            Screen::DatabaseView(DeckViewSection::Cards) => {
+            DeckViewSection::DbCards => {
                 bdef = bdef.title("Filter Database");
                 po = po.block(bdef);
                 let vli: Vec<ListItem> = self.vcdb.iter().map(|s|
@@ -1459,8 +1465,7 @@ impl DeckView {
                     .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))
                     .block(bfoc.title(format!("Database ({})", self.vcdb.len())));
                 (lc, &self.vcdbls)
-            },
-            _ => todo!()
+            }
         };
 
         frame.render_widget(po, vrct[0]);

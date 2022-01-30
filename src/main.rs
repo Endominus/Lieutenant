@@ -15,6 +15,7 @@ extern crate self_update;
 // #[macro_use]
 extern crate pest_derive;
 
+use chrono::Datelike;
 use lieutenant::db;
 use lieutenant::db::CardFilter;
 use lieutenant::ui;
@@ -206,6 +207,7 @@ fn main() {
                 "parser" => { let _a = debug_parse_args(); },
                 "filter" => { let _a = debug_rvcfcf(); },
                 "settings" => { let _a = debug_settings(); },
+                "network" => { let _a = debug_network(); },
                 _ => {},
             }
         }
@@ -287,6 +289,23 @@ fn debug_rcfn() {
 
 fn debug_settings() -> Result<()> {
     // println!("{}", config.to_toml());
+
+    Ok(())
+}
+
+fn debug_network() -> Result<()> {
+    // println!("Quick price is: {:?}", network::rcostfcn(&String::from("Sol Ring"), None));
+    // println!("Detailed price is: {:?}", network::rextcostfcn(&String::from("Sol Ring")));
+
+    let sets = network::rvs().unwrap();
+    let now = chrono::Utc::now();
+    let date = format!("{}-{}-{}", now.year(), now.month(), now.day());
+
+    for set in sets {
+        if set.date > date {
+            println!("Set {} should not be here.", set.name)
+        }
+    }
 
     Ok(())
 }

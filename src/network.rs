@@ -113,7 +113,7 @@ pub fn rvjc(set_code: &String) -> Result<Vec<JsonCard>> {
 //     // todo!()
 // }
 
-pub fn rcostfcn(cn: &String) -> Result<f64> {
+pub fn rcostfcn(cn: &String, prev: Option<f64>) -> Result<f64> {
     let api = format!("https://api.scryfall.com/cards/search?q=name=%22{}%22", cn);
     // let res = get(api).await?.text().await?;
     // let res_json: Value = serde_json::from_str(res.as_str())?;
@@ -138,5 +138,46 @@ pub fn rcostfcn(cn: &String) -> Result<f64> {
         Value::Object(_) => { panic!(); }
         _ => { 0.0 }
     };
+
+    if let Some(prev) = prev {
+        if price > prev*1.5 {
+            return rextcostfcn(cn)
+        }
+    }
+
     Ok(price)
+}
+
+pub fn rextcostfcn(cn: &String) -> Result<f64> {
+    let api = format!("https://api.scryfall.com/cards/search?q=name=%22{}%22", cn);
+    let res_json: Value = get(api).unwrap().json().unwrap();
+    let mut res_list = Value::default();
+    if let Value::Array(vv) = &res_json["data"] {
+        for v in vv {
+            if let Value::Object(o) = v {
+                if o["name"].as_str().unwrap() == cn {
+                    let api = o["prints_search_uri"].as_str().unwrap();
+                    res_list = get(api).unwrap().json().unwrap();
+                }
+            }
+        }
+    }
+
+    let mut vp: Vec<f64> = Vec::new();
+
+    if let Value::Array(vv) = &res_list["data"] {
+        for v in vv {
+            if let Value::Object(o) = v {
+                let r = o["prices"]["usd"].as_str().unwrap_or("invalid").parse();
+                if let Ok(p) = r {
+                    vp.push(p);
+                }
+            }
+        }
+    }
+
+    vp.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = vp.get(vp.len()/2).unwrap();
+
+    Ok(*median)
 }
