@@ -1,4 +1,10 @@
 #![allow(dead_code)]
+#![feature(derive_default_enum)]
+mod network;
+mod db;
+mod ui;
+mod util;
+
 extern crate reqwest;
 extern crate rusqlite;
 extern crate json;
@@ -15,12 +21,10 @@ extern crate self_update;
 // #[macro_use]
 extern crate pest_derive;
 
+
 use chrono::Datelike;
-use lieutenant::db;
-use lieutenant::db::CardFilter;
-use lieutenant::ui;
-use lieutenant::util;
-use lieutenant::network;
+use crate::db::CardFilter;
+use crate::network::rvjc;
 
 use std::{fs::File, path::PathBuf, io::{BufReader, BufRead}};
 use rusqlite::Connection;
@@ -119,7 +123,18 @@ pub fn run(command: Command) -> Result<()> {
         Command::ExportDeck(did, path) => {
             let p = util::get_local_file("lieutenant.db", false);
             let conn = Connection::open(p).unwrap();
-            let cards = db::rvicfdid(&conn, did).unwrap();
+            let deck = db::rdfdid(&conn, did).expect("Deck could not be retrieved. Ensure Deck ID is correct.");
+            let mut cards = db::rvicfdid(&conn, did).unwrap();
+            let c = deck.commander;
+            let i = cards.iter().position(|ic| ic.name == c.name).unwrap();
+            let ic = cards.remove(i);
+            cards.insert(0, ic);
+            if let Some(c) = deck.commander2 {
+                let i = cards.iter().position(|ic| ic.name == c.name).unwrap();
+                let ic = cards.remove(i);
+                cards.insert(0, ic);
+            }
+
             let p = match path {
                 Some(p) => { p }
                 None => {
@@ -217,7 +232,7 @@ fn main() {
 
 
 fn debug_rvjc() -> Result<()> {
-    let cards = lieutenant::network::rvjc(&String::from("STX"))?;
+    let cards = rvjc(&String::from("STX"))?;
     println!("First card is: {}", cards[0].name);
     Ok(())
 }
@@ -294,8 +309,8 @@ fn debug_settings() -> Result<()> {
 }
 
 fn debug_network() -> Result<()> {
-    // println!("Quick price is: {:?}", network::rcostfcn(&String::from("Sol Ring"), None));
-    // println!("Detailed price is: {:?}", network::rextcostfcn(&String::from("Sol Ring")));
+    println!("Quick price is: {:?}", network::rcostfcn(&String::from("Sol Ring"), None));
+    println!("Detailed price is: {:?}", network::rextcostfcn(&String::from("Sol Ring")));
 
     let sets = network::rvs().unwrap();
     let now = chrono::Utc::now();

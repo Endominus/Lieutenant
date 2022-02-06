@@ -1,9 +1,9 @@
 [global]
 version = 1.0
 tags = [
-    "main", 
     "board_wipe", 
     "draw", 
+    "main", 
     "ramp",
     "removal",
     "side",

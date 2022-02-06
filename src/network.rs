@@ -1,10 +1,4 @@
-// use crate::util::Card;
-// mod db;
-
-// use std::{thread, time};
-// use reqwest::Response;
 use reqwest::blocking::get;
-// use reqwest::get;
 use anyhow::Result;
 use serde_json::Value;
 use crate::db::{JsonCard, Set};
@@ -33,20 +27,6 @@ fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
 //     let url = format!("https://api.magicthegathering.io/v1/cards?name=\"{}\"", name);
 //     rvc(url, 1)
 //     // todo!()
-// }
-
-// pub fn rvs() -> Result<Vec<Set>> {
-//     println!("Retrieving all sets now...");
-
-//     let url = "https://api.magicthegathering.io/v1/sets";
-//     let response = get(url)?;
-
-//     // let sets = response.json::<Sets>()?;
-//     let sets = response.json::<Vec<Set>>()?;
-
-//     println!("Retrieved a total of {} sets.", sets.len());
-
-//     Ok(sets)
 // }
 
 // pub fn rcs(s: &crate::db::Set) -> Vec<JsonCard> {
@@ -87,7 +67,7 @@ pub fn rvjc(set_code: &String) -> Result<Vec<JsonCard>> {
         serde_json::Value::Array(i) => { i }
         _ => { panic!(); }
     };
-    // let cards = res
+    
     for value in cards {
         let d: JsonCard = serde_json::from_value(value.clone()).unwrap();
         vjc.push(d);
@@ -115,28 +95,26 @@ pub fn rvjc(set_code: &String) -> Result<Vec<JsonCard>> {
 
 pub fn rcostfcn(cn: &String, prev: Option<f64>) -> Result<f64> {
     let api = format!("https://api.scryfall.com/cards/search?q=name=%22{}%22", cn);
-    // let res = get(api).await?.text().await?;
-    // let res_json: Value = serde_json::from_str(res.as_str())?;
     let res_json: Value = get(api).unwrap().json().unwrap();
-    // println!("{:?}", res_json);
-    let price: f64 = match &res_json["data"] {
-        Value::Array(vc) => {
-            let mut r = 0.0;
-            for c in vc {
-                match c {
-                    Value::Object(c) => {
-                        if c["name"].as_str().unwrap() == cn {
-                            // println!("{:?}", c["prices"]["usd"]);
-                            r = c["prices"]["usd"].as_str().unwrap_or("0.0").parse().unwrap();
-                        }
+    let mut price = 0.0;
+    if let Value::Array(vc) = &res_json["data"] {
+        for c in vc {
+            if let Value::Object(c) = c {
+                if c["name"].as_str().unwrap() == cn {
+                    let a = &c["prices"]["usd"];
+                    match a {
+                        Value::Null => {
+                            let a = &c["prices"]["usd_foil"];
+                            if let Value::String(s) = a {
+                                price = s.parse().unwrap();
+                            }
+                        },
+                        Value::String(s) => price = s.parse().unwrap(),
+                        _ => {}
                     }
-                    _ => { panic!(); }
                 }
             }
-            r
         }
-        Value::Object(_) => { panic!(); }
-        _ => { 0.0 }
     };
 
     if let Some(prev) = prev {

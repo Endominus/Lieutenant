@@ -5,11 +5,15 @@ use tui::{layout::{Constraint, Direction, Layout}, text::{Span, Spans}, widgets:
 use tui::style::{Color, Modifier, Style};
 
 use std::{collections::HashMap, path::PathBuf, env};
+use std::cell::RefCell;
+use std::rc::Rc;
 use serde::Deserialize;
 use serde_derive::Serialize;
 use config::{Config, ConfigError};
 use itertools::Itertools;
 use crate::db::{CardFilter, rvcnfcf, ttindc, rcfn, dcntodc};
+
+use self::views::Changes;
 
 pub fn get_local_file(name: &str, file_must_exist: bool) -> PathBuf {
     let mut p = env::current_exe().unwrap();
@@ -22,7 +26,7 @@ pub fn get_local_file(name: &str, file_must_exist: bool) -> PathBuf {
     p
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub enum SortOrder {
     #[default] NameAsc,
     NameDesc,
@@ -38,7 +42,7 @@ pub enum CommanderType {
     Invalid
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Debug, PartialEq)]
 pub enum DefaultFilter {
     #[default] Name,
     Text
@@ -100,12 +104,49 @@ pub enum Relation {
     Meld {face: String, transform: String },
 }
 
+impl ToString for SortOrder {
+    fn to_string(&self) -> String {
+        match self {
+            SortOrder::NameAsc => String::from("+name"),
+            SortOrder::NameDesc => String::from("-name"),
+            SortOrder::CmcAsc => String::from("+cmc"),
+            SortOrder::CmcDesc => String::from("-cmc"),
+        }
+    }
+}
+
+impl ToString for DefaultFilter {
+    fn to_string(&self) -> String {
+        match self {
+            DefaultFilter::Name => String::from("name"),
+            DefaultFilter::Text => String::from("text"),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
-pub struct DeckSettings {
-    tags: Option<Vec<String>>,
-    ordering: Option<String>,
+pub struct FileSettings {
+    global: FileGlobalSettings,
+    decks: HashMap<i32, FileDeckSettings>
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FileGlobalSettings {
+    tags: Vec<String>,
+    ordering: String,
     #[serde(rename = "default_filter")]
-    df: Option<String>
+    df: String,
+    version: f64,
+    recent: i32,
+    open_into_recent: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FileDeckSettings {
+    tags: Vec<String>,
+    ordering: String,
+    #[serde(rename = "default_filter")]
+    df: String,
 }
 
 pub struct DeckView {
@@ -125,39 +166,30 @@ pub struct DeckView {
     dvs: DeckViewSection,
 }
 
-impl DeckSettings {
-    pub fn add_tag(&mut self, tag: String) {
-        if let Some(vs) = &self.tags {
-            if !vs.contains(&tag) {
-                let mut vs = vs.clone();
-                vs.push(tag);
-                vs.sort();
-                self.tags = Some(vs);
-            } else {
-                self.tags = Some(Vec::from([tag]));
-            }
-        }
-    }
+#[derive(Debug)]
+pub struct Settings {
+    global: GlobalSettings,
+    decks: Rc<RefCell<HashMap<i32, DeckSettings>>>
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug)]
 pub struct GlobalSettings {
     tags: Vec<String>,
-    ordering: String,
-    #[serde(rename = "default_filter")]
-    df: String,
+    ordering: SortOrder,
+    df: DefaultFilter,
     version: f64,
     recent: i32,
     open_into_recent: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Settings {
-    global: GlobalSettings,
-    decks: HashMap<i32, DeckSettings>
+#[derive(Debug)]
+pub struct DeckSettings {
+    tags: Vec<String>,
+    ordering: SortOrder,
+    df: DefaultFilter,
 }
 
-impl Settings {
+impl FileSettings {
     pub fn new(path: &PathBuf) -> Result<Self, ConfigError> {
         let mut s = Config::default();
         let tags = Vec::from([
@@ -181,88 +213,6 @@ impl Settings {
         s.try_into()
     }
 
-    pub fn get_tags(&self) -> Vec<String> {
-        self.global.tags.clone()
-    }
-
-    pub fn get_tags_deck(&self, deck: i32) -> Vec<String> {
-        let mut r = Vec::new();
-        r.append(&mut self.global.tags.clone());
-        if let Some(s) = self.decks.get(&deck) {
-            if let Some(t) = &s.tags {
-                r.append(&mut t.clone());
-            };
-        };
-        r
-    }
-
-    pub fn get_sort_order(&self, deck: Option<i32>) -> SortOrder {
-        if let Some(deck) = deck {
-            if let Some(d) = self.decks.get(&deck) {
-                if let Some(o) = &d.ordering {
-                    match o.as_str() {
-                        "+name" => { SortOrder::NameAsc }
-                        "-name" => { SortOrder::NameDesc }
-                        "+cmc" => { SortOrder::CmcAsc }
-                        "-cmc" => { SortOrder::CmcDesc }
-                        _ => { SortOrder::NameAsc }
-                    }
-                } else {
-                    SortOrder::default()
-                }
-            } else {
-                SortOrder::default()
-            }
-        } else {
-            match self.global.ordering.as_str() {
-                "+name" => { SortOrder::NameAsc }
-                "-name" => { SortOrder::NameDesc }
-                "+cmc" => { SortOrder::CmcAsc }
-                "-cmc" => { SortOrder::CmcDesc }
-                _ => { SortOrder::NameAsc }
-            }
-        }
-    }
-
-    pub fn get_default_filter(&self, deck: i32) -> DefaultFilter {
-        if let Some(d) = self.decks.get(&deck) {
-            if let Some(f) = &d.df {
-                match f.as_str() {
-                    "text" => { return DefaultFilter::Text }
-                    _ => { return DefaultFilter::Name }
-                }
-            }
-        }
-
-        if self.global.df == String::from("text") { return DefaultFilter::Text }
-        else { return DefaultFilter::Name }
-    }
-
-    pub fn get_recent(&self) -> i32 {
-        self.global.recent
-    }
-
-    pub fn set_recent(&mut self, did: i32) {
-        self.global.recent = did;
-    }
-
-    pub fn add_deck_tag(&mut self, deck: i32, tag: String) {
-        if let Some(d) = self.decks.get_mut(&deck) {
-            d.add_tag(tag);
-        } else {
-            let d = DeckSettings { 
-                tags: Some(Vec::from([tag])), 
-                ordering: Some(String::from("+name")), 
-                df: Some(String::from("name")) 
-            };
-            self.decks.insert(deck, d);
-        }
-    }
-
-    pub fn remove(&mut self, deck: i32) {
-        self.decks.remove(&deck);
-    }
-
     // Experimented with using toml_edit, which preserves comments, but found that it didn't preserve indentation.
     pub fn to_toml(&self) -> String {
         let mut vr = Vec::from([String::from("[global]")]);
@@ -284,23 +234,271 @@ impl Settings {
         for k in vk {
             let v = self.decks.get(k).unwrap();
             vr.push(format!("\t[decks.{}]", k));
-            if let Some(vt) = &v.tags {
-                vr.push(String::from("\ttags = ["));
-                for t in vt {
-                    vr.push(format!("\t\t\"{}\",", t));
-                }
-                vr.push(String::from("\t]"));
+            vr.push(String::from("\ttags = ["));
+            for t in &v.tags {
+                vr.push(format!("\t\t\"{}\",", t));
             }
-            if let Some(o) = &v.ordering {
-                vr.push(format!("\tordering = \"{}\"", o));
-            }
-            if let Some(df) = &v.df {
-                vr.push(format!("\tdefault_filter = \"{}\"", df));
-            }
+            vr.push(String::from("\t]"));
+            vr.push(format!("\tordering = \"{}\"", &v.ordering));
+            vr.push(format!("\tdefault_filter = \"{}\"", &v.df));
             vr.push(String::new());
         }
     
         vr.join("\n")
+    }
+}
+
+impl Settings {
+    pub fn get_tags(&self) -> Vec<String> {
+        self.global.tags.clone()
+    }
+
+    pub fn get_tags_deck(&self, did: i32) -> Vec<String> {
+        match self.decks.borrow().get(&did) {
+            Some(d) => d.tags.clone(),
+            None => self.global.tags.clone(),
+        }
+    }
+
+    pub fn rso(&self, odid: Option<i32>) -> SortOrder {
+        match odid {
+            Some(did) => {
+                match self.decks.borrow().get(&did) {
+                    Some(d) => d.ordering,
+                    None => self.global.ordering,
+                }
+            },
+            None => self.global.ordering,
+        }
+    }
+
+    pub fn rdf(&self, odid: Option<i32>) -> DefaultFilter {
+        match odid {
+            Some(did) => {
+                match self.decks.borrow().get(&did) {
+                    Some(d) => d.df,
+                    None => self.global.df,
+                }
+            },
+            None => self.global.df,
+        }
+    }
+
+    pub fn change(&mut self, changes: Changes, odid: Option<i32>) {
+        match odid {
+            Some(did) => {
+                let mut decks = self.decks.borrow_mut();
+                if let Some(deck) = decks.get_mut(&did) {
+                    deck.df  = changes.df;
+                    deck.ordering  = changes.so;
+                    for tch in changes.vtch {
+                        match tch {
+                            views::TagChange::DeleteTag(old) => {
+                                if let Some(i) = deck.tags.iter().position(|s| s == &old) {
+                                    deck.tags.remove(i);
+                                }
+                            },
+                            views::TagChange::ChangeTag(old, new) => {
+                                if let Some(i) = deck.tags.iter().position(|s| s == &old) {
+                                    deck.tags.remove(i);
+                                    deck.tags.push(new);
+                                }
+                            },
+                            views::TagChange::InsertTag(new) => deck.tags.push(new),
+                        }
+                        deck.tags.sort();
+                    }
+                }
+            },
+            None => {
+                self.global.df = changes.df;
+                self.global.ordering = changes.so;
+                self.global.open_into_recent = changes.oir.unwrap();
+                for tch in changes.vtch {
+                    match tch {
+                        views::TagChange::DeleteTag(old) => {
+                            if let Some(i) = self.global.tags.iter().position(|s| s == &old) {
+                                self.global.tags.remove(i);
+                            }
+                        },
+                        views::TagChange::ChangeTag(old, new) => {
+                            if let Some(i) = self.global.tags.iter().position(|s| s == &old) {
+                                self.global.tags.remove(i);
+                                self.global.tags.push(new);
+                            }
+                        },
+                        views::TagChange::InsertTag(new) => self.global.tags.push(new),
+                    }
+                    self.global.tags.sort();
+                }
+            },
+        }
+    }
+
+    pub fn rr(&self) -> i32 {
+        self.global.recent
+    }
+
+    pub fn sr(&mut self, did: i32) {
+        self.global.recent = did;
+    }
+
+    pub fn it(&mut self, odid: Option<i32>, tag: String) {
+        match odid {
+            Some(did) => {
+                let mut decks = self.decks.borrow_mut();
+                match decks.get_mut(&did) {
+                    Some(d) => d.add_tag(tag),
+                    None => {},
+                }
+            },
+            None => {
+                self.global.tags.push(tag);
+                self.global.tags.sort();
+            },
+        };
+    }
+
+    pub fn id(&mut self, did: i32) {
+        let ds = DeckSettings::duplicate(&self.global);
+        let mut decks = self.decks.borrow_mut();
+        decks.insert(did, ds);
+    }
+
+    pub fn dd(&mut self, deck: i32) {
+        self.decks.borrow_mut().remove(&deck);
+    }
+
+    pub fn from(fs: FileSettings) -> Self {
+        let gs = GlobalSettings::from(fs.global);
+        let mut dhash = HashMap::new();
+
+        for (did, fds) in fs.decks {
+            let ds = DeckSettings::from(fds);
+            dhash.insert(did, ds);
+        }
+
+        Self {
+            global: gs,
+            decks: Rc::from(RefCell::from(dhash)),
+        }
+    }
+
+    // Experimented with using toml_edit, which preserves comments, but found that it didn't preserve indentation.
+    pub fn to_toml(&self) -> String {
+        let mut vr = Vec::from([String::from("[global]")]);
+        vr.push(format!("version = {}", self.global.version));
+        vr.push(String::from("tags = ["));
+        for t in &self.global.tags {
+            vr.push(format!("\t\"{}\",", t));
+        }
+        vr.push(String::from("]"));
+        vr.push(format!("ordering = \"{}\"", self.global.ordering.to_string()));
+        vr.push(format!("default_filter = \"{}\"", self.global.df.to_string()));
+        vr.push(format!("recent = {}", self.global.recent));
+        vr.push(format!("open_into_recent = {}", self.global.open_into_recent));
+        vr.push(String::from("\n[decks]"));
+
+        // TODO: Explore using a BTreeMap instead to lose dependence on itertools
+        let decks = self.decks.borrow();
+        let vk = decks.keys().sorted();
+        
+        for k in vk {
+            let v = decks.get(k).unwrap();
+            vr.push(format!("\t[decks.{}]", k));
+            vr.push(String::from("\ttags = ["));
+            for t in &v.tags {
+                vr.push(format!("\t\t\"{}\",", t));
+            }
+            vr.push(String::from("\t]"));
+            vr.push(format!("\tordering = \"{}\"", &v.ordering.to_string()));
+            vr.push(format!("\tdefault_filter = \"{}\"", &v.df.to_string()));
+            vr.push(String::new());
+        }
+    
+        vr.join("\n")
+    }
+}
+
+impl GlobalSettings {
+    pub fn from(fgs: FileGlobalSettings) -> Self {
+        let df = match fgs.df.as_str() {
+            "name" => DefaultFilter::Name,
+            "text" => DefaultFilter::Text,
+            _ => DefaultFilter::Name,
+        };
+        
+        let ordering = match fgs.ordering.as_str() {
+            "+name" => SortOrder::NameAsc,
+            "-name" => SortOrder::NameDesc,
+            "+cmc" => SortOrder::CmcAsc,
+            "-cmc" => SortOrder::CmcDesc,
+            _ => SortOrder::NameAsc,
+        };
+
+        Self {
+            tags: fgs.tags,
+            ordering,
+            df,
+            version: fgs.version,
+            recent: fgs.recent,
+            open_into_recent: fgs.open_into_recent,
+        }
+    }
+
+    pub fn toggle_df(&mut self) {
+        if self.df == DefaultFilter::Name {
+            self.df = DefaultFilter::Text;
+        } else {
+            self.df = DefaultFilter::Name;
+        }
+    }
+}
+
+impl DeckSettings {
+    pub fn from(fds: FileDeckSettings) -> Self {
+        let df = match fds.df.as_str() {
+            "name" => DefaultFilter::Name,
+            "text" => DefaultFilter::Text,
+            _ => DefaultFilter::Name,
+        };
+        
+        let ordering = match fds.ordering.as_str() {
+            "+name" => SortOrder::NameAsc,
+            "-name" => SortOrder::NameDesc,
+            "+cmc" => SortOrder::CmcAsc,
+            "-cmc" => SortOrder::CmcDesc,
+            _ => SortOrder::NameAsc,
+        };
+        
+        Self {
+            tags: fds.tags,
+            ordering,
+            df,
+        }
+    }
+
+    pub fn duplicate(gs: &GlobalSettings) -> Self {
+        Self {
+            tags: gs.tags.clone(),
+            ordering: gs.ordering,
+            df: gs.df,
+        }
+    }
+
+    pub fn add_tag(&mut self, tag: String) {
+        if !self.tags.contains(&tag) {
+            self.tags.push(tag);
+            self.tags.sort();
+        }
+    }
+
+    pub fn toggle_df(&mut self) {
+        if self.df == DefaultFilter::Name {
+            self.df = DefaultFilter::Text;
+        } else {
+            self.df = DefaultFilter::Name;
+        }
     }
 }
 
@@ -1479,7 +1677,7 @@ pub mod views {
     use crossterm::event::KeyCode;
     use tui::{backend::CrosstermBackend, layout::{Layout, Direction, Constraint, Alignment, Rect}, widgets::{Paragraph, Block, Borders}, text::{Span, Spans}, style::{Style, Modifier, Color}};
 
-    use super::{DefaultFilter, SortOrder, GlobalSettings, DeckSettings};
+    use super::{DefaultFilter, SortOrder};
 
     #[derive(Copy, Clone, PartialEq)]
     pub enum SettingsSection {
@@ -1493,41 +1691,60 @@ pub mod views {
     }
     
     pub enum SettingsExit {
-        SaveGlobal(GlobalSettings),
-        SaveDeck(DeckSettings),
+        Save(Changes),
         Hold,
         Cancel
+    }
+
+    #[derive(PartialEq, Clone)]
+    pub enum TagChange {
+        DeleteTag(String),
+        ChangeTag(String, String),
+        InsertTag(String),
+    }
+
+    pub struct Changes {
+        pub df: DefaultFilter,
+        pub so: SortOrder,
+        pub oir: Option<bool>,
+        pub vtch: Vec<TagChange>,
     }
 
     pub struct SettingsView {
         section: SettingsSection,
         title: String,
         vt: Vec<String>,
+        wt: String,
         vpos: usize,
         tpos: usize,
         df: DefaultFilter,
         ord: SortOrder,
         oir: Option<bool>,
+        vch: Vec<TagChange>,
     }
 
 
     impl SettingsView {
         pub fn new(
-            vt: Vec<String>, 
+            mut vt: Vec<String>, 
             df: DefaultFilter, 
             ord: SortOrder, 
             n: String, 
             oir: Option<bool>) -> SettingsView {
+            vt.sort();
+            vt.push(String::from("{Add new tag}"));
 
             SettingsView {
                 section: SettingsSection::Tags,
                 title: n,
                 vt,
+                wt: String::new(),
                 vpos: 0,
                 tpos: 0,
                 df,
                 ord,
                 oir,
+                vch: Vec::new(),
             }
         }
 
@@ -1547,7 +1764,7 @@ pub mod views {
                             self.df = match self.df {
                                 DefaultFilter::Name => DefaultFilter::Text,
                                 DefaultFilter::Text => DefaultFilter::Name,
-                            }
+                            };
                         },
                         SettingsSection::Ordering => {
                             self.ord = match self.ord {
@@ -1556,6 +1773,44 @@ pub mod views {
                                 SortOrder::CmcAsc => SortOrder::CmcDesc,
                                 SortOrder::CmcDesc => SortOrder::NameAsc,
                             }
+                        },
+                        SettingsSection::OpenIntoRecent => {
+                            if let Some(f) = self.oir {
+                                self.oir = Some(!f);
+                            };
+                        },
+                        SettingsSection::Save => self.section = SettingsSection::Exit,
+                        SettingsSection::Exit => self.section = SettingsSection::Save,
+                    };
+                    SettingsExit::Hold
+                },
+                KeyCode::Left => {
+                    match self.section {
+                        SettingsSection::Tags => { 
+                            if self.vpos == 0 {
+                                self.vpos = self.vt.len() - 1;
+                            } else {
+                                self.vpos -= 1;
+                            }
+                        },
+                        SettingsSection::TagText => {
+                            if self.tpos > 0 {
+                                self.tpos -= 1;
+                            }
+                        },
+                        SettingsSection::DefaultFilter => {
+                            self.df = match self.df {
+                                DefaultFilter::Name => DefaultFilter::Text,
+                                DefaultFilter::Text => DefaultFilter::Name,
+                            };
+                        },
+                        SettingsSection::Ordering => {
+                            self.ord = match self.ord {
+                                SortOrder::NameAsc => SortOrder::NameDesc,
+                                SortOrder::NameDesc => SortOrder::CmcAsc,
+                                SortOrder::CmcAsc => SortOrder::CmcDesc,
+                                SortOrder::CmcDesc => SortOrder::NameAsc,
+                            };
                         },
                         SettingsSection::OpenIntoRecent => {
                             if let Some(f) = self.oir {
@@ -1581,110 +1836,123 @@ pub mod views {
                         SettingsSection::Exit => SettingsSection::Tags,
                     };
                     SettingsExit::Hold
-                }
+                },
+                KeyCode::Up => {
+                    self.section = match self.section {
+                        SettingsSection::Tags => SettingsSection::Save,
+                        SettingsSection::TagText => SettingsSection::TagText,
+                        SettingsSection::DefaultFilter => SettingsSection::Tags,
+                        SettingsSection::Ordering => SettingsSection::DefaultFilter,
+                        SettingsSection::OpenIntoRecent => SettingsSection::Ordering,
+                        SettingsSection::Save => {
+                            if self.oir == None { SettingsSection::Ordering } 
+                            else { SettingsSection::OpenIntoRecent }
+                        },
+                        SettingsSection::Exit => {
+                            if self.oir == None { SettingsSection::Ordering } 
+                            else { SettingsSection::OpenIntoRecent }
+                        },
+                    };
+                    SettingsExit::Hold
+                },
                 KeyCode::Enter => {
                     match self.section {
                         SettingsSection::Tags => {
-                            self.section = SettingsSection::TagText;
+                            if self.vt[self.vpos] != String::from("main") 
+                            || self.vt.iter().filter(|&s| s == &String::from("main")).count() > 1 {
+                                self.section = SettingsSection::TagText;
+                                if self.vpos == self.vt.len() - 1 {
+                                    self.vt[self.vpos] = String::new();
+                                    self.wt = String::new();
+                                } else {
+                                    self.wt = self.vt[self.vpos].clone();
+                                }
+                            }
                             SettingsExit::Hold
                         },
                         SettingsSection::TagText => {
                             self.tpos = 0;
                             self.section = SettingsSection::Tags;
+                            if self.vt[self.vpos].len() == 0 {
+                                self.vt.remove(self.vpos);
+                                self.vch.push(TagChange::DeleteTag(self.wt.clone()));
+                            }
+                            if self.wt.is_empty() {
+                                self.vch.push(TagChange::InsertTag(self.vt[self.vpos].clone()));
+                                self.vt.sort();
+                                self.vt.push(String::from("{Add new tag}"));
+                            } else {
+                                self.vch.push(TagChange::ChangeTag(self.wt.clone(), self.vt[self.vpos].clone()));
+                                let s = self.vt.pop().unwrap();
+                                self.vt.sort();
+                                self.vt.push(s.clone());
+                            }
                             SettingsExit::Hold
                         },
                         SettingsSection::DefaultFilter => SettingsExit::Hold,
                         SettingsSection::Ordering => SettingsExit::Hold,
                         SettingsSection::OpenIntoRecent => SettingsExit::Hold,
                         SettingsSection::Save => {
-                            let ord = match self.ord {
-                                SortOrder::NameAsc => String::from("+name"),
-                                SortOrder::NameDesc => String::from("-name"),
-                                SortOrder::CmcAsc => String::from("+cmc"),
-                                SortOrder::CmcDesc => String::from("-cmc"),
-                            };
-
-                            let df = match self.df {
-                                DefaultFilter::Name => String::from("name"),
-                                DefaultFilter::Text => String::from("text"),
-                            };
-
-                            match self.oir {
-                                Some(oir) => {
-                                    let gs = GlobalSettings {
-                                        tags: self.vt.clone(),
-                                        ordering: ord,
-                                        df,
-                                        version: 1.0,
-                                        recent: 0,
-                                        open_into_recent: oir,
-                                    };
-                                    SettingsExit::SaveGlobal(gs)
-                                },
-                                None => {
-                                    let ds = DeckSettings {
-                                        tags: Some(self.vt.clone()),
-                                        ordering: Some(ord),
-                                        df: Some(df),
-                                    };
-                                    SettingsExit::SaveDeck(ds)
-                                },
-                            }
-                            
+                            let changes = Changes { df: self.df, so: self.ord, oir: self.oir, vtch: self.vch.clone() };
+                            SettingsExit::Save(changes)
                         },
                         SettingsSection::Exit => SettingsExit::Cancel,
                     }
                 },
-                _=> SettingsExit::Hold,
+                KeyCode::Delete => {
+                    match self.section {
+                        SettingsSection::Tags => {
+                            if self.vpos < self.vt.len() - 1
+                            && (self.vt[self.vpos] != String::from("main") 
+                            || self.vt.iter().filter(|&s| s == &String::from("main")).count() > 1) {
+                                self.vch.push(TagChange::DeleteTag(self.vt[self.vpos].clone()));
+                                self.vt.remove(self.vpos);
+                            }
+                        },
+                        SettingsSection::TagText => {
+                            let s = &mut self.vt[self.vpos];
+                            if self.tpos < s.len() {
+                                s.remove(self.tpos);
+                            }
+                        },
+                        _ => {}
+                    }
+                    SettingsExit::Hold
+                },
+                KeyCode::Backspace => {
+                    if self.tpos > 0 {
+                        self.vt[self.vpos].remove(self.tpos - 1);
+                        self.tpos -= 1;
+                    }
+                    SettingsExit::Hold
+                },
+                KeyCode::Char(c) => {
+                    if self.section == SettingsSection::TagText {
+                            if self.vt[self.vpos] != String::from("main") 
+                            || self.vt.iter().filter(|&s| s == &String::from("main")).count() > 1 {
+                                self.vt[self.vpos].insert(self.tpos, c);
+                                self.tpos += 1;
+                            }
+                    }
+                    SettingsExit::Hold
+                },
+                _ => SettingsExit::Hold,
             }
         }
 
         pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
-            let mut vrct = Vec::new();
-            let constraints = [
-                Constraint::Length(4), 
-                Constraint::Length(3), 
-                Constraint::Length(3), 
-                Constraint::Length(3), 
-                // Constraint::Length(3), 
-                Constraint::Length(3)];
-            let mut cut = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(constraints.as_ref())
-                .margin(1)
-                .split(frame.size());
-            let last = cut.pop().unwrap();
-            let buttons = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(10), Constraint::Length(10)].as_ref())
-                .margin(1)
-                .split(last);
-            vrct.append(&mut cut);
-            for r in buttons {
-                vrct.push(Rect {
-                    x: r.x-1,
-                    y: r.y-1,
-                    width: 10,
-                    height: 3,
-                })
-            }
-            // vrct.append(&mut Layout::default()
-            //     .direction(Direction::Horizontal)
-            //     .constraints([Constraint::Length(10), Constraint::Length(10)].as_ref())
-            //     .margin(1)
-            //     .split(last));
-            
             let mut st = self.vt.get(self.vpos).unwrap().clone();
-            let mut vsp: Vec<Span> = self.vt.clone().into_iter().map(|mut s| -> Span {
-                if s == st {
-                    s.push(' ');
-                    let s = Span::styled(s, Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
-                    Span::from(s)
+            let mut vsp = Vec::new();
+            for i in 0..self.vt.len() {
+                let mut s = self.vt[i].clone();
+                s.push(' ');
+                if i == self.vpos {
+                    let span = Span::styled(s, Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan));
+                    vsp.push(Span::from(span));
                 } else {
-                    s.push(' ');
-                    Span::from(s)
+                    vsp.push(Span::from(s));
                 }
-            }).collect();
+            }
             if self.section == SettingsSection::TagText {
                 vsp.remove(self.vpos);
                 st.push(' ');
@@ -1701,8 +1969,10 @@ pub mod views {
                     vsp.insert(self.vpos, s);
                 }
             }
-            let mut ts = Paragraph::new(Spans::from(vsp))
-                .wrap(tui::widgets::Wrap { trim: true })
+            let spans = Spans::from(vsp);
+            let length = spans.width();
+            let mut ts = Paragraph::new(spans)
+                .wrap(tui::widgets::Wrap { trim: false })
                 .block(Block::default().borders(Borders::ALL).title("Tags"));
 
             let dfpt = match self.df {
@@ -1785,6 +2055,37 @@ pub mod views {
                         .border_style(Style::default()
                         .fg(Color::Yellow)));
                 },
+            }
+
+            let theight = 3 + (length as u16 / frame.size().width);
+
+            let mut vrct = Vec::new();
+            let constraints = [
+                Constraint::Length(theight), 
+                Constraint::Length(3), 
+                Constraint::Length(3), 
+                Constraint::Length(3), 
+                // Constraint::Length(3), 
+                Constraint::Length(3)];
+            let mut cut = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(constraints.as_ref())
+                .margin(1)
+                .split(frame.size());
+            let last = cut.pop().unwrap();
+            let buttons = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(10), Constraint::Length(10)].as_ref())
+                .margin(1)
+                .split(last);
+            vrct.append(&mut cut);
+            for r in buttons {
+                vrct.push(Rect {
+                    x: r.x-1,
+                    y: r.y-1,
+                    width: 10,
+                    height: 3,
+                })
             }
 
             frame.render_widget(ts, vrct[0]);

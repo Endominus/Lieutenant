@@ -24,13 +24,14 @@ use tui::widgets::{List, Block, Borders};
 use anyhow::Result;
 use crate::db::{self, CardFilter};
 use crate::util::*;
+use crate::util::views::*;
 
 struct AppState {
     mode: Screen,
     mode_p: Screen,
     title: String,
     deckview: Option<DeckView>,
-    settingsview: Option<views::SettingsView>,
+    settingsview: Option<SettingsView>,
     deck_id: i32,
     deck: Option<Deck>,
     contents: Option<Vec<Card>>,
@@ -49,7 +50,7 @@ struct AppState {
     dirty_cards: Vec<Card>,
     dbc: Arc<Mutex<Connection>>,
     cf: db::CardFilter,
-    config: Settings,
+    settings: Settings,
     quit: bool
 }
 
@@ -60,7 +61,8 @@ struct AppState {
 impl AppState {
     fn new() -> AppState {
         let p = get_local_file("settings.toml", true);
-        let config = Settings::new(&p).unwrap();
+        let file_settings = FileSettings::new(&p).unwrap();
+        let settings = Settings::from(file_settings);
         let p = get_local_file("lieutenant.db", true);
         let conn = Connection::open(p).unwrap();
 
@@ -77,7 +79,7 @@ impl AppState {
             sldc: StatefulList::new(),
             slmm: StatefulList::new(),
             sldbc: StatefulList::new(),
-            slt: StatefulList::with_items(config.get_tags()),
+            slt: StatefulList::with_items(settings.get_tags()),
             stod: OpenDeckTable::default(),
             ac: None,
             mdc: MakeDeckContents::default(),
@@ -90,7 +92,7 @@ impl AppState {
             dirty_cards: Vec::new(),
             dbc: Arc::new(Mutex::new(conn)),
             cf: CardFilter::new(),
-            config
+            settings
         };
 
         app.init_main_menu();
@@ -118,7 +120,7 @@ impl AppState {
                     KeyCode::Enter => { 
                         // TODO: Assign correct deck ID to config
                         if let Some(deck) = self.stod.get() {
-                            self.config.set_recent(deck.id);
+                            self.settings.sr(deck.id);
                             self.dirty_deck = true;
                             self.init_deck_view();
                         };
@@ -148,7 +150,8 @@ impl AppState {
                                                 &name, 
                                                 None,
                                                 "Commander").unwrap();
-                                            self.config.set_recent(did);
+                                            self.settings.sr(did);
+                                            self.settings.id(did);
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view(); 
                                         }
@@ -168,14 +171,7 @@ impl AppState {
                                             self.mode = Screen::Error("Commander name not found in database.\nPlease check spelling and try again.\nPress Enter to continue.");
                                         }
                                     }
-
-                                    // match c {
-                                    //     Err(_) => {
-                                    //         }
-                                    // }
-
                                 }
-                                
                             }
                             MakeDeckFocus::SecondaryCommander => {
                                 if let Some(name) = self.mdc.commander_names.get(0) {
@@ -189,7 +185,8 @@ impl AppState {
                                                 &self.mdc.commander, 
                                                 Some(name.clone()),
                                                 "Commander").unwrap();
-                                            self.config.set_recent(did);
+                                            self.settings.sr(did);
+                                            self.settings.id(did);
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view();
                                         }
@@ -201,7 +198,8 @@ impl AppState {
                                                 &self.mdc.commander, 
                                                 None,
                                                 "Commander").unwrap();
-                                            self.config.set_recent(did);
+                                            self.settings.sr(did);
+                                            self.settings.id(did);
                                             self.mdc = MakeDeckContents::default();
                                             self.init_deck_view();
                                         }
@@ -214,7 +212,7 @@ impl AppState {
                                         &self.mdc.commander, 
                                         None,
                                         "Commander").unwrap();
-                                    self.config.set_recent(did);
+                                    self.settings.sr(did);
                                     self.mdc = MakeDeckContents::default();
                                     self.init_deck_view();
                                 }
@@ -259,7 +257,7 @@ impl AppState {
                         if s.starts_with("Confirm Deletion") {
                             if let Some(deck) = self.stod.remove() {
                                 db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
-                                self.config.remove(deck.id);
+                                self.settings.dd(deck.id);
                             };
                         }
                     }
@@ -270,8 +268,17 @@ impl AppState {
             Screen::Settings => {
                 if let Some(sv) = &mut self.settingsview {
                     match sv.handle_input(c) {
-                        views::SettingsExit::SaveGlobal(_) => todo!(),
-                        views::SettingsExit::SaveDeck(_) => todo!(),
+                        views::SettingsExit::Save(changes) => {
+                            if self.mode_p == Screen::MainMenu {
+                                self.settings.change(changes, None);
+                                self.mode = Screen::MainMenu
+                            } else {
+                                //TODO: Should this call into the deck view? One source of truth for Deck ID?
+                                self.settings.change(changes, Some(self.deck_id));
+                                self.mode_p = Screen::Settings;
+                                self.mode = Screen::DeckView;
+                            }
+                        },
                         views::SettingsExit::Hold => {},
                         views::SettingsExit::Cancel => {
                             if self.mode_p == Screen::DeckView {
@@ -295,7 +302,7 @@ impl AppState {
                         self.mode_p = Screen::DeckView;
                         self.init_settings(Some(did));
                     },
-                    DeckViewExit::NewTag(s, did) => self.config.add_deck_tag(did, s.to_string()),
+                    DeckViewExit::NewTag(s, did) => self.settings.it(Some(did), s.to_string()),
                 }
             },
             
@@ -334,10 +341,10 @@ impl AppState {
     fn init_create_view(&mut self) {}
 
     fn init_deck_view(&mut self) {
-        self.deck_id = self.config.get_recent();
+        self.deck_id = self.settings.rr();
 
         if self.dirty_deck {
-            let ord = self.config.get_sort_order(Some(self.deck_id));
+            let ord = self.settings.rso(Some(self.deck_id));
             self.contents = Some(db::rvcfdid(&self.dbc.lock().unwrap(), self.deck_id, ord).unwrap());
             self.dirty_deck = false;
             self.dirty_cards = Vec::new();
@@ -347,7 +354,7 @@ impl AppState {
 
         // self.deck = Some(db::rdfdid(&self.dbc, self.deck_id).unwrap());
         self.deck = Some(db::rdfdid(&self.dbc.lock().unwrap(), self.deck_id).unwrap());
-        self.slt = StatefulList::with_items(self.config.get_tags_deck(self.deck_id));
+        self.slt = StatefulList::with_items(self.settings.get_tags_deck(self.deck_id));
         self.slt.next();
 
         if let Some(c) = self.sldc.get_string() {
@@ -357,15 +364,15 @@ impl AppState {
             self.ac = None;
         }
 
-        let ord = self.config.get_sort_order(Some(self.deck_id));
-        let df = self.config.get_default_filter(self.deck_id);
+        let ord = self.settings.rso(Some(self.deck_id));
+        let df = self.settings.rdf(Some(self.deck_id));
 
         self.cf = CardFilter::from(self.deck_id, &self.deck.as_ref().unwrap().color, df, ord);
         
         self.deckview = Some(DeckView::new(
             self.deck_id, 
             &self.dbc.lock().unwrap(), 
-            self.config.get_tags_deck(self.deck_id),
+            self.settings.get_tags_deck(self.deck_id),
             df,
             ord
         ));
@@ -376,16 +383,16 @@ impl AppState {
         let sv = match odid {
             Some(did) => {
                 views::SettingsView::new(
-                    self.config.get_tags_deck(did), 
-                    self.config.get_default_filter(did), 
-                    self.config.get_sort_order(Some(did)), 
+                    self.settings.get_tags_deck(did), 
+                    self.settings.rdf(Some(did)), 
+                    self.settings.rso(Some(did)), 
                     String::from("Deck Settings"), None)
             },
             None => { 
                 views::SettingsView::new(
-                    self.config.get_tags(), 
-                    self.config.get_default_filter(-1), 
-                    self.config.get_sort_order(None), 
+                    self.settings.get_tags(), 
+                    self.settings.rdf(None), 
+                    self.settings.rso(None), 
                     String::from("Global Settings"), Some(false))
             },
         };
@@ -403,7 +410,7 @@ impl AppState {
 
     fn init_main_menu(&mut self) {
         let mut items = Vec::new();
-        if self.config.get_recent() > 0 { items.push(MainMenuItem::from_with_screen(String::from("Load most recent deck"), Screen::DeckView)); }
+        if self.settings.rr() > 0 { items.push(MainMenuItem::from_with_screen(String::from("Load most recent deck"), Screen::DeckView)); }
         items.push(MainMenuItem::from_with_screen(String::from("Create a new deck"), Screen::MakeDeck));
         items.push(MainMenuItem::from_with_screen(String::from("Load a deck"), Screen::OpenDeck));
         items.push(MainMenuItem::from_with_screen(String::from("Settings"), Screen::Settings));
@@ -808,7 +815,7 @@ pub fn run() -> Result<()> {
     let mut p = env::current_exe().unwrap();
     p.pop();
     p.push("settings.toml");
-    std::fs::write(p, state.config.to_toml()).unwrap();
+    std::fs::write(p, state.settings.to_toml()).unwrap();
 
     disable_raw_mode()?;
     execute!(

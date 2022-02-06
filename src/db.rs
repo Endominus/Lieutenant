@@ -143,7 +143,7 @@ WHERE deck_contents.deck = {}", self.did)
                     DefaultFilter::Text => "card_text",
                 };
                 let error = omni.replace("\"", "");
-                filters += &String::from(format!("\nAND {default} LIKE \'%{error}%\'"));
+                filters += &String::from(format!("\nAND {default} LIKE \"%{error}%\""));
             }
         }
 
@@ -286,9 +286,9 @@ WHERE deck_contents.deck = {}", self.did)
                 }
     
                 let (field, comparison, capture) = match mode {
-                    FilterField::Name => ("name", "LIKE", format!("\'%{a}%\'")),
-                    FilterField::Text => ("card_text", "LIKE", format!("\'%{a}%\'")),
-                    FilterField::Type => ("types", "LIKE", format!("\'%{a}%\'")),
+                    FilterField::Name => ("name", "LIKE", format!("\"%{a}%\"")),
+                    FilterField::Text => ("card_text", "LIKE", format!("\"%{a}%\"")),
+                    FilterField::Type => ("types", "LIKE", format!("\"%{a}%\"")),
                     FilterField::Tag => ("tags", "REGEXP", format!(r#"'\|?{a}(?:$|\|)'"#)),
                     _ => ("", "", String::new())
                 };
@@ -337,12 +337,6 @@ WHERE deck_contents.deck = {}", self.did)
                 }
             },
             Rule::color_val => {
-                let field = match mode {
-                    FilterField::Color => "mana_cost",
-                    FilterField::Identity => "color_identity",
-                    _ => "",
-                };
-    
                 let mut a = p.as_str();
                 let mut req = ">";
                 if let Some(i) = p.into_inner().next() {
@@ -351,14 +345,30 @@ WHERE deck_contents.deck = {}", self.did)
                         a = a.trim_start_matches('!');
                     }
                 }
-    
-                if a == "c" {
-                    if req == ">" {
-                        return String::from("color_identity = \'\'")
-                    } else {
-                        return String::from("color_identity != \'\'")
-                    }
-                }
+                
+                let field = match mode {
+                    FilterField::Color => {
+                        if a == "c" {
+                            if req == ">" {
+                                return String::from("mana_cost NOT REGEXP \'[WUBRG]+\'")
+                            } else {
+                                return String::from("mana_cost REGEXP \'[WUBRG]+\'")
+                            }
+                        }
+                        "mana_cost"
+                    },
+                    FilterField::Identity => {
+                        if a == "c" {
+                            if req == ">" {
+                                return String::from("color_identity = \'\'")
+                            } else {
+                                return String::from("color_identity != \'\'")
+                            }
+                        }
+                        "color_identity"
+                    },
+                    _ => "",
+                };
     
                 s = format!("instr({}, \'{}\') {} 0", field, a.to_uppercase(), req);
             },
@@ -418,7 +428,7 @@ fn parse_args(column: &str, mode: ParseMode, items: &String) -> String {
     let mut v_or_conditions = Vec::new();
     
     let p = match &mode {
-        ParseMode::Text =>  { "{:col} {:req} \'%{:item}%\'" }
+        ParseMode::Text =>  { "{:col} {:req} \"%{:item}%\"" }
         ParseMode::Tags =>  { r#"{:col} {:req} '\|?{:item}(?:$|\|)'"# }
         ParseMode::Color => { "instr({:col}, '{:item}') {:req} 0" }
     };
@@ -1110,7 +1120,7 @@ FROM `cards`
 pub fn rvcnfcf(conn: &Connection, query: &String) -> Result<Vec<String>> {
     let fields = "name";
     let qs = format!("SELECT {}
-FROM `cards`
+FROM cards
 {}", fields, query);
     let mut stmt = conn.prepare(& qs).expect("issue with filter string");
 
@@ -1126,12 +1136,12 @@ pub fn rvcnfn(conn: &Connection, n: &String) -> Result<Vec<String>> {
         return Ok(Vec::new())
     }
     let query = format!("
-        SELECT name
-        FROM cards
-        WHERE name LIKE \'%{}%\'
-        AND types LIKE \'Legendary%\'
-        AND (types LIKE \'%Creature%\' OR card_text LIKE \'%can be your commander%\')
-        ORDER BY name ASC;", n);
+SELECT name
+FROM cards
+WHERE name LIKE \"%{}%\"
+AND types LIKE \'Legendary%\'
+AND (types LIKE \'%Creature%\' OR card_text LIKE \'%can be your commander%\')
+ORDER BY name ASC;", n);
     let mut stmt = conn.prepare(query.as_str())?;
 
     let a = stmt.query_map([], 
