@@ -1153,14 +1153,17 @@ ORDER BY name ASC;", n);
 }
 
 pub fn rvcnfnp(conn: &Connection, n: &String) -> Result<Vec<String>> {
+    if n.len() == 0 {
+        return Ok(Vec::new())
+    }
     let query = format!("
-        SELECT name
-        FROM cards
-        WHERE name LIKE '%{}%'
-        AND types LIKE 'Legendary%'
-        AND card_text LIKE '%Partner%'
-        AND (types LIKE '%Creature%' OR card_text LIKE '%can be your commander%')
-        ORDER BY name ASC;", n);
+SELECT name
+FROM cards
+WHERE name LIKE \"%{}%\"
+AND types LIKE 'Legendary%'
+AND card_text LIKE '%Partner%'
+AND (types LIKE '%Creature%' OR card_text LIKE '%can be your commander%')
+ORDER BY name ASC;", n);
     let mut stmt = conn.prepare(query.as_str())?;
 
     let a = stmt.query_map([], 
