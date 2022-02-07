@@ -32,8 +32,8 @@ const DB_FILE: &str = "lieutenant.db";
 pub struct CardFilter {
     pub did: i32,
     color: String,
-    df: DefaultFilter, 
-    so: SortOrder,
+    pub df: DefaultFilter, 
+    pub so: SortOrder,
 }
 
 #[derive(Parser)]

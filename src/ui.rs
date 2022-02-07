@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-// use config::Config;
 use crate::db;
 use crate::util::views::*;
 use crate::util::*;
@@ -40,10 +39,6 @@ struct AppState {
     settings: Settings,
     quit: bool,
 }
-
-// struct WidgetOwner<'a> {
-//     odt: Option<Table<'a>>
-// }
 
 impl AppState {
     fn new() -> AppState {
@@ -102,7 +97,6 @@ impl AppState {
                         self.stod.next();
                     }
                     KeyCode::Enter => {
-                        // TODO: Assign correct deck ID to config
                         if let Some(deck) = self.stod.get() {
                             self.settings.sr(deck.id);
                             self.init_deck_view();
@@ -119,18 +113,20 @@ impl AppState {
                 if let Some(cdv) = &mut self.create_deck_view {
                     let mut flag = false;
                     match cdv.handle_input(c, &self.dbc.lock().unwrap()) {
-                        ViewExit::Save(_) => {},
+                        ViewExit::Save(_) => {}
                         ViewExit::NewDeck(did) => {
                             self.settings.sr(did);
                             self.settings.id(did);
                             flag = true;
-                        },
-                        ViewExit::Hold => {},
+                        }
+                        ViewExit::Hold => {}
                         ViewExit::Cancel => self.mode = Screen::MainMenu,
                     }
-                    if flag { self.init_deck_view(); }
+                    if flag {
+                        self.init_deck_view();
+                    }
                 }
-            },
+            }
             Screen::DeckStat => {
                 self.mode = Screen::DeckView;
             }
@@ -158,6 +154,7 @@ impl AppState {
                             } else {
                                 //TODO: Should this call into the deck view? One source of truth for Deck ID?
                                 self.settings.change(changes, Some(self.did));
+                                self.deck_view.as_mut().unwrap().ucf();
                                 self.mode_p = Screen::Settings;
                                 self.mode = Screen::DeckView;
                             }
@@ -225,15 +222,10 @@ impl AppState {
     fn init_deck_view(&mut self) {
         self.did = self.settings.rr();
 
-        let ord = self.settings.rso(Some(self.did));
-        let df = self.settings.rdf(Some(self.did));
-
         self.deck_view = Some(DeckView::new(
             self.did,
             &self.dbc.lock().unwrap(),
-            self.settings.get_tags_deck(self.did),
-            df,
-            ord,
+            self.settings.rds(self.did),
         ));
         self.mode = Screen::DeckView;
     }
@@ -262,9 +254,6 @@ impl AppState {
     fn init_open_view(&mut self) {
         self.mode = Screen::OpenDeck;
         self.stod.init(&self.dbc.lock().unwrap());
-        // let vd = db::rvd(&self.dbc).unwrap();
-        // self.slod = StatefulList::with_items(vd);
-        // self.slod.next();
     }
 
     fn init_main_menu(&mut self) {
@@ -291,11 +280,6 @@ impl AppState {
 
         self.slmm = StatefulList::with_items(items);
         self.slmm.next();
-    }
-
-    //TODO: See about refactoring away?
-    pub fn rvli(&self) -> Vec<ListItem> {
-        self.slmm.rvli()
     }
 
     //TODO: See about refactoring away?
@@ -613,36 +597,7 @@ fn draw<'a>(
             Screen::MainMenu | Screen::OpenDeck => Layout::default()
                 .constraints([Constraint::Percentage(100)])
                 .split(f.size()),
-            Screen::MakeDeck => {
-                // let mut vrct = Vec::new();
-                // let cut = Layout::default()
-                //     .direction(Direction::Vertical)
-                //     .constraints([Constraint::Length(3), Constraint::Length(3)])
-                //     .split(f.size());
-                // vrct.push(cut[0]);
-
-                // let cut = Layout::default()
-                //     .direction(Direction::Horizontal)
-                //     .constraints([Constraint::Length(26), Constraint::Min(18)])
-                //     .split(cut[1]);
-                // vrct.push(cut[1]);
-
-                // vrct.append(
-                //     &mut Layout::default()
-                //         .direction(Direction::Vertical)
-                //         .constraints(
-                //             [
-                //                 Constraint::Length(3),
-                //                 Constraint::Length(3),
-                //                 Constraint::Length(3),
-                //             ]
-                //             .as_ref(),
-                //         )
-                //         .split(cut[0]),
-                // );
-                // vrct
-                Vec::new()
-            }
+            Screen::MakeDeck => Vec::new(),
             Screen::Error(_) => Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
@@ -687,7 +642,7 @@ fn draw<'a>(
 
         match state.mode {
             Screen::MainMenu => {
-                let list = List::new(state.rvli())
+                let list = List::new(state.slmm.rvli())
                     .block(Block::default().title("Main Menu").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White))
                     .highlight_style(
@@ -714,27 +669,9 @@ fn draw<'a>(
                 let err_message = Paragraph::new(message)
                     .block(Block::default().borders(Borders::ALL).title(title));
                 let area = centered_rect(60, f.size());
-                // f.render_widget(Clear, area); //Not necessary because we clear the full screen anyway on every input.
                 f.render_widget(err_message, area);
             }
             Screen::MakeDeck => {
-                // let mds = MakeDeckScreen::new(&state.mdc);
-                // let list = List::new(mds.potential_commanders.rvli())
-                //     .block(Block::default().title("Open Deck").borders(Borders::ALL))
-                //     .style(Style::default().fg(Color::White))
-                //     .highlight_style(
-                //         Style::default()
-                //             .add_modifier(Modifier::BOLD)
-                //             .fg(Color::Cyan),
-                //     );
-                // f.render_widget(mds.title_entry, chunks[0]);
-                // f.render_stateful_widget(
-                //     list,
-                //     chunks[1],
-                //     &mut mds.potential_commanders.state.clone(),
-                // );
-                // f.render_widget(mds.commander_entry, chunks[2]);
-                // f.render_widget(mds.commander2_entry, chunks[3]);
                 state.render(f)
             }
             Screen::DeckStat => {
