@@ -78,6 +78,8 @@ pub fn run(command: Command) -> Result<()> {
             let mut settings = Settings::from(file_settings);
 
             let mut cards = Vec::new();
+            let mut tags = Vec::new();
+
             if let Some(ext) = filename.extension() {
                 match ext.to_str().unwrap() {
                     "txt" => {
@@ -113,23 +115,22 @@ pub fn run(command: Command) -> Result<()> {
                                 }
                             }
                         }
+                        for ic in &cards {
+                            if let Some(s) = &ic.tags {
+                                let vs = s.split('|');
+                                for tag in vs {
+                                    if !tags.contains(&String::from(tag)) && !tag.is_empty() {
+                                        tags.push(String::from(tag));
+                                    }
+                                }
+                            }
+                        }
                     }
                     _ => {
                         println!("Wrong extension; imports will only work from txt and csv files.")
                     }
                 }
-
-                let mut tags = Vec::new();
-                for ic in &cards {
-                    if let Some(s) = &ic.tags {
-                        let vs = s.split('|');
-                        for tag in vs {
-                            if !tags.contains(&String::from(tag)) && !tag.is_empty() {
-                                tags.push(String::from(tag));
-                            }
-                        }
-                    }
-                }
+                
                 let did = db::import_deck(&conn, deck_name, commanders, cards)?;
                 settings.id(did);
                 for tag in tags { settings.it(Some(did), tag); }
