@@ -25,6 +25,7 @@ extern crate pest_derive;
 use chrono::Datelike;
 use crate::db::CardFilter;
 use crate::network::rvjc;
+use crate::util::*;
 
 use std::{fs::File, path::PathBuf, io::{BufReader, BufRead}};
 use rusqlite::Connection;
@@ -72,6 +73,9 @@ pub fn run(command: Command) -> Result<()> {
         Command::ImportDeck(deck_name, commanders, filename) => {
             let p = util::get_local_file("lieutenant.db", true);
             let conn = Connection::open(p).unwrap();
+            let p = util::get_local_file("settings.toml", true);
+            let file_settings = FileSettings::new(&p).unwrap();
+            let mut settings = Settings::from(file_settings);
 
             let mut cards = Vec::new();
             if let Some(ext) = filename.extension() {
@@ -115,10 +119,22 @@ pub fn run(command: Command) -> Result<()> {
                     }
                 }
 
-                db::import_deck(&conn, deck_name, commanders, cards)?;
+                let mut tags = Vec::new();
+                for ic in &cards {
+                    if let Some(s) = &ic.tags {
+                        let vs = s.split('|');
+                        for tag in vs {
+                            if !tags.contains(&String::from(tag)) && !tag.is_empty() {
+                                tags.push(String::from(tag));
+                            }
+                        }
+                    }
+                }
+                let did = db::import_deck(&conn, deck_name, commanders, cards)?;
+                settings.id(did);
+                for tag in tags { settings.it(Some(did), tag); }
+                std::fs::write(p, settings.to_toml()).unwrap();
             };
-
-            // Ok(())
         }
         Command::ExportDeck(did, path) => {
             let p = util::get_local_file("lieutenant.db", false);
@@ -132,7 +148,7 @@ pub fn run(command: Command) -> Result<()> {
             if let Some(c) = deck.commander2 {
                 let i = cards.iter().position(|ic| ic.name == c.name).unwrap();
                 let ic = cards.remove(i);
-                cards.insert(0, ic);
+                cards.insert(1, ic);
             }
 
             let p = match path {

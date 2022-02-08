@@ -741,12 +741,7 @@ pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
     r.push(rcfn(conn, &c.name, None).unwrap());
     
     match &c.lo {
-        CardLayout::Flip(_, n) | 
-        CardLayout::Split(_, n) | 
-        CardLayout::ModalDfc(_, n) | 
-        CardLayout::Aftermath(_, n) | 
-        CardLayout::Adventure(_, n) | 
-        CardLayout::Transform(_, n) => { 
+        CardLayout::Paired(_, _, n) => { 
             stmt.execute(named_params!{":card_name": n, ":deck_id": did as u32} )?;
             r.push(rcfn(conn, n, None).unwrap());
         }
@@ -786,12 +781,7 @@ pub fn ttindc(conn: &Connection, c: &String, t: &String, did: i32) -> Option<Car
     let mut card = rcfndid(conn, c, did).unwrap();
     let cc = if t.eq(&String::from("main")) || t.eq(&String::from("main")) {
         match &card.lo {
-            CardLayout::Adventure(_, n) | 
-            CardLayout::Aftermath(_, n) | 
-            CardLayout::Flip(_, n) | 
-            CardLayout::ModalDfc(_, n) | 
-            CardLayout::Split(_, n) | 
-            CardLayout::Transform(_, n) => { 
+            CardLayout::Paired(_, _, n) => { 
                 Some(rcfndid(conn, n, did).unwrap())
             },
             _ => { None }
@@ -866,7 +856,7 @@ pub fn ideck(conn: &Connection, n: &String, c: &String, c2: Option<String>, t: &
     }
 }
 
-pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, cards: Vec<ImportCard>) -> Result<()> {
+pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, cards: Vec<ImportCard>) -> Result<i32> {
     let mut num = 0;
     let (primary, secondary) = match coms.len() {
         0 => { 
@@ -907,7 +897,7 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
                 }
                 CommanderType::Invalid  => { 
                     println!("No valid commander found! Please ensure you pass in your commander name or include it at the top of the import file.");
-                    return Ok(())
+                    return Err(rusqlite::Error::QueryReturnedNoRows);
                 }
             }
         }
@@ -932,7 +922,7 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
             } else {
                 match rcfn(conn, &c, None) {
                     Ok(a) => { a }
-                    Err(_) => { println!("Error on card {}", c); return Ok(()) }
+                    Err(_) => { println!("Error on card {}", c); return Err(rusqlite::Error::InvalidQuery) }
                 }
             };
             let mut disq = "";
@@ -954,10 +944,11 @@ pub fn import_deck(conn: &Connection, deck_name: String, coms: Vec<String>, card
             }
         }
         conn.execute_batch("COMMIT TRANSACTION;")?;
+        println!("Added {} cards to deck {}", num, deck_name);
+        return Ok(deck_id)
     };
-    println!("Added {} cards to deck {}", num, deck_name);
 
-    Ok(())
+    Err(rusqlite::Error::InvalidQuery)
 }
 
 pub fn rcfn(conn: &Connection, name: &String, odid: Option<i32>) -> Result<Card> {
@@ -1200,17 +1191,32 @@ fn cfr(row:& Row) -> Result<Card> {
                 "adventure" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    CardLayout::Adventure(side, rel)    
+                    if side == 'a' {
+                        CardLayout::Paired(side, String::from("Also has Adventure"), rel)
+
+                    } else {
+                        CardLayout::Paired(side, String::from("Adventure of"), rel)
+                    }
                 }
                 "aftermath" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    CardLayout::Aftermath(side, rel)    
+                    if side == 'a' {
+                        CardLayout::Paired(side, String::from("Also has Aftermath"), rel)
+
+                    } else {
+                        CardLayout::Paired(side, String::from("Aftermath of"), rel)
+                    }
                 }
                 "flip" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    CardLayout::Flip(side, rel)    
+                    if side == 'a' {
+                        CardLayout::Paired(side, String::from("Also has Flip side"), rel)
+
+                    } else {
+                        CardLayout::Paired(side, String::from("Flip side of"), rel)
+                    }
                 }
                 "leveler" => { CardLayout::Leveler }
                 "meld" => { 
@@ -1223,19 +1229,29 @@ fn cfr(row:& Row) -> Result<Card> {
                 "modal_dfc" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    CardLayout::ModalDfc(side, rel)    
+                    if side == 'a' {
+                        CardLayout::Paired(side, String::from("Modal Face. You may instead cast"), rel)
+
+                    } else {
+                        CardLayout::Paired(side, String::from("Modal Back. You may instead cast"), rel)
+                    }
                 }
                 "normal" => { CardLayout::Normal }
                 "saga" => { CardLayout::Saga }
                 "split" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    CardLayout::Split(side, rel)    
+                        CardLayout::Paired(side, String::from("You may instead cast"), rel)
                 }
                 "transform" => {
                     let rel = row.get::<usize, String>(11)?;
                     let side = row.get::<usize, String>(12)?.chars().next().unwrap();
-                    CardLayout::Transform(side, rel)
+                    if side == 'a' {
+                        CardLayout::Paired(side, String::from("Transforms into"), rel)
+
+                    } else {
+                        CardLayout::Paired(side, String::from("Transforms from"), rel)
+                    }
                 }
                 _ => { CardLayout::Normal }
             }
@@ -1368,12 +1384,7 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
 pub fn upfcn_quick(conn: &Connection, cn: &String) {
     let c = rcfn(conn, cn, None).unwrap();
     let s = match c.lo {
-        CardLayout::Adventure(_, rel) 
-        | CardLayout::Aftermath(_, rel) 
-        | CardLayout::Flip(_, rel) 
-        | CardLayout::ModalDfc(_, rel) 
-        | CardLayout::Split(_, rel) 
-        | CardLayout::Transform(_, rel) => format!("{} // {}", cn, rel),
+        CardLayout::Paired(_, _, rel) => format!("{} // {}", cn, rel),
         _ => cn.clone()
     };
 
@@ -1388,12 +1399,7 @@ pub fn upfcn_quick(conn: &Connection, cn: &String) {
 
 pub fn upfcn_detailed(conn: &Connection, c: &Card, odid: Option<i32>) -> Result<Card> {
     let s = match &c.lo {
-        CardLayout::Adventure(_, rel) 
-        | CardLayout::Aftermath(_, rel) 
-        | CardLayout::Flip(_, rel) 
-        | CardLayout::ModalDfc(_, rel) 
-        | CardLayout::Split(_, rel) 
-        | CardLayout::Transform(_, rel) => format!("{} // {}", &c.name, rel),
+        CardLayout::Paired(_, _, rel) => format!("{} // {}", &c.name, rel),
         _ => c.name.clone()
     };
 

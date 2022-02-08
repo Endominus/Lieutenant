@@ -177,7 +177,7 @@ impl AppState {
                     .deck_view
                     .as_mut()
                     .unwrap()
-                    .handle_input(c, &self.dbc.lock().unwrap());
+                    .handle_input(c);
                 match a {
                     DeckViewExit::Hold => {}
                     DeckViewExit::MainMenu => self.mode = Screen::MainMenu,
@@ -224,8 +224,8 @@ impl AppState {
 
         self.deck_view = Some(DeckView::new(
             self.did,
-            &self.dbc.lock().unwrap(),
             self.settings.rds(self.did),
+            self.dbc.clone(),
         ));
         self.mode = Screen::DeckView;
     }
