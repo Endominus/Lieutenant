@@ -12,33 +12,6 @@ fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
     
     results
 }
-// #[derive(Deserialize, Debug)]
-// pub struct Sets {
-//     pub sets: Vec<crate::db::Set>,
-// }
-
-// #[derive(Deserialize)]
-// pub struct Cards {
-//     cards: Vec<crate::Card>,
-//     // meta: i8
-// }
-
-// pub fn retrieve_card_by_name(name: String) -> Result<Vec<JsonCard>> {
-//     let url = format!("https://api.magicthegathering.io/v1/cards?name=\"{}\"", name);
-//     rvc(url, 1)
-//     // todo!()
-// }
-
-// pub fn rcs(s: &crate::db::Set) -> Vec<JsonCard> {
-//     let url = format!("https://api.magicthegathering.io/v1/cards?set={}&legality=Commander", s.code);
-//     let c = match rvc(url, 1) {
-//         Ok(vc) => { vc }
-//         Err(_) => { Vec::new() }
-//     };
-
-//     c
-//     // todo!()
-// }
 
 pub fn rvs() -> Result<Vec<Set>> {
     let mut sets = Vec::new();
@@ -74,24 +47,6 @@ pub fn rvjc(set_code: &String) -> Result<Vec<JsonCard>> {
     }
     Ok(vjc)
 }
-
-// fn rvc(url: String, page: i8) -> Result<Vec<JsonCard>> {
-//     let url = format!("{url}&page={page}", url = url, page = page);
-//     let res = get(&url)?;
-
-//     // let mut cards = res.json::<Cards>()?;
-//     let mut cards = res.json::<Vec<JsonCard>>()?;
-
-    
-//     if cards.len() == 100 {
-//         // println!("Found {}, going to next page", cards.len());
-//         thread::sleep(time::Duration::from_secs(1));
-//         cards.append(&mut rvc(url, page+1).unwrap());
-//     }
-    
-//     Ok(cards)
-//     // todo!()
-// }
 
 pub fn rcostfcn(cn: &String, prev: Option<f64>) -> Result<f64> {
     let api = format!("https://api.scryfall.com/cards/search?q=name=%22{}%22", cn);

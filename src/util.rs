@@ -11,14 +11,12 @@ use tui::{
     },
 };
 
-// use crate::db::{dcntodc, rcfn, rvcnfcf, ttindc, CardFilter};
 use config::{Config, ConfigError};
 use itertools::Itertools;
 use serde::Deserialize;
 use serde_derive::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
-// use std::convert::TryInto;
 use std::{collections::HashMap, env, path::PathBuf};
 
 use self::views::Changes;
@@ -219,6 +217,14 @@ impl FileSettings {
 impl Settings {
     pub fn get_tags(&self) -> Vec<String> {
         self.global.tags.clone()
+    }
+
+    pub fn get_oir(&self) -> Option<i32> {
+        if self.global.open_into_recent && self.global.recent > 0 {
+            Some(self.global.recent)
+        } else {
+            None
+        }
     }
 
     pub fn get_tags_deck(&self, did: i32) -> Vec<String> {
@@ -1019,6 +1025,7 @@ pub struct CardStat {
     pub tags: Vec<String>,
     pub types: String,
     pub price: f64,
+    pub stale: bool,
 }
 
 #[derive(Clone)]
@@ -1039,12 +1046,15 @@ impl ToString for Deck {
 pub mod views {
     use crossterm::event::KeyCode;
     use rusqlite::Connection;
+    use tui::widgets::Wrap;
+    use std::cmp::Ordering;
     use std::rc::Rc;
     use std::{
         cell::RefCell,
         convert::TryInto,
         sync::{Arc, Mutex},
     };
+    use tui::layout::Margin;
     use tui::{
         backend::CrosstermBackend,
         layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -1056,6 +1066,17 @@ pub mod views {
     use crate::db::*;
 
     use super::*;
+
+    // const TYPES: Vec<&str> = vec![
+    //     "Artifact",
+    //     "Creature",
+    //     "Enchantment",
+    //     "Instant",
+    //     "Land",
+    //     "Legendary",
+    //     "Planeswalker",
+    //     "Sorcery",
+    // ];
 
     fn centered_rect(percent_x: u16, r: Rect) -> Rect {
         let popup_layout = Layout::default()
@@ -1069,7 +1090,7 @@ pub mod views {
                 .as_ref(),
             )
             .split(r);
-    
+
         Layout::default()
             .direction(Direction::Horizontal)
             .constraints(
@@ -1188,6 +1209,18 @@ pub mod views {
         decks: Vec<Deck>,
         state: TableState,
         deleting: bool,
+    }
+
+    pub struct DeckStatView {
+        cmc_data: Vec<u64>,
+        price_data: Vec<(String, f64)>,
+        type_data: Vec<u64>,
+        tag_data: Vec<(String, u64)>,
+        color_data: HashMap<String, usize>,
+        recommendations: Vec<String>,
+        dbc: Arc<Mutex<Connection>>,
+        did: i32,
+        fresh: bool,
     }
 
     impl SettingsView {
@@ -1592,8 +1625,10 @@ pub mod views {
                 }
             }
 
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(self.title.clone());
             let theight = 3 + (length as u16 / frame.size().width);
-
             let mut vrct = Vec::new();
             let constraints = [
                 Constraint::Length(theight),
@@ -1606,7 +1641,10 @@ pub mod views {
                 .direction(Direction::Vertical)
                 .constraints(constraints.as_ref())
                 .margin(1)
-                .split(frame.size());
+                .split(frame.size().inner(&Margin {
+                    vertical: 0,
+                    horizontal: 0,
+                }));
             let last = cut.pop().unwrap();
             let buttons = Layout::default()
                 .direction(Direction::Horizontal)
@@ -1623,6 +1661,7 @@ pub mod views {
                 })
             }
 
+            frame.render_widget(block, frame.size());
             frame.render_widget(ts, vrct[0]);
             frame.render_widget(dfp, vrct[1]);
             frame.render_widget(ordp, vrct[2]);
@@ -1966,9 +2005,9 @@ pub mod views {
                 KeyCode::Delete => {
                     if self.state.selected().is_some() {
                         self.deleting = true;
-                        return OpenDeckViewExit::Hold
+                        return OpenDeckViewExit::Hold;
                     }
-                },
+                }
                 KeyCode::Enter => {
                     if self.deleting {
                         self.deleting = false;
@@ -1982,7 +2021,7 @@ pub mod views {
                             return OpenDeckViewExit::OpenDeck(did);
                         }
                     }
-                },
+                }
                 KeyCode::Esc => return OpenDeckViewExit::Cancel,
                 _ => {}
             }
@@ -2018,13 +2057,13 @@ pub mod views {
             }
             let a = self.state.selected().unwrap();
             let d = self.decks.remove(a);
-    
+
             if self.decks.len() == 0 {
                 self.state = TableState::default();
             } else if self.decks.len() == a {
                 self.state.select(Some(a - 1));
             }
-    
+
             Some(d)
         }
 
@@ -2460,6 +2499,10 @@ pub mod views {
             }
         }
 
+        pub fn rdid(&self) -> i32 {
+            self.cf.did
+        }
+
         pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
             let tag_max = self
                 .settings
@@ -2645,6 +2688,373 @@ pub mod views {
 
             self.ac =
                 Some(crate::db::rcfn(&self.dbc.lock().unwrap(), cn, Some(self.cf.did)).unwrap());
+        }
+    }
+
+    impl DeckStatView {
+        pub fn new(dbc: Arc<Mutex<Connection>>, did: i32) -> Self {
+            let mut vtype = vec![0; 8];
+            let mut vcmc = vec![0; 8];
+            let mut hm_colors = HashMap::new();
+            let mut hm_tag: HashMap<String, u64> = HashMap::new();
+            let mut price_data = Vec::new();
+            let mut fresh = true;
+            let mut recommendations = Vec::new();
+
+            let mut nonlands = 0;
+            let mut total_cmc: u16 = 0;
+            let mut hm_costs = HashMap::new();
+
+            let vcs = rvmcfd(&dbc.lock().unwrap(), did).unwrap();
+
+            for c in vcs {
+                total_cmc += c.cmc as u16;
+                if let Some(i) = hm_costs.get_mut(&c.cmc) {
+                    *i += 1;
+                } else {
+                    hm_costs.insert(c.cmc, 1);
+                }
+                if !c.types.contains("Land") {
+                    nonlands += 1;
+                }
+                // TODO: Add check for legalities after adding them to CardStat
+
+                for ch in c.mana_cost.chars() {
+                    if ['W', 'U', 'B', 'R', 'G', 'C', 'X'].contains(&ch) {
+                        if let Some(i) = hm_colors.get_mut(&ch) {
+                            *i += 1;
+                        } else {
+                            hm_colors.insert(ch, 1);
+                        }
+                    }
+                }
+
+                for t in c.types.clone().split(" ") {
+                    match t {
+                        "Artifact" => vtype[0] += 1,
+                        "Creature" => vtype[1] += 1,
+                        "Enchantment" => vtype[2] += 1,
+                        "Instant" => vtype[3] += 1,
+                        "Land" => vtype[4] += 1,
+                        "Legendary" => vtype[5] += 1,
+                        "Planeswalker" => vtype[6] += 1,
+                        "Sorcery" => vtype[7] += 1,
+                        _ => {}
+                    }
+                }
+
+                match c.cmc {
+                    0 => {
+                        if !c.types.contains("Land") {
+                            vcmc[0] += 1;
+                        }
+                    }
+                    1 => vcmc[1] += 1,
+                    2 => vcmc[2] += 1,
+                    3 => vcmc[3] += 1,
+                    4 => vcmc[4] += 1,
+                    5 => vcmc[5] += 1,
+                    6 => vcmc[6] += 1,
+                    _ => vcmc[7] += 1,
+                }
+
+                for tag in c.tags {
+                    if let Some(v) = hm_tag.get_mut(&tag) {
+                        let a: u64 = v.checked_add(1).unwrap();
+                        hm_tag.insert(tag, a);
+                    } else {
+                        hm_tag.insert(tag, 1);
+                    }
+                }
+
+                price_data.push((c.name.clone(), c.price));
+                if c.stale {
+                    fresh = false;
+                }
+            }
+            hm_tag.remove_entry(&String::from("main"));
+            let mut tag_data = Vec::new();
+            for (k, v) in hm_tag {
+                tag_data.push((k.clone(), v));
+            }
+
+            tag_data.sort_by(|a, b| {
+                let o = b.1.cmp(&a.1);
+                if o == Ordering::Equal {
+                    return a.0.cmp(&b.0);
+                }
+                o
+            });
+            price_data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+            let mut color_data = HashMap::new();
+            hm_colors.drain().for_each(|(c, v)| {
+                if v > 0 {
+                    match c {
+                        'W' => color_data.insert(String::from("White"), v),
+                        'U' => color_data.insert(String::from("Blue"), v),
+                        'B' => color_data.insert(String::from("Black"), v),
+                        'R' => color_data.insert(String::from("Red"), v),
+                        'G' => color_data.insert(String::from("Green"), v),
+                        'C' => color_data.insert(String::from("Colorless"), v),
+                        _ => color_data.insert(String::from("Variable"), v),
+                    };
+                }
+            });
+
+            if nonlands < 60 {
+                recommendations.push(format!(
+                    "Only {} nonland cards in deck! Consider adding more.",
+                    nonlands
+                ));
+            } else if nonlands > 70 {
+                recommendations.push(format!(
+                    "{} nonland cards in deck! Is that too many?",
+                    nonlands
+                ));
+            } else {
+                recommendations.push(format!("{} nonland cards in deck.", nonlands));
+            }
+            let avg_cmc: f64 = ((total_cmc as f64) / (nonlands as f64)).into();
+            if avg_cmc > 4.0 {
+                recommendations.push(format!("Average mana cost {:.2}. Seems high.", avg_cmc));
+            } else if avg_cmc < 3.0 {
+                recommendations.push(format!("Average mana cost {:.2}. Seems low.", avg_cmc));
+            } else {
+                recommendations.push(format!("Average mana cost {:.2}.", avg_cmc));
+            }
+
+            Self {
+                cmc_data: vcmc,
+                price_data,
+                type_data: vtype,
+                color_data,
+                tag_data,
+                recommendations,
+                dbc,
+                did,
+                fresh,
+            }
+        }
+
+        pub fn recalc(&mut self) -> bool {
+            if self.fresh { return true;}
+            let vcs = rvmcfd(&self.dbc.lock().unwrap(), self.did).unwrap();
+            let mut price_data = Vec::new();
+            let mut fresh = true;
+
+            for c in vcs {
+                price_data.push((c.name.clone(), c.price));
+                if c.stale {
+                    fresh = false;
+                }
+            }
+            price_data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+            self.price_data = price_data;
+            self.fresh = fresh;
+            false
+        }
+
+        pub fn render_prices(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
+            let mut prices = Vec::new();
+            let mut total = 0.0;
+            for (n, v) in &self.price_data {
+                total += v;
+                let r = Row::new(vec![Cell::from(n.as_str()), Cell::from(v.to_string())]);
+                prices.push(r);
+            }
+            prices.insert(
+                0,
+                Row::new(vec![Cell::from("Total"), Cell::from(total.to_string())])
+                    .style(Style::default().add_modifier(Modifier::BOLD)),
+            );
+
+            let price_title = if self.fresh {
+                "Card Prices????"
+            } else {
+                "Finding Prices..."
+            };
+
+            let pt = Table::new(prices)
+                .style(Style::default().fg(Color::White))
+                .header(Row::new(vec!["Card", "Price"]).style(Style::default().fg(Color::Yellow)))
+                .block(Block::default().title(price_title).borders(Borders::ALL))
+                .widths(&[Constraint::Length(20), Constraint::Length(6)])
+                .column_spacing(1);
+
+            let halfsplit = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(4)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .split(frame.size());
+            let top_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(
+                    [
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                    ]
+                    .as_ref(),
+                )
+                .split(halfsplit[0]);
+
+            
+            frame.render_widget(pt, top_chunks[1]);
+        }
+
+        pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
+            let total: usize = self.color_data.iter().map(|(_, v)| v).sum();
+            let color_list: Vec<ListItem> = self
+                .color_data
+                .clone()
+                .drain()
+                .sorted()
+                .map(|(symbol, amount)| {
+                    let percentage: f64 = 100.0 * (amount as f64) / (total as f64);
+                    ListItem::new(format!("{}: {} ({:.1}%)", symbol, amount, percentage))
+                })
+                .collect();
+            let cl = List::new(color_list).block(Block::default().title("Mana Colors").borders(Borders::ALL));
+
+            let cmc_data = vec![
+                ("0", self.cmc_data[0]),
+                ("1", self.cmc_data[1]),
+                ("2", self.cmc_data[2]),
+                ("3", self.cmc_data[3]),
+                ("4", self.cmc_data[4]),
+                ("5", self.cmc_data[5]),
+                ("6", self.cmc_data[6]),
+                ("7+", self.cmc_data[7]),
+            ];
+            let type_data = vec![
+                ("Art", self.type_data[0]),
+                ("Cre", self.type_data[1]),
+                ("Enc", self.type_data[2]),
+                ("Ins", self.type_data[3]),
+                ("Lan", self.type_data[4]),
+                ("Leg", self.type_data[5]),
+                ("Pla", self.type_data[6]),
+                ("Sor", self.type_data[7]),
+            ];
+            let mc = self.get_mana_curve(&cmc_data);
+            let tc = self.get_type_curve(&type_data);
+
+            let mut prices = Vec::new();
+            let mut total = 0.0;
+            for (n, v) in &self.price_data {
+                total += v;
+                let r = Row::new(vec![Cell::from(n.as_str()), Cell::from(v.to_string())]);
+                prices.push(r);
+            }
+            prices.insert(
+                0,
+                Row::new(vec![Cell::from("Total"), Cell::from(total.to_string())])
+                    .style(Style::default().add_modifier(Modifier::BOLD)),
+            );
+
+            let price_title = if self.fresh {
+                "Card Prices"
+            } else {
+                "Finding Prices..."
+            };
+
+            let pt = Table::new(prices)
+                .style(Style::default().fg(Color::White))
+                .header(Row::new(vec!["Card", "Price"]).style(Style::default().fg(Color::Yellow)))
+                .block(Block::default().title(price_title).borders(Borders::ALL))
+                .widths(&[Constraint::Length(20), Constraint::Length(6)])
+                .column_spacing(1);
+
+            let tag_data: Vec<ListItem> = self
+                .tag_data
+                .iter()
+                .map(|(k, v)| ListItem::new(format!("{}: {}", k, v)))
+                .collect();
+            let tl = List::new(tag_data)
+                .block(Block::default().title("List").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White))
+                .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
+                .highlight_symbol(">>");
+
+            let rl = Paragraph::new(self.recommendations.join("\n"))
+                .block(Block::default().title("Deck Notes").borders(Borders::ALL))
+                .wrap(Wrap { trim: false });
+
+            //TODO: Implement cycling of screens on small terminals
+            let halfsplit = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(4)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .split(frame.size());
+            let top_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(
+                    [
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                    ]
+                    .as_ref(),
+                )
+                .split(halfsplit[0]);
+            let bottom_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(
+                    [
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                    ]
+                    .as_ref(),
+                )
+                .split(halfsplit[1]);
+
+            frame.render_widget(mc, top_chunks[0]);
+            frame.render_widget(pt, top_chunks[1]);
+            frame.render_widget(cl, top_chunks[2]);
+            frame.render_widget(tc, bottom_chunks[0]);
+            frame.render_widget(tl, bottom_chunks[1]);
+            frame.render_widget(rl, bottom_chunks[2]);
+        }
+
+        fn get_mana_curve<'a>(&self, cmc_data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
+            BarChart::default()
+                .block(
+                    Block::default()
+                        .title("Converted Mana Costs")
+                        .borders(Borders::ALL),
+                )
+                .bar_width(3)
+                .bar_gap(1)
+                .bar_style(Style::default().fg(Color::White).bg(Color::Black))
+                .value_style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .label_style(Style::default().fg(Color::Cyan))
+                .data(cmc_data.as_slice())
+        }
+
+        fn get_type_curve<'a>(&self, type_data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
+            BarChart::default()
+                .block(
+                    Block::default()
+                        .title("Type Breakdown")
+                        .borders(Borders::ALL),
+                )
+                .bar_width(3)
+                .bar_gap(1)
+                .bar_style(Style::default().fg(Color::White))
+                .value_style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .label_style(Style::default().fg(Color::Cyan))
+                .data(type_data.as_slice())
         }
     }
 }
