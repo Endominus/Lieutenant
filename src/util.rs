@@ -2467,6 +2467,8 @@ pub mod views {
                         KeyCode::Char('u') => {
                             if let Some(ac) = &self.ac {
                                 if ac.stale {
+                                    upfcn_quick(&self.dbc.lock().unwrap(), &ac.name);
+                                } else {
                                     if let Ok(card) = upfcn_detailed(
                                         &self.dbc.lock().unwrap(),
                                         &ac,
@@ -2474,6 +2476,7 @@ pub mod views {
                                     ) {
                                         self.ac = Some(card);
                                     }
+
                                 }
                             };
                         }
@@ -3028,10 +3031,10 @@ pub mod views {
                 )
                 .bar_width(3)
                 .bar_gap(1)
-                .bar_style(Style::default().fg(Color::White).bg(Color::Black))
+                .bar_style(Style::default().fg(Color::White))
                 .value_style(
                     Style::default()
-                        .fg(Color::Black)
+                        .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
                 )
                 .label_style(Style::default().fg(Color::Cyan))
