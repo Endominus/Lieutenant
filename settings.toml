@@ -1,0 +1,27 @@
+[global]
+version = 1
+tags = [
+	"board_wipe",
+	"draw",
+	"main",
+	"ramp",
+	"removal",
+	"side",
+]
+ordering = "+name"
+default_filter = "name"
+recent = 1
+open_into_recent = false
+
+[decks]
+	[decks.1]
+	tags = [
+		"board_wipe",
+		"draw",
+		"main",
+		"ramp",
+		"removal",
+		"side",
+	]
+	ordering = "+name"
+	default_filter = "name"

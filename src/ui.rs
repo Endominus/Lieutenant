@@ -18,7 +18,6 @@ use crossterm::{
 use itertools::Itertools;
 use rusqlite::Connection;
 use tui::backend::CrosstermBackend;
-use tui::layout::Rect;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
 use tui::widgets::{BarChart, ListItem, Paragraph, Table, Wrap};
@@ -30,7 +29,8 @@ struct AppState {
     mode_p: Screen,
     deck_view: Option<DeckView>,
     settings_view: Option<SettingsView>,
-    create_deck_view: Option<CreateDeckView>,
+    create_deck_view: CreateDeckView,
+    open_deck_view: OpenDeckView,
     did: i32,
     slmm: StatefulList<MainMenuItem>,
     stod: OpenDeckTable,
@@ -54,7 +54,8 @@ impl AppState {
             mode_p: Screen::MainMenu,
             deck_view: None,
             settings_view: None,
-            create_deck_view: None,
+            create_deck_view: CreateDeckView::new(),
+            open_deck_view: OpenDeckView::new(),
             did: -1,
             slmm: StatefulList::new(),
             stod: OpenDeckTable::default(),
@@ -86,80 +87,94 @@ impl AppState {
                 _ => {}
             },
             Screen::OpenDeck => {
-                match c {
-                    KeyCode::Esc => {
-                        self.mode = Screen::MainMenu;
-                    }
-                    KeyCode::Up => {
-                        self.stod.previous();
-                    }
-                    KeyCode::Down => {
-                        self.stod.next();
-                    }
-                    KeyCode::Enter => {
-                        if let Some(deck) = self.stod.get() {
-                            self.settings.sr(deck.id);
-                            self.init_deck_view();
-                        };
-                    }
-                    KeyCode::Delete => {
-                        self.mode_p = self.mode;
-                        self.mode = Screen::Error("Confirm Deletion\nAre you sure you want to delete the below deck?\n{DECK}\nPress Enter to confirm.");
-                    }
-                    _ => {}
+                // match c {
+                //     KeyCode::Esc => {
+                //         self.mode = Screen::MainMenu;
+                //     }
+                //     KeyCode::Up => {
+                //         self.stod.previous();
+                //     }
+                //     KeyCode::Down => {
+                //         self.stod.next();
+                //     }
+                //     KeyCode::Enter => {
+                //         if let Some(deck) = self.stod.get() {
+                //             self.settings.sr(deck.id);
+                //             self.init_deck_view();
+                //         };
+                //     }
+                //     KeyCode::Delete => {
+                //         self.mode_p = self.mode;
+                //         self.mode = Screen::Error("Confirm Deletion\nAre you sure you want to delete the below deck?\n{DECK}\nPress Enter to confirm.");
+                //     }
+                //     _ => {}
+                // }
+                let res = self.open_deck_view.handle_input(c);
+                match res {
+                    OpenDeckViewExit::Hold => {}
+                    OpenDeckViewExit::Cancel => self.mode = Screen::MainMenu,
+                    OpenDeckViewExit::OpenDeck(did) => {
+                        self.settings.sr(did);
+                        self.init_deck_view();
+                    },
+                    OpenDeckViewExit::DeleteDeck(did) => {
+                        db::dd(&self.dbc.lock().unwrap(), did).unwrap();
+                        self.settings.dd(did);
+                    },
                 }
             }
             Screen::MakeDeck => {
-                if let Some(cdv) = &mut self.create_deck_view {
-                    let mut flag = false;
-                    match cdv.handle_input(c, &self.dbc.lock().unwrap()) {
-                        ViewExit::Save(_) => {}
-                        ViewExit::NewDeck(did) => {
-                            self.settings.sr(did);
-                            self.settings.id(did);
-                            flag = true;
-                        }
-                        ViewExit::Hold => {}
-                        ViewExit::Cancel => self.mode = Screen::MainMenu,
-                    }
-                    if flag {
+                let res = self
+                    .create_deck_view
+                    .handle_input(c, &self.dbc.lock().unwrap());
+                match res {
+                    ViewExit::NewDeck(did) => {
+                        self.settings.sr(did);
+                        self.settings.id(did);
+                        self.create_deck_view = CreateDeckView::new();
                         self.init_deck_view();
                     }
+                    ViewExit::Cancel => {
+                        self.mode = {
+                            self.create_deck_view = CreateDeckView::new();
+                            Screen::MainMenu
+                        }
+                    }
+                    _ => {}
                 }
             }
             Screen::DeckStat => {
                 self.mode = Screen::DeckView;
             }
-            Screen::Error(s) => {
-                match c {
-                    KeyCode::Enter => {
-                        if s.starts_with("Confirm Deletion") {
-                            if let Some(deck) = self.stod.remove() {
-                                db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
-                                self.settings.dd(deck.id);
-                            };
-                        }
-                    }
-                    _ => {}
-                }
-                self.mode = self.mode_p;
-            }
+            // Screen::Error(s) => {
+            //     match c {
+            //         KeyCode::Enter => {
+            //             if s.starts_with("Confirm Deletion") {
+            //                 if let Some(deck) = self.stod.remove() {
+            //                     db::dd(&self.dbc.lock().unwrap(), deck.id).unwrap();
+            //                     self.settings.dd(deck.id);
+            //                 };
+            //             }
+            //         }
+            //         _ => {}
+            //     }
+            //     self.mode = self.mode_p;
+            // }
             Screen::Settings => {
                 if let Some(sv) = &mut self.settings_view {
                     match sv.handle_input(c) {
                         views::ViewExit::Save(changes) => {
                             if self.mode_p == Screen::MainMenu {
-                                self.settings.change(changes, None);
+                                self.settings.change(&changes, None);
                                 self.mode = Screen::MainMenu
                             } else {
                                 //TODO: Should this call into the deck view? One source of truth for Deck ID?
-                                self.settings.change(changes, Some(self.did));
-                                self.deck_view.as_mut().unwrap().ucf();
+                                self.settings.change(&changes, Some(self.did));
+                                self.deck_view.as_mut().unwrap().uct(changes.vtch);
                                 self.mode_p = Screen::Settings;
                                 self.mode = Screen::DeckView;
                             }
                         }
-                        views::ViewExit::Hold => {}
                         views::ViewExit::Cancel => {
                             if self.mode_p == Screen::DeckView {
                                 self.mode_p = Screen::Settings;
@@ -168,16 +183,12 @@ impl AppState {
                                 self.mode = Screen::MainMenu
                             }
                         }
-                        ViewExit::NewDeck(_) => {} //impossible
+                        _ => {} //impossible
                     }
                 }
             }
             Screen::DeckView => {
-                let a = self
-                    .deck_view
-                    .as_mut()
-                    .unwrap()
-                    .handle_input(c);
+                let a = self.deck_view.as_mut().unwrap().handle_input(c);
                 match a {
                     DeckViewExit::Hold => {}
                     DeckViewExit::MainMenu => self.mode = Screen::MainMenu,
@@ -197,7 +208,6 @@ impl AppState {
     fn switch_mode(&mut self, next: Option<Screen>) {
         match next {
             Some(Screen::MakeDeck) => {
-                self.create_deck_view = Some(CreateDeckView::new());
                 self.mode = Screen::MakeDeck;
             }
             Some(Screen::OpenDeck) => {
@@ -253,7 +263,8 @@ impl AppState {
 
     fn init_open_view(&mut self) {
         self.mode = Screen::OpenDeck;
-        self.stod.init(&self.dbc.lock().unwrap());
+        self.open_deck_view.init(&self.dbc.lock().unwrap());
+        // self.stod.init(&self.dbc.lock().unwrap());
     }
 
     fn init_main_menu(&mut self) {
@@ -436,7 +447,8 @@ impl AppState {
         match self.mode {
             Screen::DeckView => self.deck_view.as_ref().unwrap().render(frame),
             Screen::Settings => self.settings_view.as_ref().unwrap().render(frame),
-            Screen::MakeDeck => self.create_deck_view.as_ref().unwrap().render(frame),
+            Screen::MakeDeck => self.create_deck_view.render(frame),
+            Screen::OpenDeck => self.open_deck_view.render(frame),
             _ => todo!(),
         }
     }
@@ -598,10 +610,10 @@ fn draw<'a>(
                 .constraints([Constraint::Percentage(100)])
                 .split(f.size()),
             Screen::MakeDeck => Vec::new(),
-            Screen::Error(_) => Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                .split(f.size()),
+            // Screen::Error(_) => Layout::default()
+            //     .direction(Direction::Horizontal)
+            //     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+            //     .split(f.size()),
             Screen::Settings => Vec::new(),
             Screen::DeckStat => {
                 let chunks = Layout::default()
@@ -654,26 +666,25 @@ fn draw<'a>(
                 f.render_stateful_widget(list, chunks[0], &mut state.slmm.state.clone());
             }
             Screen::OpenDeck => {
-                let mut ts = state.stod.state.clone();
-                let table = state.generate_deck_table();
+                // let mut ts = state.stod.state.clone();
+                // let table = state.generate_deck_table();
 
-                f.render_stateful_widget(table, chunks[0], &mut ts);
-            }
-            Screen::Settings => state.render(f),
-            Screen::Error(s) => {
-                let (title, mut message) = s.split_once("\n").unwrap();
-                let s = message.replace("{DECK}", state.stod.get().unwrap().name.as_str());
-                if title == "Confirm Deletion" {
-                    message = s.as_str();
-                }
-                let err_message = Paragraph::new(message)
-                    .block(Block::default().borders(Borders::ALL).title(title));
-                let area = centered_rect(60, f.size());
-                f.render_widget(err_message, area);
-            }
-            Screen::MakeDeck => {
+                // f.render_stateful_widget(table, chunks[0], &mut ts);
                 state.render(f)
             }
+            Screen::Settings => state.render(f),
+            // Screen::Error(s) => {
+            //     let (title, mut message) = s.split_once("\n").unwrap();
+            //     let s = message.replace("{DECK}", state.stod.get().unwrap().name.as_str());
+            //     if title == "Confirm Deletion" {
+            //         message = s.as_str();
+            //     }
+            //     let err_message = Paragraph::new(message)
+            //         .block(Block::default().borders(Borders::ALL).title(title));
+            //     let area = centered_rect(60, f.size());
+            //     f.render_widget(err_message, area);
+            // }
+            Screen::MakeDeck => state.render(f),
             Screen::DeckStat => {
                 let dsi = state.generate_dss_info();
                 let vcs = state.get_main_cards();
@@ -708,32 +719,6 @@ fn draw<'a>(
         }
     })?;
     Ok(())
-}
-
-fn centered_rect(percent_x: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Length(r.height / 2 - 3),
-                Constraint::Length(5),
-                Constraint::Length(r.height / 2 - 2),
-            ]
-            .as_ref(),
-        )
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(
-            [
-                Constraint::Percentage((100 - percent_x) / 2),
-                Constraint::Percentage(percent_x),
-                Constraint::Percentage((100 - percent_x) / 2),
-            ]
-            .as_ref(),
-        )
-        .split(popup_layout[1])[1]
 }
 
 pub fn run() -> Result<()> {

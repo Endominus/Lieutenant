@@ -69,7 +69,7 @@ pub enum Screen {
     Settings,
     DeckView,
     DeckStat,
-    Error(&'static str),
+    // Error(&'static str),
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -253,27 +253,27 @@ impl Settings {
         }
     }
 
-    pub fn change(&mut self, changes: Changes, odid: Option<i32>) {
+    pub fn change(&mut self, changes: &Changes, odid: Option<i32>) {
         match odid {
             Some(did) => {
                 if let Some(deck) = self.decks.get_mut(&did) {
                     let mut deck = deck.borrow_mut();
                     deck.df = changes.df;
                     deck.ordering = changes.so;
-                    for tch in changes.vtch {
+                    for tch in &changes.vtch {
                         match tch {
                             views::TagChange::DeleteTag(old) => {
-                                if let Some(i) = deck.tags.iter().position(|s| s == &old) {
+                                if let Some(i) = deck.tags.iter().position(|s| s == old) {
                                     deck.tags.remove(i);
                                 }
                             }
                             views::TagChange::ChangeTag(old, new) => {
-                                if let Some(i) = deck.tags.iter().position(|s| s == &old) {
+                                if let Some(i) = deck.tags.iter().position(|s| s == old) {
                                     deck.tags.remove(i);
-                                    deck.tags.push(new);
+                                    deck.tags.push(new.clone());
                                 }
                             }
-                            views::TagChange::InsertTag(new) => deck.tags.push(new),
+                            views::TagChange::InsertTag(new) => deck.tags.push(new.clone()),
                         }
                         deck.tags.sort();
                     }
@@ -283,20 +283,20 @@ impl Settings {
                 self.global.df = changes.df;
                 self.global.ordering = changes.so;
                 self.global.open_into_recent = changes.oir.unwrap();
-                for tch in changes.vtch {
+                for tch in &changes.vtch {
                     match tch {
                         views::TagChange::DeleteTag(old) => {
-                            if let Some(i) = self.global.tags.iter().position(|s| s == &old) {
+                            if let Some(i) = self.global.tags.iter().position(|s| s == old) {
                                 self.global.tags.remove(i);
                             }
                         }
                         views::TagChange::ChangeTag(old, new) => {
-                            if let Some(i) = self.global.tags.iter().position(|s| s == &old) {
+                            if let Some(i) = self.global.tags.iter().position(|s| s == old) {
                                 self.global.tags.remove(i);
-                                self.global.tags.push(new);
+                                self.global.tags.push(new.clone());
                             }
                         }
-                        views::TagChange::InsertTag(new) => self.global.tags.push(new),
+                        views::TagChange::InsertTag(new) => self.global.tags.push(new.clone()),
                     }
                     self.global.tags.sort();
                 }
@@ -516,7 +516,6 @@ impl<T: ToString + PartialEq + Clone> StatefulList<T> {
                     Some(_) => self.state.select(i),
                     None => self.state.select(Some(0)),
                 }
-                
             } else {
                 self.state.select(Some(0));
             }
@@ -1058,6 +1057,32 @@ pub mod views {
 
     use super::*;
 
+    fn centered_rect(percent_x: u16, r: Rect) -> Rect {
+        let popup_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                [
+                    Constraint::Length(r.height / 2 - 3),
+                    Constraint::Length(5),
+                    Constraint::Length(r.height / 2 - 2),
+                ]
+                .as_ref(),
+            )
+            .split(r);
+    
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [
+                    Constraint::Percentage((100 - percent_x) / 2),
+                    Constraint::Percentage(percent_x),
+                    Constraint::Percentage((100 - percent_x) / 2),
+                ]
+                .as_ref(),
+            )
+            .split(popup_layout[1])[1]
+    }
+
     #[derive(Copy, Clone, PartialEq)]
     pub enum SettingsSection {
         Tags,
@@ -1083,6 +1108,36 @@ pub mod views {
         InsertTag(String),
     }
 
+    #[derive(Copy, Clone, PartialEq)]
+    enum CreateDeckSection {
+        Title,
+        PrimaryCommander,
+        SecondaryCommander,
+    }
+
+    #[derive(Copy, Clone, PartialEq)]
+    enum DeckViewSection {
+        DeckOmni,
+        DeckCards,
+        DbOmni,
+        DbCards,
+    }
+
+    pub enum DeckViewExit {
+        Hold,
+        MainMenu,
+        Stats,
+        Settings(i32),
+        NewTag(String, i32),
+    }
+
+    pub enum OpenDeckViewExit {
+        Hold,
+        Cancel,
+        OpenDeck(i32),
+        DeleteDeck(i32),
+    }
+
     pub struct Changes {
         pub df: DefaultFilter,
         pub so: SortOrder,
@@ -1101,6 +1156,38 @@ pub mod views {
         ord: SortOrder,
         oir: Option<bool>,
         vch: Vec<TagChange>,
+    }
+
+    pub struct DeckView {
+        omni: String,
+        omniprev: String,
+        omnipos: usize,
+        vsomni: Vec<String>,
+        slde: StatefulList<String>,
+        sldb: StatefulList<String>,
+        vcdec: Vec<String>,
+        st: usize,
+        ac: Option<Card>,
+        cf: CardFilter,
+        dvs: DeckViewSection,
+        settings: Rc<RefCell<DeckSettings>>,
+        dbc: Arc<Mutex<Connection>>,
+    }
+
+    pub struct CreateDeckView {
+        section: CreateDeckSection,
+        title: String,
+        com1: String,
+        com2: String,
+        vcn: Vec<String>,
+        vpos: ListState,
+        tpos: usize,
+    }
+
+    pub struct OpenDeckView {
+        decks: Vec<Deck>,
+        state: TableState,
+        deleting: bool,
     }
 
     impl SettingsView {
@@ -1545,23 +1632,6 @@ pub mod views {
         }
     }
 
-    #[derive(Copy, Clone, PartialEq)]
-    enum CreateDeckSection {
-        Title,
-        PrimaryCommander,
-        SecondaryCommander,
-    }
-
-    pub struct CreateDeckView {
-        section: CreateDeckSection,
-        title: String,
-        com1: String,
-        com2: String,
-        vcn: Vec<String>,
-        vpos: ListState,
-        tpos: usize,
-    }
-
     impl CreateDeckView {
         pub fn new() -> Self {
             Self {
@@ -1871,40 +1941,180 @@ pub mod views {
         }
     }
 
-    #[derive(Copy, Clone, PartialEq)]
-    pub enum DeckViewSection {
-        DeckOmni,
-        DeckCards,
-        DbOmni,
-        DbCards,
-    }
+    impl OpenDeckView {
+        pub fn new() -> Self {
+            Self {
+                decks: Vec::new(),
+                state: Default::default(),
+                deleting: false,
+            }
+        }
 
-    pub enum DeckViewExit {
-        Hold,
-        MainMenu,
-        Stats,
-        Settings(i32),
-        NewTag(String, i32),
-    }
+        pub fn init(&mut self, conn: &Connection) {
+            let decks = rvd(conn).unwrap();
+            if decks.len() > 0 {
+                self.state.select(Some(0));
+            }
+            self.decks = decks;
+            self.deleting = false;
+        }
 
-    pub struct DeckView {
-        omni: String,
-        omniprev: String,
-        omnipos: usize,
-        vsomni: Vec<String>,
-        // vcde: Vec<String>,
-        slde: StatefulList<String>,
-        sldb: StatefulList<String>,
-        vcdec: Vec<String>,
-        // vcdb: Vec<String>,
-        st: usize,
-        ac: Option<Card>,
-        // vcdels: ListState,
-        // vcdbls: ListState,
-        cf: CardFilter,
-        dvs: DeckViewSection,
-        settings: Rc<RefCell<DeckSettings>>,
-        dbc: Arc<Mutex<Connection>>,
+        pub fn handle_input(&mut self, c: KeyCode) -> OpenDeckViewExit {
+            match c {
+                KeyCode::Up => self.previous(),
+                KeyCode::Down => self.next(),
+                KeyCode::Delete => {
+                    if self.state.selected().is_some() {
+                        self.deleting = true;
+                        return OpenDeckViewExit::Hold
+                    }
+                },
+                KeyCode::Enter => {
+                    if self.deleting {
+                        self.deleting = false;
+                        if let Some(d) = self.remove() {
+                            let did = d.id;
+                            return OpenDeckViewExit::DeleteDeck(did);
+                        }
+                    } else {
+                        if let Some(i) = self.state.selected() {
+                            let did = self.decks.get(i).unwrap().id;
+                            return OpenDeckViewExit::OpenDeck(did);
+                        }
+                    }
+                },
+                KeyCode::Esc => return OpenDeckViewExit::Cancel,
+                _ => {}
+            }
+            self.deleting = false;
+            OpenDeckViewExit::Hold
+        }
+
+        pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
+            let table = self.rdt();
+            frame.render_stateful_widget(table, frame.size(), &mut self.state.clone());
+
+            if self.deleting {
+                if let Some(i) = self.state.selected() {
+                    let deck = &self.decks[i].name;
+                    // let rect = Layout::default()
+                    //     .direction(Direction::Horizontal)
+                    //     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    //     .split(frame.size());
+                    let title = "Confirm Deletion";
+                    let message = format!("Are you sure you want to delete the below deck?\n{deck}\nPress Enter to confirm.");
+                    let err_message = Paragraph::new(message)
+                        .block(Block::default().borders(Borders::ALL).title(title));
+                    let area = centered_rect(60, frame.size());
+                    frame.render_widget(tui::widgets::Clear, area);
+                    frame.render_widget(err_message, area);
+                };
+            }
+        }
+
+        fn remove(&mut self) -> Option<Deck> {
+            if self.decks.len() == 0 {
+                return None;
+            }
+            let a = self.state.selected().unwrap();
+            let d = self.decks.remove(a);
+    
+            if self.decks.len() == 0 {
+                self.state = TableState::default();
+            } else if self.decks.len() == a {
+                self.state.select(Some(a - 1));
+            }
+    
+            Some(d)
+        }
+
+        fn next(&mut self) {
+            if self.decks.len() == 0 {
+                return;
+            }
+            if self.decks.len() > 0 {
+                let i = match self.state.selected() {
+                    Some(i) => {
+                        if i >= self.decks.len() - 1 {
+                            0
+                        } else {
+                            i + 1
+                        }
+                    }
+                    None => 0,
+                };
+                self.state.select(Some(i));
+            }
+        }
+
+        fn previous(&mut self) {
+            if self.decks.len() == 0 {
+                return;
+            }
+            let i = match self.state.selected() {
+                Some(i) => {
+                    if i == 0 {
+                        self.decks.len() - 1
+                    } else {
+                        i - 1
+                    }
+                }
+                None => 0,
+            };
+            self.state.select(Some(i));
+        }
+
+        fn rdt(&self) -> Table {
+            let decks = self.decks.clone();
+            let headers = Row::new(vec![
+                Cell::from("ID"),
+                Cell::from("Deck Name"),
+                Cell::from("Commander(s)"),
+                Cell::from("Color"),
+            ])
+            .style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Cyan),
+            );
+            let mut rows = Vec::new();
+
+            for deck in decks {
+                let (height, com2) = match deck.commander2 {
+                    Some(c) => (2, c.name),
+                    None => (1, String::new()),
+                };
+
+                let r = Row::new(vec![
+                    Cell::from(deck.id.to_string()),
+                    Cell::from(deck.name),
+                    Cell::from(format!("{}\n{}", deck.commander.name, com2)),
+                    Cell::from(deck.color),
+                ])
+                .height(height)
+                .style(Style::default());
+
+                rows.push(r);
+            }
+
+            let table = Table::new(rows)
+                .header(headers)
+                .block(Block::default().borders(Borders::ALL))
+                .widths(&[
+                    Constraint::Length(4),
+                    Constraint::Percentage(40),
+                    Constraint::Percentage(40),
+                    Constraint::Length(7),
+                ])
+                .column_spacing(1)
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::ITALIC),
+                );
+
+            table
+        }
     }
 
     impl DeckView {
@@ -1927,11 +2137,10 @@ pub mod views {
                 .position(|s| s == &String::from("main"))
                 .unwrap();
             let vcdec = rvcnfcf(&dbc.lock().unwrap(), &cf.make_query(false, "")).unwrap();
-            let mut ls = ListState::default();
-            ls.select(Some(0));
-            let ac = Some(rcfn(&dbc.lock().unwrap(), &vcdec[0], Some(cf.did)).unwrap());
 
-            let slde = StatefulList::with_items(vcdec.clone());
+            let mut slde = StatefulList::with_items(vcdec.clone());
+            let name = slde.next().unwrap();
+            let ac = Some(rcfn(&dbc.lock().unwrap(), &name, Some(cf.did)).unwrap());
             let sldb = StatefulList::default();
 
             DeckView {
@@ -1939,15 +2148,11 @@ pub mod views {
                 omniprev: String::new(),
                 omnipos: 0,
                 vsomni: Vec::new(),
-                // vcde: vcdec.clone(),
                 slde,
                 sldb,
                 vcdec,
-                // vcdb: Vec::new(),
                 st,
                 ac,
-                // vcdels: ls,
-                // vcdbls: ListState::default(),
                 cf,
                 dvs: DeckViewSection::DeckOmni,
                 settings,
@@ -2240,86 +2445,20 @@ pub mod views {
             DeckViewExit::Hold
         }
 
-        fn insert_tag(&mut self, tag: String) {
-            self.settings.borrow_mut().add_tag(tag.clone());
-            self.st = self.settings.borrow().find_tag(&tag).unwrap();
-        }
-
-        fn toggle_tag(&mut self) {
-            let cn = self.ac.as_ref().unwrap().to_string();
-            self.ac = ttindc(
-                &self.dbc.lock().unwrap(),
-                &cn,
-                &self.settings.borrow().tags[self.st],
-                self.cf.did,
-            );
-        }
-
-        fn uvc(&mut self) {
-            let (sl, general) = match self.dvs {
-                DeckViewSection::DeckOmni | DeckViewSection::DeckCards => (&mut self.slde, false),
-                DeckViewSection::DbOmni | DeckViewSection::DbCards => (&mut self.sldb, true),
-            };
-
-            let vc = rvcnfcf(
-                &self.dbc.lock().unwrap(),
-                &self.cf.make_query(general, &self.omni),
-            )
-            .unwrap();
-            sl.reinitialize(vc, false);
-            self.uac();
-        }
-
-        fn uac(&mut self) {
-            let mm = String::new(); //this is dumb, but it works. Otherwise complains of temp value dropped.
-            let cn = match self.dvs {
-                DeckViewSection::DeckOmni | DeckViewSection::DeckCards => self.slde.get().unwrap_or(&mm),
-                DeckViewSection::DbOmni | DeckViewSection::DbCards => self.sldb.get().unwrap_or(&mm),
-            };
-            if cn == &mm {
-                self.ac = None;
-            } else {
-                self.ac = Some(
-                    rcfn(&self.dbc.lock().unwrap(), cn, Some(self.cf.did)).unwrap(),
-                );
-            }
-        }
-
-        fn uacr(&mut self) {
-            let c = self.ac.as_ref().unwrap();
-            let cn = match &c.lo {
-                CardLayout::Paired(_, _, n) => n,
-                CardLayout::Meld(s, n, m) => {
-                    if s == &'b' {
-                        n
-                    } else {
-                        let meld = rcfn(&self.dbc.lock().unwrap(), &m, None).unwrap();
-                        if let crate::util::CardLayout::Meld(_, face, _) = meld.lo {
-                            if &face == n {
-                                m
-                            } else {
-                                n
-                            }
-                        } else {
-                            n //Should never occur, but need to complete if statement
-                        }
-                    }
-                }
-                _ => {
-                    return;
-                }
-            };
-
-            self.ac =
-                Some(crate::db::rcfn(&self.dbc.lock().unwrap(), cn, Some(self.cf.did)).unwrap());
-        }
-
-        pub fn ucf(&mut self) {
+        pub fn uct(&mut self, changes: Vec<TagChange>) {
             self.cf.df = self.settings.borrow().df;
             self.cf.so = self.settings.borrow().ordering;
+            if self.st >= self.settings.borrow().tags.len() {
+                self.st = self
+                    .settings
+                    .borrow()
+                    .find_tag(&String::from("main"))
+                    .unwrap();
+            }
+            for tc in changes {
+                utindc(&self.dbc.lock().unwrap(), tc, &self.cf)
+            }
         }
-
-        pub fn uct(&mut self, _changes: Vec<views::Changes>) {}
 
         pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
             let tag_max = self
@@ -2361,8 +2500,8 @@ pub mod views {
             let bfoc = Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow));
-            let mut bomni = Block::default();
-            let mut blist = Block::default();
+            let mut _bomni = Block::default();
+            let mut _blist = Block::default();
 
             let spans = if self.omnipos < self.omni.len() {
                 let (s1, s2) = self.omni.split_at(self.omnipos);
@@ -2381,33 +2520,38 @@ pub mod views {
 
             let (vli, ls) = match self.dvs {
                 DeckViewSection::DeckOmni => {
-                    bomni = bfoc.title("Filter Deck");
-                    blist = bdef.clone().title(format!("Deck View ({})", self.slde.items.len()));
+                    // _bomni = bfoc.title(format!("Tag max: {}", tag_max));
+                    _bomni = bfoc.title("Filter Deck");
+                    _blist = bdef
+                        .clone()
+                        .title(format!("Deck View ({})", self.slde.items.len()));
                     let vli = self.slde.rvli();
                     (vli, &self.slde.state)
-                },
+                }
                 DeckViewSection::DeckCards => {
-                    bomni = bdef.clone().title("Filter Deck");
-                    blist = bfoc.title(format!("Deck View ({})", self.slde.items.len()));
+                    _bomni = bdef.clone().title("Filter Deck");
+                    _blist = bfoc.title(format!("Deck View ({})", self.slde.items.len()));
                     let vli = self.slde.rvli();
                     (vli, &self.slde.state)
-                },
+                }
                 DeckViewSection::DbOmni => {
-                    bomni = bfoc.title("Filter Database");
-                    blist = bdef.clone().title(format!("Database View ({})", self.sldb.items.len()));
+                    _bomni = bfoc.title("Filter Database");
+                    _blist = bdef
+                        .clone()
+                        .title(format!("Database View ({})", self.sldb.items.len()));
                     let vli = self.sldb.rvlis(&self.vcdec);
                     (vli, &self.sldb.state)
-                },
+                }
                 DeckViewSection::DbCards => {
-                    bomni = bdef.clone().title("Filter Database");
-                    blist = bfoc.title(format!("Database View ({})", self.sldb.items.len()));
+                    _bomni = bdef.clone().title("Filter Database");
+                    _blist = bfoc.title(format!("Database View ({})", self.sldb.items.len()));
                     let vli = self.sldb.rvlis(&self.vcdec);
                     (vli, &self.sldb.state)
-                },
+                }
             };
 
             let tag = &self.settings.borrow().tags[self.st];
-            let po = Paragraph::new(Spans::from(spans)).block(bomni);
+            let po = Paragraph::new(Spans::from(spans)).block(_bomni);
             let pt = Paragraph::new(tag.clone()).block(bdef.clone());
             let pc = match &self.ac {
                 Some(card) => card.display().block(bdef.clone()),
@@ -2419,98 +2563,88 @@ pub mod views {
                         .add_modifier(Modifier::BOLD)
                         .fg(Color::Cyan),
                 )
-                .block(blist);
-
-            // let (lc, ls) = match self.dvs {
-            //     DeckViewSection::DeckOmni => {
-            //         bfoc = bfoc.title("Filter Deck");
-            //         po = po.block(bfoc);
-            //         let vli = self.slde.rvlis(&self.vcdec);
-            //         let vli: Vec<ListItem> =
-            //             self.vcde.iter().map(|s| ListItem::new(s as &str)).collect();
-            //         let lc = List::new(vli)
-            //             .highlight_style(
-            //                 Style::default()
-            //                     .add_modifier(Modifier::BOLD)
-            //                     .fg(Color::Cyan),
-            //             )
-            //             .block(bdef.title(format!("Deck View ({})", self.vcde.len())));
-            //         (lc, &self.vcdels)
-            //     }
-            //     DeckViewSection::DeckCards => {
-            //         bdef = bdef.title("Filter Deck");
-            //         po = po.block(bdef);
-            //         let vli: Vec<ListItem> =
-            //             self.vcde.iter().map(|s| ListItem::new(s as &str)).collect();
-            //         let lc = List::new(vli)
-            //             .highlight_style(
-            //                 Style::default()
-            //                     .add_modifier(Modifier::BOLD)
-            //                     .fg(Color::Cyan),
-            //             )
-            //             .block(bfoc.title(format!("Deck View ({})", self.vcde.len())));
-            //         (lc, &self.vcdels)
-            //     }
-            //     DeckViewSection::DbOmni => {
-            //         bfoc = bfoc.title("Filter Database");
-            //         po = po.block(bfoc);
-            //         let vli: Vec<ListItem> = self
-            //             .vcdb
-            //             .iter()
-            //             .map(|s| {
-            //                 if self.vcdec.contains(s) {
-            //                     ListItem::new(s as &str).style(
-            //                         Style::default()
-            //                             .fg(Color::Yellow)
-            //                             .add_modifier(Modifier::ITALIC),
-            //                     )
-            //                 } else {
-            //                     ListItem::new(s as &str)
-            //                 }
-            //             })
-            //             .collect();
-            //         let lc = List::new(vli)
-            //             .highlight_style(
-            //                 Style::default()
-            //                     .add_modifier(Modifier::BOLD)
-            //                     .fg(Color::Cyan),
-            //             )
-            //             .block(bdef.title(format!("Database ({})", self.vcdb.len())));
-            //         (lc, &self.vcdbls)
-            //     }
-            //     DeckViewSection::DbCards => {
-            //         bdef = bdef.title("Filter Database");
-            //         po = po.block(bdef);
-            //         let vli: Vec<ListItem> = self
-            //             .vcdb
-            //             .iter()
-            //             .map(|s| {
-            //                 if self.vcdec.contains(s) {
-            //                     ListItem::new(s as &str).style(
-            //                         Style::default()
-            //                             .fg(Color::Yellow)
-            //                             .add_modifier(Modifier::ITALIC),
-            //                     )
-            //                 } else {
-            //                     ListItem::new(s as &str)
-            //                 }
-            //             })
-            //             .collect();
-            //         let lc = List::new(vli)
-            //             .highlight_style(
-            //                 Style::default()
-            //                     .add_modifier(Modifier::BOLD)
-            //                     .fg(Color::Cyan),
-            //             )
-            //             .block(bfoc.title(format!("Database ({})", self.vcdb.len())));
-            //         (lc, &self.vcdbls)
-            //     }
-            // };
+                .block(_blist);
 
             frame.render_widget(po, vrct[0]);
             frame.render_widget(pt, vrct[1]);
             frame.render_stateful_widget(lc, vrct[2], &mut ls.clone());
             frame.render_widget(pc, vrct[3]);
+        }
+
+        fn insert_tag(&mut self, tag: String) {
+            self.settings.borrow_mut().add_tag(tag.clone());
+            self.st = self.settings.borrow().find_tag(&tag).unwrap();
+        }
+
+        fn toggle_tag(&mut self) {
+            let cn = self.ac.as_ref().unwrap().to_string();
+            self.ac = ttindc(
+                &self.dbc.lock().unwrap(),
+                &cn,
+                &self.settings.borrow().tags[self.st],
+                self.cf.did,
+            );
+        }
+
+        fn uvc(&mut self) {
+            let (sl, general) = match self.dvs {
+                DeckViewSection::DeckOmni | DeckViewSection::DeckCards => (&mut self.slde, false),
+                DeckViewSection::DbOmni | DeckViewSection::DbCards => (&mut self.sldb, true),
+            };
+
+            let vc = rvcnfcf(
+                &self.dbc.lock().unwrap(),
+                &self.cf.make_query(general, &self.omni),
+            )
+            .unwrap();
+            sl.reinitialize(vc, false);
+            self.uac();
+        }
+
+        fn uac(&mut self) {
+            let mm = String::new(); //this is dumb, but it works. Otherwise complains of temp value dropped.
+            let cn = match self.dvs {
+                DeckViewSection::DeckOmni | DeckViewSection::DeckCards => {
+                    self.slde.get().unwrap_or(&mm)
+                }
+                DeckViewSection::DbOmni | DeckViewSection::DbCards => {
+                    self.sldb.get().unwrap_or(&mm)
+                }
+            };
+            if cn == &mm {
+                self.ac = None;
+            } else {
+                self.ac = Some(rcfn(&self.dbc.lock().unwrap(), cn, Some(self.cf.did)).unwrap());
+            }
+        }
+
+        fn uacr(&mut self) {
+            let c = self.ac.as_ref().unwrap();
+            let cn = match &c.lo {
+                CardLayout::Paired(_, _, n) => n,
+                CardLayout::Meld(s, n, m) => {
+                    if s == &'b' {
+                        n
+                    } else {
+                        let meld = rcfn(&self.dbc.lock().unwrap(), &m, None).unwrap();
+                        if let crate::util::CardLayout::Meld(_, face, _) = meld.lo {
+                            if &face == n {
+                                m
+                            } else {
+                                n
+                            }
+                        } else {
+                            n //Should never occur, but need to complete if statement
+                        }
+                    }
+                }
+                _ => {
+                    return;
+                }
+            };
+
+            self.ac =
+                Some(crate::db::rcfn(&self.dbc.lock().unwrap(), cn, Some(self.cf.did)).unwrap());
         }
     }
 }

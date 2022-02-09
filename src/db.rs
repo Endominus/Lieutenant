@@ -2,6 +2,7 @@ extern crate rusqlite;
 extern crate regex;
 extern crate pest;
 
+use crate::util::views::TagChange;
 use crate::util::{CardLayout, CardStat, Card, Deck, CommanderType};
 use crate::network::{rvjc, rextcostfcn};
 
@@ -812,6 +813,54 @@ pub fn ttindc(conn: &Connection, c: &String, t: &String, did: i32) -> Option<Car
         stmt.execute(named_params!{":tags": t, ":name": cc.name, ":did": did}).unwrap();
     }
     Some(card)
+}
+
+pub fn utindc(conn: &Connection, change: TagChange, cf: &CardFilter) {
+    let mut stmt = conn.prepare("UPDATE deck_contents 
+        SET tags = :tags
+        WHERE card_name = :name
+        AND deck = :did;").unwrap();
+    match change {
+        TagChange::DeleteTag(tag) => {
+            if let Err(_) = conn.execute_batch("BEGIN TRANSACTION;") {
+                panic!("Issue with update");
+            }
+            let query = cf.make_query(false, format!("tag:{tag}").as_str());
+            let vc = rvcfcf(conn, &query).unwrap();
+            for mut c in vc {
+                let i = c.tags.iter().position(|s| s == &tag).unwrap();
+                c.tags.remove(i);
+                let tags = if c.tags.is_empty() {
+                    None
+                } else {
+                    Some(c.tags.join("|"))
+                };
+                stmt.execute(named_params!{":tags": tags, ":name": c.name, ":did": cf.did}).unwrap();
+            }
+            if let Err(_) = conn.execute_batch("COMMIT TRANSACTION;") {
+                panic!("Issue with update");
+            }
+        },
+        TagChange::ChangeTag(old, new) => {
+            if let Err(_) = conn.execute_batch("BEGIN TRANSACTION;") {
+                panic!("Issue with update");
+            }
+            let query = cf.make_query(false, format!("tag:{old}").as_str());
+            let vc = rvcfcf(conn, &query).unwrap();
+            for mut c in vc {
+                let i = c.tags.iter().position(|s| s == &old).unwrap();
+                c.tags.remove(i);
+                c.tags.push(new.clone());
+                c.tags.sort();
+                let tags = c.tags.join("|");
+                stmt.execute(named_params!{":tags": tags, ":name": c.name, ":did": cf.did}).unwrap();
+            }
+            if let Err(_) = conn.execute_batch("COMMIT TRANSACTION;") {
+                panic!("Issue with update");
+            }
+        },
+        TagChange::InsertTag(_) => {},
+    }
 }
 
 pub fn cindid(conn: &Connection, c: &String, did: i32) -> bool {
