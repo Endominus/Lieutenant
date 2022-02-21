@@ -18,7 +18,6 @@ extern crate serde_json;
 extern crate lazy_static;
 extern crate csv;
 extern crate self_update;
-// #[macro_use]
 extern crate pest_derive;
 
 
@@ -33,6 +32,7 @@ use clap::{App, arg};
 use anyhow::Result;
 use self_update::cargo_crate_version;
 use std::time::Instant;
+use std::env::current_dir;
 
 pub enum Command {
     RetrieveCard(String),
@@ -155,8 +155,8 @@ pub fn run(command: Command) -> Result<()> {
             let p = match path {
                 Some(p) => { p }
                 None => {
-                    let deck = db::rdfdid(&conn, did).unwrap();
-                    util::get_local_file(format!("{}.csv", deck.name).as_str(), false)
+                    let a = current_dir().unwrap();
+                    a.join(format!("{}.csv", deck.name))
                 }
             };
 
@@ -222,10 +222,7 @@ fn main() {
         }
         Some(("export", sub_m)) => {
             let did: i32 = sub_m.value_of("deck_id").unwrap().parse().unwrap();
-            let p = match sub_m.value_of("file") {
-                Some(s) => { Some(PathBuf::from(s)) }
-                None => { None }
-            };
+            let p = sub_m.value_of("file").map(PathBuf::from);
             run(Command::ExportDeck(did, p)).unwrap();
         }
         Some(("update", _sub_m)) => {
@@ -313,7 +310,7 @@ fn debug_rcfn() {
 
     let a = db::rcfndid(
         &conn, 
-        &"Anafenza, Kin-Tree Spirit".to_string(), 
+        "Anafenza, Kin-Tree Spirit", 
         1).unwrap();
     
     println!("{:?}", a);

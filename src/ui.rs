@@ -163,7 +163,7 @@ impl AppState {
                         self.mode_p = Screen::DeckView;
                         self.init_settings(Some(did));
                     }
-                    DeckViewExit::NewTag(s, did) => self.settings.it(Some(did), s.to_string()),
+                    DeckViewExit::NewTag(s, did) => self.settings.it(Some(did), s),
                 }
             }
         }
@@ -318,11 +318,9 @@ pub fn run() -> Result<()> {
                     });
                 }
             }
-        } else {
-            if poll(Duration::from_millis(100))? {
-                if let Event::Key(KeyEvent { code, .. }) = read()? {
-                    let _a = state.handle_input(code);
-                }
+        } else if poll(Duration::from_millis(100))? {
+            if let Event::Key(KeyEvent { code, .. }) = read()? {
+                let _a = state.handle_input(code);
             }
         }
 

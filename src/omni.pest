@@ -1,5 +1,5 @@
 word = { negation? ~ (ASCII_ALPHANUMERIC | "_" | "{" | "}" )+ }
-special_chars = { "\\" | "/" | "+" | " " | ":"| "-"| "."| "," }
+special_chars = { "\\" | "/" | "+" | " " | ":"| "-"| "."| "," | "\'" | "û" }
 word_extended = { (ASCII_ALPHANUMERIC | special_chars)+ }
 phrase = { negation? ~ "\"" ~ (word_extended) ~ "\"" }
 number_range = { NUMBER ~ ("-" | "..") ~ NUMBER | (">" | "<") ~ NUMBER | NUMBER | "*" }

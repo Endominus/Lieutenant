@@ -15,7 +15,7 @@ fn jsonarray_to_vec(an: &str, c: &json::JsonValue) -> Vec<String> {
 
 pub fn rvs() -> Result<Vec<Set>> {
     let mut sets = Vec::new();
-    let url = format!("https://mtgjson.com/api/v5/SetList.json");
+    let url = "https://mtgjson.com/api/v5/SetList.json".to_string();
     let res: serde_json::Value = get(&url)?.json().unwrap();
     let map =  match &res["data"] {
         serde_json::Value::Array(i) => { i }
@@ -32,7 +32,7 @@ pub fn rvs() -> Result<Vec<Set>> {
     Ok(sets)
 }
 
-pub fn rvjc(set_code: &String) -> Result<Vec<JsonCard>> {
+pub fn rvjc(set_code: &str) -> Result<Vec<JsonCard>> {
     let mut vjc = Vec::new();
     let url = format!("https://mtgjson.com/api/v5/{}.json", set_code);
     let res: serde_json::Value = get(&url)?.json().unwrap();
@@ -48,7 +48,7 @@ pub fn rvjc(set_code: &String) -> Result<Vec<JsonCard>> {
     Ok(vjc)
 }
 
-pub fn rcostfcn(cn: &String, prev: Option<f64>) -> Result<f64> {
+pub fn rcostfcn(cn: &str, prev: Option<f64>) -> Result<f64> {
     let api = format!("https://api.scryfall.com/cards/search?q=name=%22{}%22", cn);
     let res_json: Value = get(api).unwrap().json().unwrap();
     let mut price = 0.0;
@@ -81,7 +81,7 @@ pub fn rcostfcn(cn: &String, prev: Option<f64>) -> Result<f64> {
     Ok(price)
 }
 
-pub fn rextcostfcn(cn: &String) -> Result<f64> {
+pub fn rextcostfcn(cn: &str) -> Result<f64> {
     let api = format!("https://api.scryfall.com/cards/search?q=name=%22{}%22", cn);
     let res_json: Value = get(api).unwrap().json().unwrap();
     let mut res_list = Value::default();

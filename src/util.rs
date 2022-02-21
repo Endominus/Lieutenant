@@ -1,14 +1,9 @@
 // use crossterm::event::KeyCode;
 use regex::Regex;
-use rusqlite::Connection;
 use tui::style::{Color, Modifier, Style};
 use tui::{
-    layout::Constraint,
     text::{Span, Spans},
-    widgets::{
-        BarChart, Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table,
-        TableState,
-    },
+    widgets::{BarChart, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState},
 };
 
 use config::{Config, ConfigError};
@@ -17,7 +12,11 @@ use serde::Deserialize;
 use serde_derive::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::{collections::HashMap, env, path::PathBuf};
+use std::{
+    collections::HashMap,
+    env,
+    path::{Path, PathBuf},
+};
 
 use self::views::Changes;
 
@@ -150,7 +149,7 @@ pub struct DeckSettings {
 }
 
 impl FileSettings {
-    pub fn new(path: &PathBuf) -> Result<Self, ConfigError> {
+    pub fn new(path: &Path) -> Result<Self, ConfigError> {
         let mut s = Config::default();
         let tags = Vec::from([
             String::from("main"),
@@ -268,18 +267,18 @@ impl Settings {
                     deck.ordering = changes.so;
                     for tch in &changes.vtch {
                         match tch {
-                            views::TagChange::DeleteTag(old) => {
+                            views::TagChange::Delete(old) => {
                                 if let Some(i) = deck.tags.iter().position(|s| s == old) {
                                     deck.tags.remove(i);
                                 }
                             }
-                            views::TagChange::ChangeTag(old, new) => {
+                            views::TagChange::Change(old, new) => {
                                 if let Some(i) = deck.tags.iter().position(|s| s == old) {
                                     deck.tags.remove(i);
                                     deck.tags.push(new.clone());
                                 }
                             }
-                            views::TagChange::InsertTag(new) => deck.tags.push(new.clone()),
+                            views::TagChange::Insert(new) => deck.tags.push(new.clone()),
                         }
                         deck.tags.sort();
                     }
@@ -291,18 +290,18 @@ impl Settings {
                 self.global.open_into_recent = changes.oir.unwrap();
                 for tch in &changes.vtch {
                     match tch {
-                        views::TagChange::DeleteTag(old) => {
+                        views::TagChange::Delete(old) => {
                             if let Some(i) = self.global.tags.iter().position(|s| s == old) {
                                 self.global.tags.remove(i);
                             }
                         }
-                        views::TagChange::ChangeTag(old, new) => {
+                        views::TagChange::Change(old, new) => {
                             if let Some(i) = self.global.tags.iter().position(|s| s == old) {
                                 self.global.tags.remove(i);
                                 self.global.tags.push(new.clone());
                             }
                         }
-                        views::TagChange::InsertTag(new) => self.global.tags.push(new.clone()),
+                        views::TagChange::Insert(new) => self.global.tags.push(new.clone()),
                     }
                     self.global.tags.sort();
                 }
@@ -340,6 +339,9 @@ impl Settings {
 
     pub fn dd(&mut self, deck: i32) {
         self.decks.remove(&deck);
+        if self.global.recent == deck {
+            self.global.recent = -1;
+        }
     }
 
     pub fn from(fs: FileSettings) -> Self {
@@ -474,7 +476,7 @@ impl DeckSettings {
         }
     }
 
-    pub fn find_tag(&self, tag: &String) -> Option<usize> {
+    pub fn find_tag(&self, tag: &str) -> Option<usize> {
         self.tags.iter().position(|s| s == tag)
     }
 
@@ -514,7 +516,7 @@ impl<T: ToString + PartialEq + Clone> StatefulList<T> {
             None => None,
         };
         self.items = items;
-        if self.items.len() > 0 {
+        if !self.items.is_empty() {
             if restore_pos && old != None {
                 let old = old.unwrap();
                 let i = self.items.iter().position(|p| p == &old);
@@ -531,7 +533,7 @@ impl<T: ToString + PartialEq + Clone> StatefulList<T> {
     }
 
     pub fn next(&mut self) -> Option<String> {
-        if self.items.len() > 0 {
+        if !self.items.is_empty() {
             let i = match self.state.selected() {
                 Some(i) => {
                     if i >= self.items.len() - 1 {
@@ -587,7 +589,7 @@ impl<T: ToString + PartialEq + Clone> StatefulList<T> {
     }
 
     pub fn get_string(&self) -> Option<String> {
-        if self.items.len() > 0 {
+        if !self.items.is_empty() {
             let a = self.items.get(self.state.selected().unwrap()).unwrap();
             return Some(a.to_string());
         }
@@ -597,7 +599,7 @@ impl<T: ToString + PartialEq + Clone> StatefulList<T> {
     pub fn remove(&mut self) -> T {
         let mut a = self.state.selected().unwrap();
         let removed = self.items.remove(a);
-        if self.items.len() > 0 {
+        if !self.items.is_empty() {
             if a == self.items.len() {
                 a -= 1;
             }
@@ -609,20 +611,14 @@ impl<T: ToString + PartialEq + Clone> StatefulList<T> {
         removed
     }
 
-    pub fn remove_named(&mut self, s: &String) {
-        let mut i = 999999;
+    pub fn remove_named(&mut self, s: &str) {
         let a = self.state.selected().unwrap();
-        for (j, item) in self.items.iter().enumerate() {
-            if &item.to_string() == s {
-                i = j
-            }
-        }
-        if i < 999999 {
+        if let Some(i) = self.items.iter().position(|p| p.to_string() == s) {
             self.items.remove(i);
             if i < a {
                 self.state.select(Some(a - 1));
             }
-        }
+        };
     }
 
     pub fn replace(&mut self, obj: T) {
@@ -638,7 +634,7 @@ impl<T: ToString + PartialEq + Clone> StatefulList<T> {
             .collect()
     }
 
-    pub fn rvlis(&self, vcn: &Vec<String>) -> Vec<ListItem> {
+    pub fn rvlis(&self, vcn: &[String]) -> Vec<ListItem> {
         self.items
             .iter()
             .map(|f| {
@@ -653,138 +649,6 @@ impl<T: ToString + PartialEq + Clone> StatefulList<T> {
                 }
             })
             .collect()
-    }
-}
-
-#[derive(Default)]
-pub struct OpenDeckTable {
-    decks: Vec<Deck>,
-    pub state: TableState,
-}
-
-impl OpenDeckTable {
-    pub fn init(&mut self, conn: &Connection) {
-        let decks = crate::db::rvd(conn).unwrap();
-        if decks.len() > 0 {
-            self.state.select(Some(0));
-        }
-        self.decks = decks;
-    }
-
-    //TODO: Could cause issues when using a new db; test!
-    pub fn rdt(&self) -> Table {
-        let decks = self.decks.clone();
-        let headers = Row::new(vec![
-            Cell::from("ID"),
-            Cell::from("Deck Name"),
-            Cell::from("Commander(s)"),
-            Cell::from("Color"),
-        ])
-        .style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(Color::Cyan),
-        );
-        let mut rows = Vec::new();
-
-        for deck in decks {
-            let (height, com2) = match deck.commander2 {
-                Some(c) => (2, c.name),
-                None => (1, String::new()),
-            };
-
-            let r = Row::new(vec![
-                Cell::from(deck.id.to_string()),
-                Cell::from(deck.name),
-                Cell::from(format!("{}\n{}", deck.commander.name, com2)),
-                Cell::from(deck.color),
-            ])
-            .height(height)
-            .style(Style::default());
-
-            rows.push(r);
-        }
-
-        let table = Table::new(rows)
-            .header(headers)
-            .block(Block::default().borders(Borders::ALL))
-            .widths(&[
-                Constraint::Length(4),
-                Constraint::Percentage(40),
-                Constraint::Percentage(40),
-                Constraint::Length(7),
-            ])
-            .column_spacing(1)
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::ITALIC),
-            );
-
-        table
-    }
-
-    pub fn next(&mut self) {
-        if self.decks.len() == 0 {
-            return;
-        }
-        if self.decks.len() > 0 {
-            let i = match self.state.selected() {
-                Some(i) => {
-                    if i >= self.decks.len() - 1 {
-                        0
-                    } else {
-                        i + 1
-                    }
-                }
-                None => 0,
-            };
-            self.state.select(Some(i));
-        }
-    }
-
-    pub fn previous(&mut self) {
-        if self.decks.len() == 0 {
-            return;
-        }
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.decks.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-
-    pub fn get(&self) -> Option<&Deck> {
-        if self.decks.len() == 0 {
-            return None;
-        }
-        if let Some(i) = self.state.selected() {
-            self.decks.get(i)
-        } else {
-            None
-        }
-    }
-
-    pub fn remove(&mut self) -> Option<Deck> {
-        if self.decks.len() == 0 {
-            return None;
-        }
-        let a = self.state.selected().unwrap();
-        let d = self.decks.remove(a);
-
-        if self.decks.len() == 0 {
-            self.state = TableState::default();
-        } else if self.decks.len() == a {
-            self.state.select(Some(a - 1));
-        }
-
-        Some(d)
     }
 }
 
@@ -822,90 +686,6 @@ pub struct DeckStatScreen<'a> {
     pub tag_list: List<'a>,
 }
 
-#[derive(Default, Clone)]
-pub struct DeckStatInfo {
-    pub cmc_data: Vec<(String, u64)>,
-    pub price_data: Vec<(String, f64)>,
-    pub type_data: Vec<(String, u64)>,
-    pub tag_data: Vec<(String, u64)>,
-}
-
-impl<'a> DeckStatScreen<'a> {
-    pub fn from(
-        cmc_data: &'a Vec<(&'a str, u64)>,
-        price_data: &'a Vec<(String, f64)>,
-        type_data: &'a Vec<(&'a str, u64)>,
-        tag_data: Vec<ListItem<'a>>,
-    ) -> DeckStatScreen<'a> {
-        let mana_curve = BarChart::default()
-            .block(
-                Block::default()
-                    .title("Converted Mana Costs")
-                    .borders(Borders::ALL),
-            )
-            .bar_width(3)
-            .bar_gap(1)
-            .bar_style(Style::default().fg(Color::White).bg(Color::Black))
-            .value_style(
-                Style::default()
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .label_style(Style::default().fg(Color::Cyan))
-            .data(cmc_data.as_slice());
-
-        let type_breakdown = BarChart::default()
-            .block(
-                Block::default()
-                    .title("Type Breakdown")
-                    .borders(Borders::ALL),
-            )
-            .bar_width(3)
-            .bar_gap(1)
-            .bar_style(Style::default().fg(Color::White))
-            .value_style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .label_style(Style::default().fg(Color::Cyan))
-            .data(type_data.as_slice());
-
-        let mut prices = Vec::new();
-        let mut total = 0.0;
-        for (n, v) in price_data {
-            total += v;
-            let r = Row::new(vec![Cell::from(n.as_str()), Cell::from(v.to_string())]);
-            prices.push(r);
-        }
-        prices.insert(
-            0,
-            Row::new(vec![Cell::from("Total"), Cell::from(total.to_string())])
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-        );
-
-        let prices = Table::new(prices)
-            .style(Style::default().fg(Color::White))
-            .header(Row::new(vec!["Card", "Price"]).style(Style::default().fg(Color::Yellow)))
-            .block(Block::default().title("Card Prices").borders(Borders::ALL))
-            .widths(&[Constraint::Length(20), Constraint::Length(6)])
-            .column_spacing(1);
-
-        let tag_list = List::new(tag_data)
-            .block(Block::default().title("List").borders(Borders::ALL))
-            .style(Style::default().fg(Color::White))
-            .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
-            .highlight_symbol(">>");
-
-        DeckStatScreen {
-            mana_curve,
-            prices,
-            type_breakdown,
-            tag_list,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Card {
     pub cmc: f64,
@@ -940,15 +720,15 @@ impl Card {
         v.push(Spans::from(self.rarity.clone()));
 
         v.push(Spans::from(String::new()));
-        let t = self.text.split("\n");
+        let t = self.text.split('\n');
         for l in t {
             v.push(Spans::from(l));
         }
 
-        let s = if self.power.len() > 0 {
+        let s = if !self.power.is_empty() {
             v.push(Spans::from(String::new()));
             format!("Power/Toughness: {}/{}", self.power, self.toughness)
-        } else if self.loyalty.len() > 0 {
+        } else if !self.loyalty.is_empty() {
             v.push(Spans::from(String::new()));
             format!("Loyalty: {}", self.loyalty.clone())
         } else {
@@ -992,7 +772,7 @@ impl Card {
             v.push(Spans::from(a));
         }
 
-        if self.tags.len() > 0 {
+        if !self.tags.is_empty() {
             v.push(Spans::from(format!("Tags: {}", self.tags.join(" "))));
         }
 
@@ -1046,7 +826,6 @@ impl ToString for Deck {
 pub mod views {
     use crossterm::event::KeyCode;
     use rusqlite::Connection;
-    use tui::widgets::Wrap;
     use std::cmp::Ordering;
     use std::rc::Rc;
     use std::{
@@ -1055,6 +834,7 @@ pub mod views {
         sync::{Arc, Mutex},
     };
     use tui::layout::Margin;
+    use tui::widgets::Wrap;
     use tui::{
         backend::CrosstermBackend,
         layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -1124,9 +904,9 @@ pub mod views {
 
     #[derive(PartialEq, Clone)]
     pub enum TagChange {
-        DeleteTag(String),
-        ChangeTag(String, String),
-        InsertTag(String),
+        Delete(String),
+        Change(String, String),
+        Insert(String),
     }
 
     #[derive(Copy, Clone, PartialEq)]
@@ -1249,6 +1029,7 @@ pub mod views {
         }
 
         pub fn handle_input(&mut self, c: KeyCode) -> ViewExit {
+            const BANNED_CHARS: [char; 2] = [' ', ';'];
             match c {
                 KeyCode::Esc => ViewExit::Cancel,
                 KeyCode::Right => {
@@ -1366,7 +1147,7 @@ pub mod views {
                 }
                 KeyCode::Enter => match self.section {
                     SettingsSection::Tags => {
-                        if self.vt[self.vpos] != String::from("main")
+                        if self.vt[self.vpos] != *"main"
                             || self
                                 .vt
                                 .iter()
@@ -1387,23 +1168,23 @@ pub mod views {
                     SettingsSection::TagText => {
                         self.tpos = 0;
                         self.section = SettingsSection::Tags;
-                        if self.vt[self.vpos].len() == 0 {
+                        if self.vt[self.vpos].is_empty() {
                             self.vt.remove(self.vpos);
-                            self.vch.push(TagChange::DeleteTag(self.wt.clone()));
+                            self.vch.push(TagChange::Delete(self.wt.clone()));
                         }
                         if self.wt.is_empty() {
-                            self.vch
-                                .push(TagChange::InsertTag(self.vt[self.vpos].clone()));
+                            self.vch.push(TagChange::Insert(self.vt[self.vpos].clone()));
                             self.vt.sort();
                             self.vt.push(String::from("{Add new tag}"));
                         } else {
-                            self.vch.push(TagChange::ChangeTag(
+                            self.vch.push(TagChange::Change(
                                 self.wt.clone(),
                                 self.vt[self.vpos].clone(),
                             ));
+                            //This is the {Add new tag} temporary tag
                             let s = self.vt.pop().unwrap();
                             self.vt.sort();
-                            self.vt.push(s.clone());
+                            self.vt.push(s);
                         }
                         ViewExit::Hold
                     }
@@ -1425,7 +1206,7 @@ pub mod views {
                     match self.section {
                         SettingsSection::Tags => {
                             if self.vpos < self.vt.len() - 1
-                                && (self.vt[self.vpos] != String::from("main")
+                                && (self.vt[self.vpos] != *"main"
                                     || self
                                         .vt
                                         .iter()
@@ -1433,8 +1214,7 @@ pub mod views {
                                         .count()
                                         > 1)
                             {
-                                self.vch
-                                    .push(TagChange::DeleteTag(self.vt[self.vpos].clone()));
+                                self.vch.push(TagChange::Delete(self.vt[self.vpos].clone()));
                                 self.vt.remove(self.vpos);
                             }
                         }
@@ -1456,18 +1236,16 @@ pub mod views {
                     ViewExit::Hold
                 }
                 KeyCode::Char(c) => {
-                    if self.section == SettingsSection::TagText {
-                        if self.vt[self.vpos] != String::from("main")
+                    if self.section == SettingsSection::TagText && (self.vt[self.vpos] != *"main"
                             || self
                                 .vt
                                 .iter()
                                 .filter(|&s| s == &String::from("main"))
                                 .count()
-                                > 1
-                        {
-                            self.vt[self.vpos].insert(self.tpos, c);
-                            self.tpos += 1;
-                        }
+                                > 1) && !BANNED_CHARS.contains(&c)
+                    {
+                        self.vt[self.vpos].insert(self.tpos, c);
+                        self.tpos += 1;
                     }
                     ViewExit::Hold
                 }
@@ -1488,7 +1266,7 @@ pub mod views {
                             .add_modifier(Modifier::BOLD)
                             .fg(Color::Cyan),
                     );
-                    vsp.push(Span::from(span));
+                    vsp.push(span);
                 } else {
                     vsp.push(Span::from(s));
                 }
@@ -1729,7 +1507,7 @@ pub mod views {
                     self.com2 = String::new();
                 }
                 KeyCode::Up => {
-                    if self.section != CreateDeckSection::Title && self.vcn.len() > 0 {
+                    if self.section != CreateDeckSection::Title && !self.vcn.is_empty() {
                         let i = match self.vpos.selected() {
                             Some(i) => {
                                 if i == 0 {
@@ -1744,7 +1522,7 @@ pub mod views {
                     }
                 }
                 KeyCode::Down => {
-                    if self.section != CreateDeckSection::Title && self.vcn.len() > 0 {
+                    if self.section != CreateDeckSection::Title && !self.vcn.is_empty() {
                         let i = match self.vpos.selected() {
                             Some(i) => (i + 1) % self.vcn.len(),
                             None => 0,
@@ -1924,15 +1702,15 @@ pub mod views {
             }
         }
 
-        fn uvcn(&mut self, active: &String, conn: &Connection) {
+        fn uvcn(&mut self, active: &str, conn: &Connection) {
             let rvcn = if self.section == CreateDeckSection::SecondaryCommander {
-                rvcnfnp(conn, &active)
+                rvcnfnp(conn, active)
             } else {
-                rvcnfn(conn, &active)
+                rvcnfn(conn, active)
             };
             self.vcn = match rvcn {
                 Ok(vs) => {
-                    if vs.len() > 0 {
+                    if vs.is_empty() {
                         self.vpos.select(Some(0));
                     } else {
                         self.vpos.select(None);
@@ -1991,7 +1769,7 @@ pub mod views {
 
         pub fn init(&mut self, conn: &Connection) {
             let decks = rvd(conn).unwrap();
-            if decks.len() > 0 {
+            if !decks.is_empty() {
                 self.state.select(Some(0));
             }
             self.decks = decks;
@@ -2015,11 +1793,9 @@ pub mod views {
                             let did = d.id;
                             return OpenDeckViewExit::DeleteDeck(did);
                         }
-                    } else {
-                        if let Some(i) = self.state.selected() {
-                            let did = self.decks.get(i).unwrap().id;
-                            return OpenDeckViewExit::OpenDeck(did);
-                        }
+                    } else if let Some(i) = self.state.selected() {
+                        let did = self.decks.get(i).unwrap().id;
+                        return OpenDeckViewExit::OpenDeck(did);
                     }
                 }
                 KeyCode::Esc => return OpenDeckViewExit::Cancel,
@@ -2052,13 +1828,13 @@ pub mod views {
         }
 
         fn remove(&mut self) -> Option<Deck> {
-            if self.decks.len() == 0 {
+            if self.decks.is_empty() {
                 return None;
             }
             let a = self.state.selected().unwrap();
             let d = self.decks.remove(a);
 
-            if self.decks.len() == 0 {
+            if self.decks.is_empty() {
                 self.state = TableState::default();
             } else if self.decks.len() == a {
                 self.state.select(Some(a - 1));
@@ -2068,26 +1844,24 @@ pub mod views {
         }
 
         fn next(&mut self) {
-            if self.decks.len() == 0 {
+            if self.decks.is_empty() {
                 return;
             }
-            if self.decks.len() > 0 {
-                let i = match self.state.selected() {
-                    Some(i) => {
-                        if i >= self.decks.len() - 1 {
-                            0
-                        } else {
-                            i + 1
-                        }
+            let i = match self.state.selected() {
+                Some(i) => {
+                    if i >= self.decks.len() - 1 {
+                        0
+                    } else {
+                        i + 1
                     }
-                    None => 0,
-                };
-                self.state.select(Some(i));
-            }
+                }
+                None => 0,
+            };
+            self.state.select(Some(i));
         }
 
         fn previous(&mut self) {
-            if self.decks.len() == 0 {
+            if self.decks.is_empty() {
                 return;
             }
             let i = match self.state.selected() {
@@ -2221,13 +1995,11 @@ pub mod views {
                                     self.uvc();
                                 }
                             }
-                        } else {
-                            if let Some(s) = self.vsomni.last() {
-                                self.omni = s.clone();
-                                self.omnipos = self.omni.len();
-                                if self.dvs == DeckViewSection::DeckOmni {
-                                    self.uvc();
-                                }
+                        } else if let Some(s) = self.vsomni.last() {
+                            self.omni = s.clone();
+                            self.omnipos = self.omni.len();
+                            if self.dvs == DeckViewSection::DeckOmni {
+                                self.uvc();
                             }
                         }
                     }
@@ -2289,11 +2061,11 @@ pub mod views {
                             self.omni = omni.clone();
                             self.omnipos = self.omnipos.min(self.omni.len());
 
-                            if omni.len() > 0 {
+                            if !omni.is_empty() {
                                 if let Some(i) = self.vsomni.iter().position(|s| s == &omni) {
                                     self.vsomni.remove(i);
                                 };
-                                self.vsomni.push(omni.clone());
+                                self.vsomni.push(omni);
                             }
 
                             if self.dvs == DeckViewSection::DbOmni {
@@ -2301,11 +2073,11 @@ pub mod views {
                                 if self.sldb.state.selected() != None {
                                     self.dvs = DeckViewSection::DbCards;
                                 }
-                            } else if self.slde.items.len() > 0 {
+                            } else if !self.slde.items.is_empty() {
                                 self.dvs = DeckViewSection::DeckCards;
                             }
 
-                            if tag.len() > 0 {
+                            if !tag.is_empty() {
                                 return DeckViewExit::NewTag(tag, self.cf.did);
                             }
                         }
@@ -2387,21 +2159,19 @@ pub mod views {
                                         if flag {
                                             sl.remove_named(n);
                                         }
-                                        dcntodc(&self.dbc.lock().unwrap(), &n, self.cf.did)
-                                            .unwrap();
+                                        dcntodc(&self.dbc.lock().unwrap(), n, self.cf.did).unwrap();
                                     }
                                     CardLayout::Meld(s, n, m) => {
                                         if flag {
                                             sl.remove_named(m);
                                         }
-                                        let _a =
-                                            dcntodc(&self.dbc.lock().unwrap(), &m, self.cf.did);
+                                        let _a = dcntodc(&self.dbc.lock().unwrap(), m, self.cf.did);
 
                                         if s == &'b' {
                                             if flag {
                                                 sl.remove_named(n);
                                             }
-                                            dcntodc(&self.dbc.lock().unwrap(), &n, self.cf.did)
+                                            dcntodc(&self.dbc.lock().unwrap(), n, self.cf.did)
                                                 .unwrap();
                                         }
                                     }
@@ -2440,7 +2210,7 @@ pub mod views {
                             } else {
                                 if let Ok(vc) = ictodc(
                                     &self.dbc.lock().unwrap(),
-                                    &self.ac.as_ref().unwrap(),
+                                    self.ac.as_ref().unwrap(),
                                     self.cf.did,
                                 ) {
                                     for c in vc {
@@ -2467,16 +2237,18 @@ pub mod views {
                         KeyCode::Char('u') => {
                             if let Some(ac) = &self.ac {
                                 if ac.stale {
-                                    upfcn_quick(&self.dbc.lock().unwrap(), &ac.name);
-                                } else {
-                                    if let Ok(card) = upfcn_detailed(
+                                    if let Ok(card) = upfcn_quick(
                                         &self.dbc.lock().unwrap(),
-                                        &ac,
+                                        &ac.name,
                                         Some(self.cf.did),
                                     ) {
-                                        self.ac = Some(card);
+                                        self.ac = Some(card)
                                     }
-
+                                    // self.uac();
+                                } else if let Ok(card) =
+                                    upfcn_detailed(&self.dbc.lock().unwrap(), ac, Some(self.cf.did))
+                                {
+                                    self.ac = Some(card);
                                 }
                             };
                         }
@@ -2528,7 +2300,7 @@ pub mod views {
                     .constraints(
                         [
                             Constraint::Min(20),
-                            Constraint::Max(tag_max.try_into().unwrap()),
+                            Constraint::Length(tag_max.try_into().unwrap()),
                         ]
                         .as_ref(),
                     )
@@ -2672,7 +2444,7 @@ pub mod views {
                     if s == &'b' {
                         n
                     } else {
-                        let meld = rcfn(&self.dbc.lock().unwrap(), &m, None).unwrap();
+                        let meld = rcfn(&self.dbc.lock().unwrap(), m, None).unwrap();
                         if let crate::util::CardLayout::Meld(_, face, _) = meld.lo {
                             if &face == n {
                                 m
@@ -2732,7 +2504,7 @@ pub mod views {
                     }
                 }
 
-                for t in c.types.clone().split(" ") {
+                for t in c.types.clone().split(' ') {
                     match t {
                         "Artifact" => vtype[0] += 1,
                         "Creature" => vtype[1] += 1,
@@ -2818,7 +2590,7 @@ pub mod views {
             } else {
                 recommendations.push(format!("{} nonland cards in deck.", nonlands));
             }
-            let avg_cmc: f64 = ((total_cmc as f64) / (nonlands as f64)).into();
+            let avg_cmc: f64 = (total_cmc as f64) / (nonlands as f64);
             if avg_cmc > 4.0 {
                 recommendations.push(format!("Average mana cost {:.2}. Seems high.", avg_cmc));
             } else if avg_cmc < 3.0 {
@@ -2841,7 +2613,9 @@ pub mod views {
         }
 
         pub fn recalc(&mut self) -> bool {
-            if self.fresh { return true;}
+            if self.fresh {
+                return true;
+            }
             let vcs = rvmcfd(&self.dbc.lock().unwrap(), self.did).unwrap();
             let mut price_data = Vec::new();
             let mut fresh = true;
@@ -2903,7 +2677,6 @@ pub mod views {
                 )
                 .split(halfsplit[0]);
 
-            
             frame.render_widget(pt, top_chunks[1]);
         }
 
@@ -2919,7 +2692,8 @@ pub mod views {
                     ListItem::new(format!("{}: {} ({:.1}%)", symbol, amount, percentage))
                 })
                 .collect();
-            let cl = List::new(color_list).block(Block::default().title("Mana Colors").borders(Borders::ALL));
+            let cl = List::new(color_list)
+                .block(Block::default().title("Mana Colors").borders(Borders::ALL));
 
             let cmc_data = vec![
                 ("0", self.cmc_data[0]),
@@ -3022,7 +2796,7 @@ pub mod views {
             frame.render_widget(rl, bottom_chunks[2]);
         }
 
-        fn get_mana_curve<'a>(&self, cmc_data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
+        fn get_mana_curve<'a>(&self, cmc_data: &'a [(&'a str, u64)]) -> BarChart<'a> {
             BarChart::default()
                 .block(
                     Block::default()
@@ -3038,10 +2812,10 @@ pub mod views {
                         .add_modifier(Modifier::BOLD),
                 )
                 .label_style(Style::default().fg(Color::Cyan))
-                .data(cmc_data.as_slice())
+                .data(cmc_data)
         }
 
-        fn get_type_curve<'a>(&self, type_data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
+        fn get_type_curve<'a>(&self, type_data: &'a [(&'a str, u64)]) -> BarChart<'a> {
             BarChart::default()
                 .block(
                     Block::default()
@@ -3057,7 +2831,7 @@ pub mod views {
                         .add_modifier(Modifier::BOLD),
                 )
                 .label_style(Style::default().fg(Color::Cyan))
-                .data(type_data.as_slice())
+                .data(type_data)
         }
     }
 }
