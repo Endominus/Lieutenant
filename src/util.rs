@@ -1710,7 +1710,7 @@ pub mod views {
             };
             self.vcn = match rvcn {
                 Ok(vs) => {
-                    if vs.is_empty() {
+                    if !vs.is_empty() {
                         self.vpos.select(Some(0));
                     } else {
                         self.vpos.select(None);

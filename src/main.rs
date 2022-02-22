@@ -5,26 +5,26 @@ mod db;
 mod ui;
 mod util;
 
-extern crate reqwest;
-extern crate rusqlite;
-extern crate json;
-extern crate clap;
-extern crate anyhow;
-#[cfg(feature = "serde_derive")] 
-extern crate serde;
-extern crate crossterm;
-extern crate tui;
-extern crate serde_json;
-extern crate lazy_static;
-extern crate csv;
-extern crate self_update;
-extern crate pest_derive;
+// extern crate reqwest;
+// extern crate rusqlite;
+// extern crate json;
+// extern crate clap;
+// extern crate anyhow;
+// #[cfg(feature = "serde_derive")] 
+// extern crate serde;
+// extern crate crossterm;
+// extern crate tui;
+// extern crate serde_json;
+// extern crate lazy_static;
+// extern crate csv;
+// extern crate self_update;
+// extern crate pest_derive;
 
 
 use chrono::Datelike;
 use crate::db::CardFilter;
 use crate::network::rvjc;
-use crate::util::*;
+use crate::util::{get_local_file, Settings, FileSettings};
 
 use std::{fs::File, path::PathBuf, io::{BufReader, BufRead}};
 use rusqlite::Connection;
@@ -62,7 +62,7 @@ pub fn run(command: Command) -> Result<()> {
 
             let now = Instant::now();
             let sets = network::rvs().unwrap();
-            let p = util::get_local_file("lieutenant.db", true);
+            let p = get_local_file("lieutenant.db", true);
             let conn = Connection::open(p).unwrap();
             db::updatedb(&conn, sets).unwrap();
             println!("Imported cards in {} ms.", now.elapsed().as_millis());
@@ -71,9 +71,9 @@ pub fn run(command: Command) -> Result<()> {
             let _a = ui::run();
         },
         Command::ImportDeck(deck_name, commanders, filename) => {
-            let p = util::get_local_file("lieutenant.db", true);
+            let p = get_local_file("lieutenant.db", true);
             let conn = Connection::open(p).unwrap();
-            let p = util::get_local_file("settings.toml", true);
+            let p = get_local_file("settings.toml", true);
             let file_settings = FileSettings::new(&p).unwrap();
             let mut settings = Settings::from(file_settings);
 
@@ -138,7 +138,7 @@ pub fn run(command: Command) -> Result<()> {
             };
         }
         Command::ExportDeck(did, path) => {
-            let p = util::get_local_file("lieutenant.db", false);
+            let p = get_local_file("lieutenant.db", false);
             let conn = Connection::open(p).unwrap();
             let deck = db::rdfdid(&conn, did).expect("Deck could not be retrieved. Ensure Deck ID is correct.");
             let mut cards = db::rvicfdid(&conn, did).unwrap();
@@ -252,7 +252,7 @@ fn debug_rvjc() -> Result<()> {
 }
 
 fn debug_parse_args() -> Result<()> {
-    let p = util::get_local_file("lieutenant.db", false);
+    let p = get_local_file("lieutenant.db", false);
     let conn = Connection::open(p).unwrap();
     db::add_regexp_function(&conn).unwrap();
     let mut p = std::env::current_exe().unwrap();
@@ -277,7 +277,7 @@ fn debug_parse_args() -> Result<()> {
 }
 
 fn debug_rvcfcf() -> Result<()> {
-    // let p = util::get_local_file("lieutenant.db", false);
+    // let p = get_local_file("lieutenant.db", false);
     // let conn = Connection::open(p).unwrap();
     // db::add_regexp_function(&conn).unwrap();
     // let mut p = std::env::current_exe().unwrap();
@@ -304,7 +304,7 @@ fn debug_rvcfcf() -> Result<()> {
 }
 
 fn debug_rcfn() {
-    let p = util::get_local_file("lieutenant.db", false);
+    let p = get_local_file("lieutenant.db", false);
     let conn = Connection::open(p).unwrap();
     db::add_regexp_function(&conn).unwrap();
 

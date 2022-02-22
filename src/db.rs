@@ -157,12 +157,14 @@ WHERE deck_contents.deck = {}",
                 }
             }
             Err(_) => {
-                let default = match self.df {
-                    DefaultFilter::Name => "name",
-                    DefaultFilter::Text => "card_text",
-                };
-                let error = omni.replace('\"', "");
-                filters += &format!("\nAND {default} LIKE \"%{error}%\"");
+                if omni.get(0..1) != Some("/") {
+                    let default = match self.df {
+                        DefaultFilter::Name => "name",
+                        DefaultFilter::Text => "card_text",
+                    };
+                    let error = omni.replace('\"', "");
+                    filters += &format!("\nAND {default} LIKE \"%{error}%\"");
+                }
             }
         }
 
@@ -336,8 +338,10 @@ WHERE deck_contents.deck = {}",
                     _ => "",
                 };
 
+                const VARIABLE: &str = "*xX";
+
                 let range = p.as_str();
-                if range == "*" {
+                if VARIABLE.contains(range) {
                     s = match mode {
                         FilterField::Cmc => String::from("mana_cost LIKE \'%X%\'"),
                         FilterField::Power => String::from("power LIKE \'%*%\'"),
@@ -411,7 +415,7 @@ WHERE deck_contents.deck = {}",
                     _ => "",
                 };
 
-                s = format!("rarity {req} {val}");
+                s = format!("rarity {req} '{val}'");
             }
             Rule::negation => {
                 s = "not ".into();
@@ -632,7 +636,7 @@ pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<()> {
 
     for set in sets {
         if !existing_sets.contains(&set) && set.date <= date {
-            println! {"Set {} was printed on {}, which is apparently less than {}", set.name, set.date, date};
+            // debug!("Set {} was printed on {}, which is apparently less than {}", set.name, set.date, date);
             println!("Adding {} to existing sets.", set.name);
 
             let vjc = rvjc(&set.code).unwrap();
@@ -1726,5 +1730,107 @@ impl ToString for Legalities {
         }
 
         vs.join("|")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // use crate::util::get_local_file;
+    use std::env::current_dir;
+
+    #[test]
+    fn complex_query() {
+        let p = current_dir().unwrap().join("target/debug/lieutenant.db");
+        let conn = Connection::open(p).unwrap();
+        add_regexp_function(&conn).unwrap();
+        let decks = rvd(&conn).unwrap();
+        let a = decks.iter().find(|d| d.name == "test" && d.commander.name == "Mizzix of the Izmagnus");
+        assert!(a.is_some());
+
+        if let Some(deck) = a {
+
+            let mut cf = CardFilter::default();
+            cf.did = deck.id;
+            let query = cf.make_query(false, "ty:shaman");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 5);
+            let query = cf.make_query(false, "ty:shaman te:sacrifice");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 4);
+            let query = cf.make_query(false, "ty:shaman te:sacrifice r:c");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 3);
+            let query = cf.make_query(false, "ty:shaman te:sacrifice r:c tag:main");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 2);
+            let query = cf.make_query(false, "ty:shaman te:sacrifice r:c tag:main cmc:1");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 1);
+            assert_eq!(res.first().unwrap().name, String::from("Krark-Clan Shaman"));
+        }
+    }
+
+    #[test]
+    fn apostrophes() {
+        let p = current_dir().unwrap().join("target/debug/lieutenant.db");
+        let conn = Connection::open(p).unwrap();
+        add_regexp_function(&conn).unwrap();
+        let decks = rvd(&conn).unwrap();
+        let a = decks.iter().find(|d| d.name == "test" && d.commander.name == "Mizzix of the Izmagnus");
+        assert!(a.is_some());
+
+        if let Some(deck) = a {
+            let mut cf = CardFilter::default();
+            cf.did = deck.id;
+            let query = cf.make_query(false, "na:\"'\"");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 1);
+            assert_eq!(res.first().unwrap().name, String::from("Blue Sun's Zenith"));
+            let query = cf.make_query(false, "te:\"'\"");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 1);
+            assert_eq!(res.first().unwrap().name, String::from("Blue Sun's Zenith"));
+        }
+    }
+
+    #[test]
+    fn x_mana_cost() {
+        let p = current_dir().unwrap().join("target/debug/lieutenant.db");
+        let conn = Connection::open(p).unwrap();
+        add_regexp_function(&conn).unwrap();
+        let decks = rvd(&conn).unwrap();
+        let a = decks.iter().find(|d| d.name == "test" && d.commander.name == "Mizzix of the Izmagnus");
+        assert!(a.is_some());
+
+        if let Some(deck) = a {
+            let mut cf = CardFilter::default();
+            cf.did = deck.id;
+            let query = cf.make_query(false, "cmc:*");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 1);
+            assert_eq!(res.first().unwrap().name, String::from("Blue Sun's Zenith"));
+        }
+    }
+
+    #[test]
+    fn colors() {
+        let p = current_dir().unwrap().join("target/debug/lieutenant.db");
+        let conn = Connection::open(p).unwrap();
+        add_regexp_function(&conn).unwrap();
+        let decks = rvd(&conn).unwrap();
+        let a = decks.iter().find(|d| d.name == "test" && d.commander.name == "Mizzix of the Izmagnus");
+        assert!(a.is_some());
+
+        if let Some(deck) = a {
+            let mut cf = CardFilter::default();
+            cf.did = deck.id;
+            let query = cf.make_query(false, "c:c");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert_eq!(res.len(), 2);
+            let query = cf.make_query(false, "ci:c");
+            let res = rvcfcf(&conn, &query).unwrap();
+            assert!(res.is_empty());
+        }
     }
 }
