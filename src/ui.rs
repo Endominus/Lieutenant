@@ -58,7 +58,7 @@ impl AppState {
 
         app.init_main_menu();
 
-        if let Some(did) = app.settings.get_oir() {
+        if let Some(did) = app.settings.get_mrd() {
             app.init_deck_view(did);
         }
 
@@ -220,7 +220,7 @@ impl AppState {
                 self.settings.rdf(None),
                 self.settings.rso(None),
                 String::from("Global Settings"),
-                Some(false),
+                Some(self.settings.get_oir()),
             ),
         };
         self.settings_view = Some(sv);

@@ -218,7 +218,11 @@ impl Settings {
         self.global.tags.clone()
     }
 
-    pub fn get_oir(&self) -> Option<i32> {
+    pub fn get_oir(&self) -> bool {
+        self.global.open_into_recent
+    }
+
+    pub fn get_mrd(&self) -> Option<i32> {
         if self.global.open_into_recent && self.global.recent > 0 {
             Some(self.global.recent)
         } else {

@@ -5,22 +5,6 @@ mod db;
 mod ui;
 mod util;
 
-// extern crate reqwest;
-// extern crate rusqlite;
-// extern crate json;
-// extern crate clap;
-// extern crate anyhow;
-// #[cfg(feature = "serde_derive")] 
-// extern crate serde;
-// extern crate crossterm;
-// extern crate tui;
-// extern crate serde_json;
-// extern crate lazy_static;
-// extern crate csv;
-// extern crate self_update;
-// extern crate pest_derive;
-
-
 use chrono::Datelike;
 use crate::db::CardFilter;
 use crate::network::rvjc;
@@ -262,7 +246,6 @@ fn debug_parse_args() -> Result<()> {
         panic!("Cannot find the settings file. Are you sure it's in the same directory as the executable?");
     }
 
-    // let config = util::Settings::new(&p).unwrap();
     let deck = db::rdfdid(&conn, 3).unwrap();
     let cf = CardFilter::from(deck.id, &deck.color, util::DefaultFilter::Name, util::SortOrder::NameAsc);
 
@@ -308,10 +291,10 @@ fn debug_rcfn() {
     let conn = Connection::open(p).unwrap();
     db::add_regexp_function(&conn).unwrap();
 
-    let a = db::rcfndid(
+    let a = db::rcfn(
         &conn, 
         "Anafenza, Kin-Tree Spirit", 
-        1).unwrap();
+        Some(1)).unwrap();
     
     println!("{:?}", a);
 }

@@ -636,12 +636,11 @@ pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<()> {
 
     for set in sets {
         if !existing_sets.contains(&set) && set.date <= date {
-            // debug!("Set {} was printed on {}, which is apparently less than {}", set.name, set.date, date);
             println!("Adding {} to existing sets.", set.name);
 
             let vjc = rvjc(&set.code).unwrap();
-            let (success, failure) = ivcfjsmap(conn, vjc)?;
-            println!("Added {} cards, with {} not added.", success, failure);
+            let (_success, _failure) = ivcfjsmap(conn, vjc)?;
+            // println!("Added {} cards, with {} not added.", success, failure);
 
             set_stmt.execute(named_params! {
                 ":code": set.code,
@@ -842,10 +841,10 @@ pub fn ttindc(conn: &Connection, c: &str, t: &String, did: i32) -> Option<Card> 
         )
         .unwrap();
 
-    let mut card = rcfndid(conn, c, did).unwrap();
+    let mut card = rcfn(conn, c, Some(did)).unwrap();
     let cc = if t.eq(&String::from("main")) || t.eq(&String::from("main")) {
         match &card.lo {
-            CardLayout::Paired(_, _, n) => Some(rcfndid(conn, n, did).unwrap()),
+            CardLayout::Paired(_, _, n) => Some(rcfn(conn, n, Some(did)).unwrap()),
             _ => None,
         }
     } else {
@@ -1105,18 +1104,14 @@ pub fn rcfn(conn: &Connection, name: &str, odid: Option<i32>) -> Result<Card> {
         ON cards.name = deck_contents.card_name
         AND deck_contents.deck = :did
         WHERE name = :name;")?;
-    stmt.query_row(named_params! {":name": name, ":did": odid}, cfr)
-}
+    let mut c = stmt.query_row(named_params! {":name": name, ":did": odid}, cfr)?;
 
-pub fn rcfndid(conn: &Connection, name: &str, did: i32) -> Result<Card> {
-    let mut stmt = conn.prepare("SELECT 
-        cmc, color_identity, legalities, loyalty, mana_cost, name, power, card_text, toughness, types, layout, related_cards, side, tags, rarity, price, date_price_retrieved
-        FROM cards 
-        INNER JOIN deck_contents
-        ON cards.name = deck_contents.card_name
-        WHERE cards.name = :name
-        AND deck_contents.deck = :did;")?;
-    stmt.query_row(named_params! {":name": name, ":did": did}, cfr)
+    if let CardLayout::Paired('b', _, ref rel) = c.lo {
+        let side_a = rcfn(conn, &rel, None)?;
+        c.price = side_a.price;
+    }
+
+    Ok(c)
 }
 
 pub fn rcomfdid(conn: &Connection, did: i32, secondary: bool) -> Result<Card> {
@@ -1565,11 +1560,17 @@ pub fn upfcn_quick(conn: &Connection, cn: &str, odid: Option<i32>) -> Result<Car
 
 pub fn upfcn_detailed(conn: &Connection, c: &Card, odid: Option<i32>) -> Result<Card> {
     let s = match &c.lo {
-        CardLayout::Paired(_, _, rel) => format!("{} // {}", &c.name, rel),
+        CardLayout::Paired('a', _, rel) => format!("{} // {}", c.name, rel),
+        CardLayout::Paired('b', _, rel) => format!("{} // {}", rel, c.name),
         _ => c.name.clone(),
     };
 
     let price = rextcostfcn(&s).unwrap();
+
+    let s = match &c.lo {
+        CardLayout::Paired('b', _, rel) => format!("{}", rel),
+        _ => c.name.clone(),
+    };
 
     conn.execute(
         "UPDATE cards 
@@ -1578,8 +1579,9 @@ pub fn upfcn_detailed(conn: &Connection, c: &Card, odid: Option<i32>) -> Result<
         WHERE name = :name;",
         named_params! {":price": price, ":name": &s},
     )?;
+    
 
-    rcfn(conn, &s, odid)
+    rcfn(conn, &c.name, odid)
 }
 
 // pub fn ucfcn(conn: &Connection, cn: &String, layout: &CardLayout, odid: Option<i32>) -> Result<Card> {
