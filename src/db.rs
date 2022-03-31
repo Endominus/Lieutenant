@@ -199,8 +199,9 @@ WHERE deck_contents.deck = {}",
                     if r.as_str() == "!" {
                         s += "tags IS NULL";
                     } else if r.as_rule() == Rule::text_token {
-                        s += "tags IS NOT NULL AND ";
+                        s += "tags IS NOT NULL AND (";
                         s += &CardFilter::helper(r, &FilterField::Tag);
+                        s += ")"
                     } else {
                         s += &CardFilter::helper(r, &FilterField::Tag);
                     }
@@ -313,7 +314,7 @@ WHERE deck_contents.deck = {}",
                     FilterField::Name => ("name", "LIKE", format!("\"%{a}%\"")),
                     FilterField::Text => ("card_text", "LIKE", format!("\"%{a}%\"")),
                     FilterField::Type => ("types", "LIKE", format!("\"%{a}%\"")),
-                    FilterField::Tag => ("tags", "REGEXP", format!(r#"'\|?{a}(?:$|\|)'"#)),
+                    FilterField::Tag => ("tags", "REGEXP", format!(r#"'(?:\||^){a}(?:$|\|)'"#)),
                     _ => ("", "", String::new()),
                 };
 
