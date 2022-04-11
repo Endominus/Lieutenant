@@ -6,7 +6,7 @@ Lieutenant is a tool to help people build their commander decks. It allows for m
 
 Just download the archive file corresponding to your OS from the [latest release](https://github.com/Endominus/Lieutenant/releases/latest) and extract it. The database and settings file need to be in the same directory as the executable.
 
-<iframe width="1280" height="720" src="https://www.youtube.com/embed/8BOfkMagso8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+https://www.youtube.com/watch?v=8BOfkMagso8
 
 ## Using the Software
 
