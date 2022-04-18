@@ -12,9 +12,15 @@ https://www.youtube.com/watch?v=8BOfkMagso8
 
 Before anything else, you should probably set up your default tags in the main menu's Settings page. These tags will be added by default to any subsequent deck you make; they can still be deleted on a case-by-case basis if you're not going to use them in that deck. A few have already been created as examples, such as "draw", "removal", and "board_wipe". Note that the "main" tag cannot be deleted or changed, as the software requires it to know what cards are in your maindeck.
 
+![Settings Screen](/images/Settings.png)
+
 To create a deck, it must have a name and at least one commander. Technically, I suppose you could leave the name field blank, but that would look awful and send a deeply dispiriting message to the cards in that deck. Poor form. If the commander you picked has the partner keyword, you will be given the opportunity to pick a second commander. Note that any cards you search for in the software will be filtered by the color identity of your commanders; you will never be presented with cards that are color-incompatible with the deck.
 
+![Deck Creation Screen](/images/CreateDeck.png)
+
 Once you're looking at a deck, you'll want to add cards to it. From the Deck View, switch to the Database View by pressing Tab (they look very similar, but the titles in the omnibar and card list will change to reflect which you are looking at), then type in card names to filter the database. You can navigate to a card with the arrow keys and press Enter to add that card to your deck. Pressing spacebar when highlighting a card with a related card (such as an Adventure, a transformed or modal face, or a meld relationship) will show that other related card(s).
+
+![Deck Details Screen](/images/DeckScreen.png)
 
 The left and right arrow keys will cycle through the tag list (arranged alphabetically). The current active tag is displayed in the top right of the window. You can press Enter to toggle the current active tag on the current active card, if that card is in your deck. Obviously, multiple tags can be added to any card, and I recommend added all relevant tags to a card as soon as it's added to the deck to make it easier to find and filter with later.
 
