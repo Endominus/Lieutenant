@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-#![feature(derive_default_enum)]
 mod network;
 mod db;
 mod ui;
@@ -42,14 +41,18 @@ pub fn run(command: Command) -> Result<()> {
                 .current_version(cargo_crate_version!())
                 .build()?
                 .update()?;
-            println!("Updated to version {}!", status.version());
+            if status.updated() {
+                println!("Updated to version {}! Please run the update command again to download any new cards.", status.version());
+            } else {
+                println!("Software is up-to-date. Checking for new cards...");
+                let now = Instant::now();
+                let sets = network::rvs().unwrap();
+                let p = get_local_file("lieutenant.db", true);
+                let conn = Connection::open(p).unwrap();
+                db::updatedb(&conn, sets).unwrap();
+                println!("Imported cards in {} ms.", now.elapsed().as_millis());
+            }
 
-            let now = Instant::now();
-            let sets = network::rvs().unwrap();
-            let p = get_local_file("lieutenant.db", true);
-            let conn = Connection::open(p).unwrap();
-            db::updatedb(&conn, sets).unwrap();
-            println!("Imported cards in {} ms.", now.elapsed().as_millis());
         },
         Command::Draw => { 
             let _a = ui::run();

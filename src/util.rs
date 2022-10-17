@@ -41,6 +41,8 @@ pub enum SortOrder {
     NameDesc,
     CmcAsc,
     CmcDesc,
+    PriceAsc,
+    PriceDesc
 }
 
 #[derive(PartialEq)]
@@ -86,6 +88,8 @@ impl ToString for SortOrder {
             SortOrder::NameDesc => String::from("-name"),
             SortOrder::CmcAsc => String::from("+cmc"),
             SortOrder::CmcDesc => String::from("-cmc"),
+            SortOrder::PriceAsc => String::from("+price"),
+            SortOrder::PriceDesc => String::from("-price"),
         }
     }
 }
@@ -1056,7 +1060,9 @@ pub mod views {
                                 SortOrder::NameAsc => SortOrder::NameDesc,
                                 SortOrder::NameDesc => SortOrder::CmcAsc,
                                 SortOrder::CmcAsc => SortOrder::CmcDesc,
-                                SortOrder::CmcDesc => SortOrder::NameAsc,
+                                SortOrder::CmcDesc => SortOrder::PriceAsc,
+                                SortOrder::PriceAsc => SortOrder::PriceDesc,
+                                SortOrder::PriceDesc => SortOrder::NameAsc,
                             }
                         }
                         SettingsSection::OpenIntoRecent => {
@@ -1091,10 +1097,12 @@ pub mod views {
                         }
                         SettingsSection::Ordering => {
                             self.ord = match self.ord {
-                                SortOrder::NameAsc => SortOrder::NameDesc,
-                                SortOrder::NameDesc => SortOrder::CmcAsc,
-                                SortOrder::CmcAsc => SortOrder::CmcDesc,
-                                SortOrder::CmcDesc => SortOrder::NameAsc,
+                                SortOrder::NameAsc => SortOrder::PriceDesc,
+                                SortOrder::NameDesc => SortOrder::NameAsc,
+                                SortOrder::CmcAsc => SortOrder::NameDesc,
+                                SortOrder::CmcDesc => SortOrder::CmcAsc,
+                                SortOrder::PriceAsc => SortOrder::CmcDesc,
+                                SortOrder::PriceDesc => SortOrder::PriceAsc,
                             };
                         }
                         SettingsSection::OpenIntoRecent => {
@@ -1327,6 +1335,8 @@ pub mod views {
                 SortOrder::CmcAsc => "Cards ordered by mana cost ascending.",
                 SortOrder::NameDesc => "Cards ordered by name descending.",
                 SortOrder::CmcDesc => "Cards ordered by mana cost descending.",
+                SortOrder::PriceAsc => "Cards ordered by price ascending.",
+                SortOrder::PriceDesc => "Cards ordered by price descending.",
             };
             let mut ordp = Paragraph::new(ordt).block(
                 Block::default()

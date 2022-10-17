@@ -24,6 +24,6 @@ toughness = { ("toughness" | "tough" | "to") ~ ":" ~ number_range }
 color = { ("color" | "c") ~ ":" ~ color_token ~ (or_separator ~ color_token)* }
 identity = { "ci:" ~ color_token ~ (or_separator ~ color_token)* }
 rarity = { ("rarity" | "r") ~ ":" ~ rarity_val+ }
-sort = { "sort:" ~ ("+" | "-") ~ ("cmc" | "name") }
+sort = { "sort:" ~ ("+" | "-") ~ ("cmc" | "name" | "price") }
 
 input = { (name | text | ctyp | tag | cmc | power | toughness | color | identity | rarity | sort | " ")+ }

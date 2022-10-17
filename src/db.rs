@@ -141,6 +141,8 @@ WHERE deck_contents.deck = {}",
             SortOrder::NameDesc => "ORDER BY name DESC;".into(),
             SortOrder::CmcAsc => "ORDER BY cmc ASC;".into(),
             SortOrder::CmcDesc => "ORDER BY cmc DESC;".into(),
+            SortOrder::PriceAsc => "ORDER BY price ASC;".into(),
+            SortOrder::PriceDesc => "ORDER BY price DESC;".into(),
         };
 
         match OmniParser::parse(Rule::input, omni) {
@@ -246,7 +248,12 @@ WHERE deck_contents.deck = {}",
             Rule::sort => {
                 let mut a: String = p.as_str().strip_prefix("sort:").unwrap().into();
                 let order = if a.remove(0) == '-' { "DESC" } else { "ASC" };
-                let field = if a.remove(0) == 'c' { "cmc" } else { "name" };
+                // let field = if a.remove(0) == 'c' { "cmc" } else { "name" };
+                let field = match a.remove(0) {
+                    'c' => "cmc",
+                    'p' => "price",
+                    _ => "name",
+                };
                 s = format!("ORDER BY {field} {order};");
             }
             Rule::text_token => {
@@ -593,8 +600,9 @@ pub fn initdb(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<()> {
+pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<u32> {
     let mut stmt = conn.prepare("PRAGMA table_info(sets);")?;
+    let mut new_cards = 0;
     sets.sort_by(|a, b| a.date.cmp(&b.date));
     let mut cols = Vec::new();
     match stmt.query([]) {
@@ -637,10 +645,10 @@ pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<()> {
 
     for set in sets {
         if !existing_sets.contains(&set) && set.date <= date {
-            println!("Adding {} to existing sets.", set.name);
+            println!("New set found: {}. Adding to existing sets.", set.name);
 
             let vjc = rvjc(&set.code).unwrap();
-            let (_success, _failure) = ivcfjsmap(conn, vjc)?;
+            let (success, _failure) = ivcfjsmap(conn, vjc)?;
             // println!("Added {} cards, with {} not added.", success, failure);
 
             set_stmt.execute(named_params! {
@@ -649,10 +657,11 @@ pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<()> {
                 ":date": set.date,
                 ":set_type": set.set_type
             })?;
+            new_cards += success;
         }
     }
 
-    Ok(())
+    Ok(new_cards)
 }
 
 pub fn ucfsqlite(conn_primary: &Connection, conn_secondary: &Connection) -> Result<()> {
@@ -1213,6 +1222,8 @@ pub fn rvcfdid(conn: &Connection, did: i32, sort_order: SortOrder) -> Result<Vec
         SortOrder::NameDesc => (String::from("DESC"), String::from("name")),
         SortOrder::CmcAsc => (String::from("ASC"), String::from("cmc")),
         SortOrder::CmcDesc => (String::from("DESC"), String::from("cmc")),
+        SortOrder::PriceAsc => (String::from("ASC"), String::from("price")),
+        SortOrder::PriceDesc => (String::from("DESC"), String::from("price")),
     };
 
     // For some reason, sqlite doesn't like named parameters in the ORDER BY clause.
