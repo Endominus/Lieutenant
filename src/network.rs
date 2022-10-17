@@ -73,9 +73,13 @@ pub fn rcostfcn(cn: &str, prev: Option<f64>) -> Result<f64> {
     };
 
     if let Some(prev) = prev {
-        if price > prev*1.5 || price == 0.0 {
+        if price > prev*1.5 {
             return rextcostfcn(cn)
         }
+    }
+
+    if price == 0.0 {
+        return rextcostfcn(cn)
     }
 
     Ok(price)

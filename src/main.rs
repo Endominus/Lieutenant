@@ -49,8 +49,8 @@ pub fn run(command: Command) -> Result<()> {
                 let sets = network::rvs().unwrap();
                 let p = get_local_file("lieutenant.db", true);
                 let conn = Connection::open(p).unwrap();
-                db::updatedb(&conn, sets).unwrap();
-                println!("Imported cards in {} ms.", now.elapsed().as_millis());
+                let n = db::updatedb(&conn, sets).unwrap();
+                println!("Imported {} cards in {} ms.", n, now.elapsed().as_millis());
             }
 
         },

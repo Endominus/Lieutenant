@@ -600,7 +600,7 @@ pub fn initdb(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<u32> {
+pub fn updatedb(conn: &Connection, mut sets: Vec<Set>) -> Result<usize> {
     let mut stmt = conn.prepare("PRAGMA table_info(sets);")?;
     let mut new_cards = 0;
     sets.sort_by(|a, b| a.date.cmp(&b.date));
@@ -1552,46 +1552,80 @@ pub fn ucfd(rwl_conn: &Mutex<Connection>, did: i32) -> Result<()> {
 
 pub fn upfcn_quick(conn: &Connection, cn: &str, odid: Option<i32>) -> Result<Card> {
     let c = rcfn(conn, cn, None).unwrap();
-    let s = match c.lo {
+    let s = match &c.lo {
         CardLayout::Paired(_, _, rel) => format!("{} // {}", cn, rel),
         _ => cn.to_string(),
     };
 
     let price = rcostfcn(&s, c.price).unwrap();
 
-    conn.execute(
-        "UPDATE cards 
-        SET price = :price, 
-        date_price_retrieved = date()
-        WHERE name = :name;",
-        named_params! {":price": price, ":name": cn},
-    )?;
+    match &c.lo {
+        CardLayout::Paired(_, n, rel) =>{
+            conn.execute(
+                "UPDATE cards 
+                SET price = :price, 
+                date_price_retrieved = date()
+                WHERE name = :name;",
+                named_params! {":price": price, ":name": &n},
+            )?;
+            conn.execute(
+                "UPDATE cards 
+                SET price = :price, 
+                date_price_retrieved = date()
+                WHERE name = :name;",
+                named_params! {":price": price, ":name": &rel},
+            )?;
+        },
+        _ => {
+            conn.execute(
+                "UPDATE cards 
+                SET price = :price, 
+                date_price_retrieved = date()
+                WHERE name = :name;",
+                named_params! {":price": price, ":name": &c.name},
+            )?;
+        }
+    };
 
     rcfn(conn, cn, odid)
 }
 
 pub fn upfcn_detailed(conn: &Connection, c: &Card, odid: Option<i32>) -> Result<Card> {
-    let s = match &c.lo {
+    let cn = match &c.lo {
         CardLayout::Paired('a', _, rel) => format!("{} // {}", c.name, rel),
         CardLayout::Paired('b', _, rel) => format!("{} // {}", rel, c.name),
         _ => c.name.clone(),
     };
 
-    let price = rextcostfcn(&s).unwrap();
+    let price = rextcostfcn(&cn).unwrap();
 
-    let s = match &c.lo {
-        CardLayout::Paired('b', _, rel) => format!("{}", rel),
-        _ => c.name.clone(),
+    match &c.lo {
+        CardLayout::Paired(_, n, rel) =>{
+            conn.execute(
+                "UPDATE cards 
+                SET price = :price, 
+                date_price_retrieved = date()
+                WHERE name = :name;",
+                named_params! {":price": price, ":name": &n},
+            )?;
+            conn.execute(
+                "UPDATE cards 
+                SET price = :price, 
+                date_price_retrieved = date()
+                WHERE name = :name;",
+                named_params! {":price": price, ":name": &rel},
+            )?;
+        },
+        _ => {
+            conn.execute(
+                "UPDATE cards 
+                SET price = :price, 
+                date_price_retrieved = date()
+                WHERE name = :name;",
+                named_params! {":price": price, ":name": &c.name},
+            )?;
+        }
     };
-
-    conn.execute(
-        "UPDATE cards 
-        SET price = :price, 
-        date_price_retrieved = date()
-        WHERE name = :name;",
-        named_params! {":price": price, ":name": &s},
-    )?;
-    
 
     rcfn(conn, &c.name, odid)
 }

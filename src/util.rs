@@ -2626,9 +2626,9 @@ pub mod views {
             }
         }
 
-        pub fn recalc(&mut self) -> bool {
+        pub fn recalc(&mut self) {
             if self.fresh {
-                return true;
+                return
             }
             let vcs = rvmcfd(&self.dbc.lock().unwrap(), self.did).unwrap();
             let mut price_data = Vec::new();
@@ -2644,54 +2644,6 @@ pub mod views {
 
             self.price_data = price_data;
             self.fresh = fresh;
-            false
-        }
-
-        pub fn render_prices(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
-            let mut prices = Vec::new();
-            let mut total = 0.0;
-            for (n, v) in &self.price_data {
-                total += v;
-                let r = Row::new(vec![Cell::from(n.as_str()), Cell::from(v.to_string())]);
-                prices.push(r);
-            }
-            prices.insert(
-                0,
-                Row::new(vec![Cell::from("Total"), Cell::from(total.to_string())])
-                    .style(Style::default().add_modifier(Modifier::BOLD)),
-            );
-
-            let price_title = if self.fresh {
-                "Card Prices????"
-            } else {
-                "Finding Prices..."
-            };
-
-            let pt = Table::new(prices)
-                .style(Style::default().fg(Color::White))
-                .header(Row::new(vec!["Card", "Price"]).style(Style::default().fg(Color::Yellow)))
-                .block(Block::default().title(price_title).borders(Borders::ALL))
-                .widths(&[Constraint::Length(20), Constraint::Length(6)])
-                .column_spacing(1);
-
-            let halfsplit = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(4)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                .split(frame.size());
-            let top_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints(
-                    [
-                        Constraint::Percentage(33),
-                        Constraint::Percentage(33),
-                        Constraint::Percentage(33),
-                    ]
-                    .as_ref(),
-                )
-                .split(halfsplit[0]);
-
-            frame.render_widget(pt, top_chunks[1]);
         }
 
         pub fn render(&self, frame: &mut tui::Frame<CrosstermBackend<std::io::Stdout>>) {
