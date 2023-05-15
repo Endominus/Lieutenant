@@ -2,9 +2,9 @@ extern crate pest;
 extern crate regex;
 extern crate rusqlite;
 
-use crate::network::{rextcostfcn, rvjc};
+use crate::network::{rextcostfcn, rcostfcn, rvjc};
 use crate::util::views::TagChange;
-use crate::util::{Card, CardLayout, CardStat, CommanderType, Deck};
+use crate::util::{Card, CardLayout, CardStat, CommanderType, Deck, DefaultFilter, SortOrder};
 
 use self::rusqlite::functions::FunctionFlags;
 use self::rusqlite::{params, Connection};
@@ -18,14 +18,6 @@ use chrono::{Datelike, Duration, TimeZone, Utc};
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 use std::{thread, time};
-
-// pub struct DbContext<'a> {
-//     conn: Connection,
-//     stmts: HashMap<&'a str, Statement<'a>>
-// }
-
-use crate::network::rcostfcn;
-use crate::util::{DefaultFilter, SortOrder};
 
 const DB_FILE: &str = "lieutenant.db";
 
@@ -719,6 +711,9 @@ pub fn ivcfjsmap(conn: &Connection, vjc: Vec<JsonCard>) -> Result<(usize, usize)
             :name, :mana_cost, :cmc, :types, :card_text, :power, :toughness, :loyalty, :color_identity, :related_cards, :layout, :side, :legalities, :rarity
     )")?;
     let (mut success, mut failure) = (0, 0);
+	let mut melds = Vec::new();
+	let mut meld_bases = Vec::new();
+	
 
     print!("Found {} cards. ", vjc.len());
     conn.execute_batch("BEGIN TRANSACTION;")?;
@@ -745,10 +740,12 @@ pub fn ivcfjsmap(conn: &Connection, vjc: Vec<JsonCard>) -> Result<(usize, usize)
                     let names = c.name.split_once(" // ").unwrap();
                     name = names.0.to_string();
                     related = names.1.to_string();
-                    side = "a".to_string()
+                    side = "a".to_string();
+					meld_bases.push([names.1.to_string(), names.0.to_string()])
                 } else {
                     related = "UNKNOWN".to_string();
-                    side = "b".to_string()
+                    side = "b".to_string();
+					melds.push(name.clone());
                 }
             }
             _ => {}
@@ -797,7 +794,39 @@ WHERE legalities = \"\"",
 
     conn.execute_batch("COMMIT TRANSACTION;")?;
 
+	for cn in &melds {
+		let mut a = String::new();
+		let mut b = String::new();
+		for vs in &meld_bases {
+			if &vs[0] == cn {
+				if a == String::new() {
+					a = vs[1].clone();
+				} else {
+					b = vs[1].clone();
+				}
+			}
+		}
+		let _ = ucfm(conn, &a, &b, cn);
+		_ = ucfm(conn, &b, &a, cn);
+		if a < b {
+			_ = ucfm(conn, &cn, &a, &b);
+		} else {
+			_ = ucfm(conn, &cn, &b, &a);
+		};
+	}
+
     Ok((success, failure))
+}
+
+fn ucfm(conn: &Connection, cn: &String, ran: &String, rbn: &String) -> Result<()> {
+	let rs = format!("{}|{}", ran, rbn);
+	conn.execute(
+		"UPDATE cards 
+		SET related_cards = :related
+		WHERE name = :name;",
+		named_params! {":related": &rs, ":name": cn})?;
+
+	Ok(())
 }
 
 pub fn ictodc(conn: &Connection, c: &Card, did: i32) -> Result<Vec<Card>> {
